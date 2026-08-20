@@ -1,4 +1,4 @@
-import type { H2AnomalyEvent } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2AnomalyEvent } from '@opendashboard/h2-contracts'
 import { formatH2Number } from '../../model/presentation.ts'
 import { StatusBadge } from '../common/StatusBadge.tsx'
 

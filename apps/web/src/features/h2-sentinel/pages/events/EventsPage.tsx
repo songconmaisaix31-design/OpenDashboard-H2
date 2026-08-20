@@ -4,7 +4,7 @@ import {
   H2_ANOMALY_CODES,
   H2_SEVERITIES,
   type H2ReviewState,
-} from '../../../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 import type { H2NavigationTarget } from '../../routes.ts'
 import type { H2Workspace } from '../../model/view-state.ts'
 import {

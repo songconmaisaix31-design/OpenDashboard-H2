@@ -5,7 +5,7 @@ import {
   type PluginDefinition,
   type PluginManifestV1,
   type ServiceToken,
-} from '../../contracts/src/index.ts'
+} from '@opendashboard/contracts'
 
 export type PluginRuntimeState =
   | 'idle'

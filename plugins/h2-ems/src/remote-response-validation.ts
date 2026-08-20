@@ -15,7 +15,7 @@ import {
   type H2QualityCheckCode,
   type H2QualitySeverity,
   type H2SeriesResponse,
-} from '../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 import { isEventArray } from './remote-anomaly-validation.ts'
 import {

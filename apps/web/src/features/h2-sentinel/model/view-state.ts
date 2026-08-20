@@ -6,7 +6,7 @@ import type {
   H2ReportArtifact,
   H2SeriesResponse,
   H2AnomalyEvent,
-} from '../../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 export interface H2Workspace {
   readonly mode: H2DatasetMode

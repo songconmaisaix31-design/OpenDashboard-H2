@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { describe, it } from 'node:test'
 
-import type { H2ReportArtifact, H2ReportKind } from '../../../packages/h2-contracts/src/index.ts'
+import type { H2ReportArtifact, H2ReportKind } from '@opendashboard/h2-contracts'
 
 import { createFixtureH2EmsDataSource } from '../src/index.ts'
 

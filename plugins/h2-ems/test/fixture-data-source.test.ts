@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { createPluginRuntime } from '../../../packages/plugin-runtime/src/index.ts'
+import { createPluginRuntime } from '@opendashboard/plugin-runtime'
 import {
   createFixtureH2EmsDataSource,
   H2_EMS_DATA_SOURCE,

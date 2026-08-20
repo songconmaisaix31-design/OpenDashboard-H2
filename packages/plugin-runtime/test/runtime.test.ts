@@ -6,7 +6,7 @@ import {
   type Disposable,
   type PluginDefinition,
   type PluginManifestV1,
-} from '../../contracts/src/index.ts'
+} from '@opendashboard/contracts'
 import {
   createPluginRuntime,
   type PluginRuntime,

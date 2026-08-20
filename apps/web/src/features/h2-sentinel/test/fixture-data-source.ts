@@ -24,7 +24,7 @@ import {
   type H2SentinelDataSource,
   type H2SeriesRequest,
   type H2SeriesResponse,
-} from '../../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 export const CORRECTED_C04_IMPACT_KWH = 29.333333333333332
 

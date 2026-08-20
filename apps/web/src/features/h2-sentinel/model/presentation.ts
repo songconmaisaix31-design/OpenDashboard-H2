@@ -11,7 +11,7 @@ import type {
   H2SafetyStatus,
   H2SeriesResponse,
   H2Severity,
-} from '../../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 export const H2_CODE_LABELS = {
   C01: '电解槽设定值振荡',

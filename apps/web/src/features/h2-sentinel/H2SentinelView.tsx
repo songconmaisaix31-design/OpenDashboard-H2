@@ -1,7 +1,7 @@
 import type {
   H2AssistantQuestionId,
   H2ReportArtifact,
-} from '../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 import { H2Shell } from './components/common/H2Shell.tsx'
 import { EmptyDatasetState } from './components/common/EmptyDatasetState.tsx'
 import { ViewState } from './components/common/ViewState.tsx'

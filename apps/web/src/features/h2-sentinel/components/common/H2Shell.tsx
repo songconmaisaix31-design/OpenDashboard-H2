@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-import type { H2AnalysisRun, H2DatasetMode } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2AnalysisRun, H2DatasetMode } from '@opendashboard/h2-contracts'
 import {
   toH2SentinelHash,
   type H2NavigationTarget,

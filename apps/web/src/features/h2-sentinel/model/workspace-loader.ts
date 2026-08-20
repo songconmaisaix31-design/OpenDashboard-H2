@@ -1,7 +1,7 @@
 import type {
   H2DatasetManifest,
   H2SentinelDataSource,
-} from '../../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 import type { H2Workspace } from './view-state.ts'
 
 export const H2_CSV_MAX_BYTES = 5 * 1024 * 1024

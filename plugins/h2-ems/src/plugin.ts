@@ -1,7 +1,7 @@
 import {
   type H2SentinelDataSource,
-} from '../../../packages/h2-contracts/src/index.ts'
-import { type PluginDefinition, type PluginContext } from '../../../packages/contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
+import { type PluginDefinition, type PluginContext } from '@opendashboard/contracts'
 
 import { createFixtureH2EmsDataSource } from './fixture-data-source.ts'
 import {

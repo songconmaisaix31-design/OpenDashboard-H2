@@ -11,7 +11,7 @@ import {
   type H2RecommendationActionKind,
   type H2ReviewState,
   type H2SafetyStatus,
-} from '../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 import {
   CLAIM_KINDS,

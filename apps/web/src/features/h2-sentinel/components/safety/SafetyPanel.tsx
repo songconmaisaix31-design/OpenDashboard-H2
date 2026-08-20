@@ -1,4 +1,4 @@
-import type { H2AnomalyEvent } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2AnomalyEvent } from '@opendashboard/h2-contracts'
 import { H2_SAFETY_LABELS } from '../../model/presentation.ts'
 import { StatusBadge, type H2BadgeTone } from '../common/StatusBadge.tsx'
 

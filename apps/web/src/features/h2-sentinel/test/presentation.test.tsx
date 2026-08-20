@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import {
   H2_FIXTURE_REPORT_DESCRIPTOR,
   type H2AnomalyEvent,
-} from '../../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 import { H2SentinelView } from '../H2SentinelView.tsx'
 import {
   INITIAL_H2_COMMAND_STATE,

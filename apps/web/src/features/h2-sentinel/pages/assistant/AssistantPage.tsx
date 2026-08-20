@@ -5,7 +5,7 @@ import {
   type H2AssistantAnswer,
   type H2AssistantQuestionId,
   type H2AnomalyEvent,
-} from '../../../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 import {
   H2_CLAIM_LABELS,
   H2_PROVENANCE_LABELS,

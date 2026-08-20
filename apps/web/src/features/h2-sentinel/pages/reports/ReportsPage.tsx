@@ -1,4 +1,4 @@
-import type { H2AnomalyEvent, H2ReportArtifact, H2ReportKind } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2AnomalyEvent, H2ReportArtifact, H2ReportKind } from '@opendashboard/h2-contracts'
 import { formatH2Timestamp, H2_PROVENANCE_LABELS } from '../../model/presentation.ts'
 import type { H2PendingOperation } from '../../model/view-state.ts'
 import { PageHeader } from '../../components/common/PageHeader.tsx'

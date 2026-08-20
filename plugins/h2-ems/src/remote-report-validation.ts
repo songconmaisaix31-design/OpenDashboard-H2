@@ -4,7 +4,7 @@ import type {
   H2ReportKind,
   H2ReportRequest,
   H2ReportStatus,
-} from '../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 import { H2EmsAdapterError } from './errors.ts'
 import {

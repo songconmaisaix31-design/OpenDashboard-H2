@@ -2,7 +2,7 @@ import {
   H2_PROVENANCE_MODES,
   type H2ClaimKind,
   type H2Provenance,
-} from '../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 import { H2EmsAdapterError } from './errors.ts'
 

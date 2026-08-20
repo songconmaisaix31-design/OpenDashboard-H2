@@ -1,4 +1,4 @@
-import type { H2AnomalyEvent } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2AnomalyEvent } from '@opendashboard/h2-contracts'
 import type { H2NavigationTarget } from '../../routes.ts'
 import type { H2Workspace } from '../../model/view-state.ts'
 import {

@@ -347,8 +347,7 @@ async function fixtureReportArtifact() {
 
 async function verifySourceLevelEntryContract() {
   const [main, shell] = await Promise.all([readFile(mainPath, 'utf8'), readFile(shellPath, 'utf8')])
-  assert.match(main, /H2_ENTRY_PATHS = new Set\(\['\/h2-sentinel', '\/h2-sentinel\/'\]\)/)
-  assert.match(main, /return \{ kind: 'generic' \}/)
+  assert.match(main, /readH2Mode\(window\.location\)/)
   assert.match(main, /if \(mode !== 'fixture' && mode !== 'local'\)/)
   assert.match(main, /message\.setAttribute\('role', 'alert'\)/)
   for (const route of ['overview', 'events', 'diagnosis', 'analysis', 'assistant', 'reports']) {
@@ -364,9 +363,7 @@ async function testFixtureLaunchAndArtifact() {
     assert.equal(session.ready.analyticsUrl, null)
     assert.equal(session.ready.analyticsPid, null)
     assert.equal(session.ready.webUrl, `http://${LOOPBACK}:${webPort}/h2-sentinel/?mode=fixture`)
-    const generic = await fetch(`http://${LOOPBACK}:${webPort}/`, { signal: AbortSignal.timeout(5_000) })
     const h2 = await fetch(session.ready.webUrl, { signal: AbortSignal.timeout(5_000) })
-    assert.equal(generic.ok, true)
     assert.equal(h2.ok, true)
     const artifact = await fixtureReportArtifact()
     assert.equal(artifact.mediaType, 'text/html')

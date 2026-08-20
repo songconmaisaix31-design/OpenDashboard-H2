@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-import type { H2DatasetField } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2DatasetField } from '@opendashboard/h2-contracts'
 import type { H2Workspace } from '../../model/view-state.ts'
 import {
   datasetHasValidationLabels,

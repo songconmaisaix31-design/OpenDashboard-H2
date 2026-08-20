@@ -1,4 +1,4 @@
-import type { H2EvidenceItem } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2EvidenceItem } from '@opendashboard/h2-contracts'
 import {
   H2_CLAIM_LABELS,
   formatEvidenceValue,

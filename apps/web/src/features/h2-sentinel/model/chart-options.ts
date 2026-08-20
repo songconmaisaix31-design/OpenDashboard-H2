@@ -4,7 +4,7 @@ import type {
   H2AnomalyEvent,
   H2DatasetField,
   H2SeriesResponse,
-} from '../../../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 import { formatH2Timestamp } from './presentation.ts'
 
 const COLORS = ['#49d6bd', '#ffb45d', '#8ea9ff', '#f3778f', '#b393ff'] as const

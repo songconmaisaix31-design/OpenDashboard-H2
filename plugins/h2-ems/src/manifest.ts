@@ -1,4 +1,4 @@
-import type { PluginManifestV1 } from '../../../packages/contracts/src/index.ts'
+import type { PluginManifestV1 } from '@opendashboard/contracts'
 
 /** Audit metadata for the reviewed in-process H2 plugin; not a sandbox. */
 export const H2_EMS_MANIFEST = {

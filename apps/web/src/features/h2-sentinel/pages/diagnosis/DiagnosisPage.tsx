@@ -1,4 +1,4 @@
-import type { H2AnomalyEvent, H2SeriesResponse } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2AnomalyEvent, H2SeriesResponse } from '@opendashboard/h2-contracts'
 import type { H2NavigationTarget } from '../../routes.ts'
 import {
   formatH2Confidence,

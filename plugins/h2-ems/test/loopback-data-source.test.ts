@@ -8,7 +8,7 @@ import {
   H2_FIXTURE_ANALYSIS_RUN,
   H2_FIXTURE_DATASET,
   H2_FIXTURE_QUALITY_REPORT,
-} from '../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 import {
   createH2EmsPlugin,
   createLiveH2EmsDataSource,
@@ -16,7 +16,7 @@ import {
   H2_EMS_LIVE_ROUTES,
   H2EmsAdapterError,
 } from '../src/index.ts'
-import { createPluginRuntime } from '../../../packages/plugin-runtime/src/index.ts'
+import { createPluginRuntime } from '@opendashboard/plugin-runtime'
 
 const envelope = (data: unknown): Response =>
   Response.json({

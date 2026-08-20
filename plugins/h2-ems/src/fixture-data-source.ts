@@ -24,7 +24,7 @@ import {
   type H2SeriesRequest,
   type H2SeriesPoint,
   type H2SeriesResponse,
-} from '../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 import { H2EmsAdapterError } from './errors.ts'
 import { sha256 } from './sha256.ts'

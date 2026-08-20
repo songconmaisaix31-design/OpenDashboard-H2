@@ -1,4 +1,4 @@
-import type { H2DatasetMode } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2DatasetMode } from '@opendashboard/h2-contracts'
 import { H2_CSV_MAX_BYTES } from '../../model/workspace-loader.ts'
 import { StatusBadge } from './StatusBadge.tsx'
 

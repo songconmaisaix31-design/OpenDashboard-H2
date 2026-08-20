@@ -1,4 +1,4 @@
-import type { H2DatasetMode, H2Provenance } from '../../../../../../../packages/h2-contracts/src/index.ts'
+import type { H2DatasetMode, H2Provenance } from '@opendashboard/h2-contracts'
 import { H2_MODE_COPY, H2_PROVENANCE_LABELS } from '../../model/presentation.ts'
 import { StatusBadge } from '../common/StatusBadge.tsx'
 

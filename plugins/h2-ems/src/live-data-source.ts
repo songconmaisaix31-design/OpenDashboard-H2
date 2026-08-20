@@ -2,7 +2,7 @@ import type {
   H2SentinelDataSource,
   H2SeriesRequest,
   H2SeriesResponse,
-} from '../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 import { H2EmsAdapterError } from './errors.ts'
 import {

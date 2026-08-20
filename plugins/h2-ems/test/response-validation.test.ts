@@ -10,7 +10,7 @@ import {
   H2_FIXTURE_QUALITY_REPORT,
   H2_GOLDEN_C03_EVENT,
   H2_GOLDEN_C04_EVENT,
-} from '../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 import {
   createFixtureH2EmsDataSource,
   createLiveH2EmsDataSource,

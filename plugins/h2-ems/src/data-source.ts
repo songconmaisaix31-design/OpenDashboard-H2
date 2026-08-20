@@ -1,4 +1,4 @@
-import type { H2SentinelDataSource } from '../../../packages/h2-contracts/src/index.ts'
+import type { H2SentinelDataSource } from '@opendashboard/h2-contracts'
 
 import type { H2EmsLiveAdapterOptions } from './live-data-source.ts'
 

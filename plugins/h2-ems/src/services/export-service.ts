@@ -2,7 +2,7 @@ import type {
   H2ReportArtifact,
   H2ReportRequest,
   H2SentinelDataSource,
-} from '../../../../packages/h2-contracts/src/index.ts'
+} from '@opendashboard/h2-contracts'
 
 export function exportH2EmsReport(
   source: H2SentinelDataSource,
