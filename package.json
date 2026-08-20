@@ -1,0 +1,45 @@
+{
+  "name": "open-dashboard-h2",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "packageManager": "npm@11.13.0",
+  "workspaces": [
+    "packages/*",
+    "plugins/*",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "vite apps/web --config vite.config.ts",
+    "build": "vite build apps/web --config vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"apps/web/**/*.test.ts*\" \"packages/**/*.test.ts*\" \"plugins/**/*.test.ts*\"",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "h2:build": "vite build apps/web --config vite.config.ts",
+    "h2:test": "node --import tsx --test \"apps/web/src/features/h2-sentinel/test/*.test.ts*\" \"packages/h2-contracts/test/*.test.ts\" \"plugins/h2-ems/test/*.test.ts\"",
+    "h2:qa": "node --test \"tests/h2-sentinel/contract/*.test.mjs\" && node tests/h2-sentinel/run-contract-qa.mjs",
+    "h2:check": "npm run typecheck && npm run h2:test && npm run h2:qa && npm run h2:launcher:test && npm run h2:build",
+    "h2:fixture": "node scripts/h2-sentinel/launch.mjs --mode fixture",
+    "h2:local": "node scripts/h2-sentinel/launch.mjs --mode local",
+    "h2:preview:fixture": "node scripts/h2-sentinel/launch.mjs --mode fixture --web-runtime preview",
+    "h2:preview:local": "node scripts/h2-sentinel/launch.mjs --mode local --web-runtime preview",
+    "h2:launcher:test": "node --test scripts/h2-sentinel/composition.test.mjs scripts/h2-sentinel/launch.test.mjs",
+    "h2:smoke": "npm run h2:build && node scripts/h2-sentinel/smoke.mjs"
+  },
+  "dependencies": {
+    "echarts": "6.1.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "typescript": "6.0.3",
+    "tsx": "4.21.0",
+    "vite": "6.4.3"
+  }
+}

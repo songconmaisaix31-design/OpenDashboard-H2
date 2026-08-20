@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@opendashboard/contracts": ["./packages/contracts/src/index.ts"],
+      "@opendashboard/plugin-runtime": ["./packages/plugin-runtime/src/index.ts"],
+      "@opendashboard/h2-contracts": ["./packages/h2-contracts/src/index.ts"],
+      "@opendashboard/h2-ems": ["./plugins/h2-ems/src/index.ts"]
+    },
+    "types": ["vite/client", "node"]
+  },
+  "include": ["apps/web/src", "packages", "plugins"]
+}
