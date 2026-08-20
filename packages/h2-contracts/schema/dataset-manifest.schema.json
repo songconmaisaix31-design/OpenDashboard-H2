@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/dataset-manifest.schema.json",
+  "title": "H2DatasetManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "datasetId",
+    "name",
+    "mode",
+    "sourceFilename",
+    "fingerprint",
+    "rowCount",
+    "timeRange",
+    "samplingIntervalMinutes",
+    "fields",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "datasetId": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "mode": { "enum": ["FIXTURE", "LIVE_ANALYSIS"] },
+    "sourceFilename": { "type": "string", "minLength": 1 },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "rowCount": { "type": "integer", "minimum": 0 },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startTime", "endTime"],
+      "properties": {
+        "startTime": { "type": "string", "minLength": 1 },
+        "endTime": { "type": "string", "minLength": 1 }
+      }
+    },
+    "samplingIntervalMinutes": { "type": "number", "exclusiveMinimum": 0 },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "displayNameZh", "role", "required"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "displayNameZh": { "type": "string", "minLength": 1 },
+          "role": {
+            "enum": [
+              "timestamp",
+              "measurement",
+              "constraint",
+              "label",
+              "metadata"
+            ]
+          },
+          "required": { "type": "boolean" },
+          "unit": { "type": "string" }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "source", "generatedAt", "limitations"],
+      "properties": {
+        "mode": {
+          "enum": [
+            "FIXTURE",
+            "LIVE_ANALYSIS",
+            "DERIVED",
+            "MODEL",
+            "RULE",
+            "LLM_RENDERED"
+          ]
+        },
+        "source": { "type": "string", "minLength": 1 },
+        "generatedAt": { "type": "string", "minLength": 1 },
+        "datasetFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "modelVersion": { "type": "string" },
+        "ruleVersion": { "type": "string" },
+        "configurationVersion": { "type": "string" },
+        "rendererVersion": { "type": "string" },
+        "limitations": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

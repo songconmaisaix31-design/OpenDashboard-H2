@@ -1,0 +1,360 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/anomaly-event.schema.json",
+  "title": "H2AnomalyEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "code",
+    "subtype",
+    "title",
+    "startTime",
+    "endTime",
+    "firstDetectionTime",
+    "severity",
+    "confidence",
+    "primaryControlObject",
+    "affectedEquipment",
+    "evidence",
+    "impact",
+    "safetyChecks",
+    "recommendations",
+    "rootCause",
+    "rootCauseKind",
+    "reviewState",
+    "provenance",
+    "requiresHumanConfirmation"
+  ],
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "code": { "const": "C01" },
+            "subtype": { "const": "SETPOINT_OSCILLATION" },
+            "impact": {
+              "type": "object",
+              "required": ["metric"],
+              "properties": {
+                "metric": { "const": "bess_extra_regulation_energy_kwh" }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "code": { "const": "C02" },
+            "subtype": { "const": "CAPACITY_NOT_SYNCHRONIZED" },
+            "impact": {
+              "type": "object",
+              "required": ["metric"],
+              "properties": {
+                "metric": { "const": "unserved_elz_energy_kwh" }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "code": { "const": "C03" },
+            "subtype": { "const": "BESS_DIRECTION_REVERSED" },
+            "impact": {
+              "type": "object",
+              "required": ["metric"],
+              "properties": {
+                "metric": { "const": "abnormal_grid_exchange_energy_kwh" }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "code": { "const": "C04" },
+            "subtype": { "enum": ["EXPORT_POWER_LIMIT_NOT_TRACKED", "IMPORT_POWER_LIMIT_NOT_TRACKED"] },
+            "impact": {
+              "type": "object",
+              "required": ["metric"],
+              "properties": {
+                "metric": { "const": "pcc_power_limit_violation_energy_kwh" }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "code": { "const": "C05" },
+            "subtype": { "enum": ["EXPORT_ENERGY_QUOTA_RISK", "IMPORT_ENERGY_QUOTA_RISK"] },
+            "impact": {
+              "type": "object",
+              "required": ["metric"],
+              "properties": {
+                "metric": { "const": "grid_energy_quota_deviation_kwh" }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "code": { "const": "C06" },
+            "subtype": { "enum": ["AVOIDABLE_START_STOP", "INEFFICIENT_POWER_ALLOCATION"] },
+            "impact": {
+              "type": "object",
+              "required": ["metric"],
+              "properties": {
+                "metric": { "const": "extra_energy_consumption_kwh" }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "code": { "const": "C07" },
+            "subtype": { "enum": ["CHARGE_HEADROOM_SHORTFALL", "DISCHARGE_RESERVE_SHORTFALL"] },
+            "impact": {
+              "type": "object",
+              "required": ["metric"],
+              "properties": {
+                "metric": { "const": "bess_regulation_reserve_shortfall_kwh" }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "eventId": { "type": "string", "minLength": 1 },
+    "code": { "enum": ["C01", "C02", "C03", "C04", "C05", "C06", "C07"] },
+    "subtype": {
+      "enum": [
+        "SETPOINT_OSCILLATION",
+        "CAPACITY_NOT_SYNCHRONIZED",
+        "BESS_DIRECTION_REVERSED",
+        "EXPORT_POWER_LIMIT_NOT_TRACKED",
+        "IMPORT_POWER_LIMIT_NOT_TRACKED",
+        "EXPORT_ENERGY_QUOTA_RISK",
+        "IMPORT_ENERGY_QUOTA_RISK",
+        "AVOIDABLE_START_STOP",
+        "INEFFICIENT_POWER_ALLOCATION",
+        "CHARGE_HEADROOM_SHORTFALL",
+        "DISCHARGE_RESERVE_SHORTFALL"
+      ]
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "startTime": { "type": "string", "minLength": 1 },
+    "endTime": { "type": "string", "minLength": 1 },
+    "firstDetectionTime": { "type": "string", "minLength": 1 },
+    "severity": { "enum": ["low", "medium", "high", "critical"] },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "primaryControlObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "displayName"],
+      "properties": {
+        "type": {
+          "enum": [
+            "EMS_ELECTROLYZER_GROUP_CONTROL",
+            "EMS_CAPACITY_MODEL",
+            "BESS_CONTROL",
+            "PCC_BOUNDARY_CONTROL",
+            "GRID_ENERGY_QUOTA_CONTROL",
+            "ELECTROLYZER_LOAD_ALLOCATION",
+            "BESS_SOC_RESERVE_CONTROL"
+          ]
+        },
+        "id": { "type": "string", "minLength": 1 },
+        "displayName": { "type": "string", "minLength": 1 }
+      }
+    },
+    "affectedEquipment": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "id", "displayName"],
+        "properties": {
+          "kind": {
+            "enum": [
+              "PV",
+              "BESS",
+              "PCC",
+              "GRID",
+              "EMS",
+              "ELECTROLYZER",
+              "ELECTROLYZER_GROUP",
+              "AUXILIARY_LOAD",
+              "METERING",
+              "WEATHER"
+            ]
+          },
+          "id": { "type": "string", "minLength": 1 },
+          "displayName": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "evidenceId",
+          "kind",
+          "claimKind",
+          "source",
+          "conclusion",
+          "provenance"
+        ],
+        "properties": {
+          "schemaVersion": { "const": 1 },
+          "evidenceId": { "type": "string", "minLength": 1 },
+          "kind": {
+            "enum": [
+              "measurement",
+              "constraint",
+              "derived_metric",
+              "alarm_log",
+              "operation_log",
+              "quality_signal",
+              "knowledge_base"
+            ]
+          },
+          "claimKind": {
+            "enum": ["fact", "calculation", "inference", "recommendation"]
+          },
+          "timestamp": { "type": "string" },
+          "interval": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["startTime", "endTime"],
+            "properties": {
+              "startTime": { "type": "string", "minLength": 1 },
+              "endTime": { "type": "string", "minLength": 1 }
+            }
+          },
+          "variable": { "type": "string" },
+          "actualValue": { "type": ["string", "number", "boolean"] },
+          "referenceValue": { "type": ["string", "number", "boolean"] },
+          "unit": { "type": "string" },
+          "comparator": {
+            "enum": [">", ">=", "<", "<=", "=", "!=", "within", "outside"]
+          },
+          "source": { "type": "string", "minLength": 1 },
+          "conclusion": { "type": "string", "minLength": 1 },
+          "provenance": { "type": "object" }
+        }
+      }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric",
+        "value",
+        "unit",
+        "formulaVersion",
+        "assumptions",
+        "evidenceIds",
+        "provenance"
+      ],
+      "properties": {
+        "metric": {
+          "enum": [
+            "bess_extra_regulation_energy_kwh",
+            "unserved_elz_energy_kwh",
+            "abnormal_grid_exchange_energy_kwh",
+            "pcc_power_limit_violation_energy_kwh",
+            "grid_energy_quota_deviation_kwh",
+            "extra_energy_consumption_kwh",
+            "bess_regulation_reserve_shortfall_kwh"
+          ]
+        },
+        "value": { "type": "number" },
+        "unit": { "enum": ["kWh", "kW", "percent", "minutes", "count"] },
+        "formulaVersion": { "type": "string", "minLength": 1 },
+        "assumptions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "evidenceIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "provenance": { "type": "object" }
+      }
+    },
+    "safetyChecks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "checkId",
+          "title",
+          "status",
+          "message",
+          "evidenceIds",
+          "provenance"
+        ],
+        "properties": {
+          "checkId": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "status": {
+            "enum": ["passed", "warning", "failed", "unknown", "not_applicable"]
+          },
+          "message": { "type": "string", "minLength": 1 },
+          "constraintId": { "type": "string" },
+          "evidenceIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "provenance": { "type": "object" }
+        }
+      }
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "recommendationId",
+          "actionKind",
+          "summary",
+          "rationale",
+          "safetyCheckIds",
+          "evidenceIds",
+          "requiresHumanConfirmation",
+          "provenance"
+        ],
+        "properties": {
+          "recommendationId": { "type": "string", "minLength": 1 },
+          "actionKind": { "enum": ["check", "monitor", "escalate", "report"] },
+          "summary": { "type": "string", "minLength": 1 },
+          "rationale": { "type": "string", "minLength": 1 },
+          "safetyCheckIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "evidenceIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "requiresHumanConfirmation": { "const": true },
+          "provenance": { "type": "object" }
+        }
+      }
+    },
+    "rootCause": { "type": "string", "minLength": 1 },
+    "rootCauseKind": { "enum": ["fact", "inference"] },
+    "reviewState": { "enum": ["open", "confirmed", "dismissed", "resolved"] },
+    "provenance": { "type": "object" },
+    "requiresHumanConfirmation": { "type": "boolean" }
+  }
+}

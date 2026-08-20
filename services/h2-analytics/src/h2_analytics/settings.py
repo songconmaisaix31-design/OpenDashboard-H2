@@ -1,0 +1,30 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+API_NAMESPACE = "/api/v1/h2-sentinel"
+API_VERSION = "v1"
+SERVICE_VERSION = "0.1.0"
+RULE_VERSION = "h2-rules-v1"
+FEATURE_VERSION = "h2-features-v1"
+AGGREGATION_VERSION = "h2-events-v1"
+CONFIGURATION_VERSION = "official-constraints-v1"
+FALLBACK_DETECTOR_VERSION = "deterministic-c03-c04-v1"
+MAX_CSV_BYTES = 5 * 1024 * 1024
+MAX_CSV_ROWS = 100_000
+
+
+@dataclass(frozen=True, slots=True)
+class H2Constraints:
+    bess_soc_min_percent: float = 20.0
+    bess_soc_max_percent: float = 90.0
+    bess_max_power_kw: float = 500.0
+    bess_energy_capacity_kwh: float = 1_000.0
+    electrolyzer_min_stable_power_kw: float = 300.0
+    electrolyzer_max_power_kw: float = 1_000.0
+    electrolyzer_ramp_limit_kw_per_minute: float = 120.0
+    pcc_boundary_detection_margin_kw: float = 100.0
+    power_balance_warning_kw: float = 50.0
+
+
+DEFAULT_CONSTRAINTS = H2Constraints()

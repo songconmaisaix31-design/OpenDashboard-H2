@@ -1,0 +1,11 @@
+OpenDashboard
+Copyright 2026 OpenDashboard contributors
+
+This distribution uses third-party dependencies under their respective
+licenses. No reviewed upstream source file was copied into the plugin runtime
+as part of the 2026-08-17 architecture baseline.
+
+The H2 Sentinel candidate uses package-managed Web and local analytics
+dependencies. Their versions, roles, and license classifications are recorded
+in THIRD_PARTY_NOTICES.md. No third-party source, model, official competition
+dataset, or generated report is committed as H2 product source.

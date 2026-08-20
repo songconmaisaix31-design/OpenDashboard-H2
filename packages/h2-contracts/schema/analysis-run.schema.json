@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/analysis-run.schema.json",
+  "title": "H2AnalysisRun",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "dataset",
+    "quality",
+    "status",
+    "startedAt",
+    "eventCountsByCode",
+    "eventCountsBySeverity",
+    "events",
+    "warnings",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "dataset": { "type": "object" },
+    "quality": { "type": "object" },
+    "status": { "enum": ["queued", "running", "completed", "failed"] },
+    "startedAt": { "type": "string", "minLength": 1 },
+    "completedAt": { "type": "string" },
+    "eventCountsByCode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["C01", "C02", "C03", "C04", "C05", "C06", "C07"],
+      "properties": {
+        "C01": { "type": "integer", "minimum": 0 },
+        "C02": { "type": "integer", "minimum": 0 },
+        "C03": { "type": "integer", "minimum": 0 },
+        "C04": { "type": "integer", "minimum": 0 },
+        "C05": { "type": "integer", "minimum": 0 },
+        "C06": { "type": "integer", "minimum": 0 },
+        "C07": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "eventCountsBySeverity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["low", "medium", "high", "critical"],
+      "properties": {
+        "low": { "type": "integer", "minimum": 0 },
+        "medium": { "type": "integer", "minimum": 0 },
+        "high": { "type": "integer", "minimum": 0 },
+        "critical": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "provenance": { "type": "object" }
+  }
+}

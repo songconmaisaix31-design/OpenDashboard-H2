@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>H2 Sentinel {{ event.eventId if event else run.runId }}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.5; color: #172033; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #cbd2dc; padding: 0.5rem; text-align: left; }
+    .notice { border-left: 4px solid #c47d00; padding: 0.75rem; background: #fff8e8; }
+  </style>
+</head>
+<body>
+  <h1>H2 Sentinel {{ "Diagnosis" if event else "Data Quality Report" if kind == "quality_report" else "Period Summary" }}</h1>
+  <p>Run: {{ run.runId }} · Dataset: {{ run.dataset.name }} · Mode: {{ run.dataset.mode }}</p>
+  <p>Dataset fingerprint: {{ run.dataset.fingerprint }}</p>
+  {% if event %}
+  <h2>{{ event.eventId }} — {{ event.title }}</h2>
+  <p>{{ event.startTime }} to {{ event.endTime }}; first detected {{ event.firstDetectionTime }}.</p>
+  <h3>Evidence</h3>
+  <table>
+    <thead><tr><th>ID</th><th>Claim</th><th>Conclusion</th></tr></thead>
+    <tbody>
+    {% for item in event.evidence %}
+      <tr><td>{{ item.evidenceId }}</td><td>{{ item.claimKind }}</td><td>{{ item.conclusion }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <h3>Impact</h3>
+  <p>{{ event.impact.metric }}: {{ event.impact.value }} {{ event.impact.unit }} ({{ event.impact.formulaVersion }})</p>
+  <h3>Likely cause</h3><p>{{ event.rootCause }}</p>
+  <h3>Safety and recommendation</h3>
+  <ul>{% for check in event.safetyChecks %}<li>{{ check.status }} — {{ check.message }}</li>{% endfor %}</ul>
+  <ul>{% for item in event.recommendations %}<li>{{ item.summary }}</li>{% endfor %}</ul>
+  {% elif kind == "quality_report" %}
+  <h2>Quality status: {{ run.quality.status }}</h2>
+  <p>Report ID: {{ run.quality.reportId }} · Generated at: {{ run.quality.generatedAt }}</p>
+  <dl>
+    <dt>Rows</dt><dd>{{ run.dataset.rowCount }}</dd>
+    <dt>Time range</dt><dd>{{ run.dataset.timeRange.startTime }} to {{ run.dataset.timeRange.endTime }}</dd>
+    <dt>Provenance mode</dt><dd>{{ run.provenance.mode }}</dd>
+    <dt>Provenance source</dt><dd>{{ run.provenance.source }}</dd>
+    <dt>Rule version</dt><dd>{{ run.provenance.ruleVersion }}</dd>
+  </dl>
+  <table>
+    <thead><tr><th>Check</th><th>Status</th><th>Severity</th><th>Message</th></tr></thead>
+    <tbody>
+    {% for check in run.quality.checks %}
+      <tr><td>{{ check.code }}</td><td>{{ check.status }}</td><td>{{ check.severity }}</td><td>{{ check.message }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if run.quality.warnings %}<h3>Warnings</h3><ul>{% for warning in run.quality.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+  {% if run.quality.blockingReasons %}<h3>Blocking reasons</h3><ul>{% for reason in run.quality.blockingReasons %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}
+  <h3>Limitations</h3><ul>{% for limitation in run.provenance.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
+  {% else %}
+  <p>Events in this deterministic summary: {{ events|length }}.</p>
+  {% if time_range %}<p>Requested time range: {{ time_range.startTime }} to {{ time_range.endTime }}.</p>{% endif %}
+  <ul>{% for item in events %}<li>{{ item.eventId }} — {{ item.title }}</li>{% endfor %}</ul>
+  {% endif %}
+  <p class="notice">{{ disclaimer }}</p>
+</body>
+</html>

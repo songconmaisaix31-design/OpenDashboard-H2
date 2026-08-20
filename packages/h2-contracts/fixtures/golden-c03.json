@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "eventId": "C03-20260105-001",
+  "code": "C03",
+  "subtype": "BESS_DIRECTION_REVERSED",
+  "title": "BESS power direction conflicts with the dispatch command",
+  "startTime": "2026-01-05T10:20:00Z",
+  "endTime": "2026-01-05T10:41:00Z",
+  "firstDetectionTime": "2026-01-05T10:24:00Z",
+  "severity": "high",
+  "confidence": 0.94,
+  "primaryControlObject": {
+    "type": "BESS_CONTROL",
+    "id": "bess-control",
+    "displayName": "BESS control interface"
+  },
+  "affectedEquipment": [
+    {
+      "kind": "BESS",
+      "id": "bess-01",
+      "displayName": "Battery energy storage system"
+    },
+    {
+      "kind": "PCC",
+      "id": "pcc-01",
+      "displayName": "Point of common coupling"
+    }
+  ],
+  "evidence": [
+    {
+      "schemaVersion": 1,
+      "evidenceId": "C03-EV-001",
+      "kind": "measurement",
+      "claimKind": "fact",
+      "timestamp": "2026-01-05T10:24:00Z",
+      "variable": "bess_dispatch_command_kw",
+      "actualValue": -240,
+      "referenceValue": "charge",
+      "unit": "kW",
+      "comparator": "=",
+      "source": "fixture-timeseries",
+      "conclusion": "The EMS command requested BESS charging.",
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "evidenceId": "C03-EV-002",
+      "kind": "measurement",
+      "claimKind": "fact",
+      "timestamp": "2026-01-05T10:24:00Z",
+      "variable": "bess_power_kw",
+      "actualValue": 230,
+      "referenceValue": "charge",
+      "unit": "kW",
+      "comparator": "!=",
+      "source": "fixture-timeseries",
+      "conclusion": "Positive BESS power indicates discharge, opposite to the charge command.",
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "evidenceId": "C03-EV-003",
+      "kind": "derived_metric",
+      "claimKind": "calculation",
+      "interval": {
+        "startTime": "2026-01-05T10:20:00Z",
+        "endTime": "2026-01-05T10:41:00Z"
+      },
+      "variable": "abnormal_grid_exchange_energy_kwh",
+      "actualValue": 112.4,
+      "referenceValue": 0,
+      "unit": "kWh",
+      "comparator": ">",
+      "source": "impact-c03-v1",
+      "conclusion": "The reversed BESS response is associated with abnormal grid exchange.",
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    }
+  ],
+  "impact": {
+    "metric": "abnormal_grid_exchange_energy_kwh",
+    "value": 112.4,
+    "unit": "kWh",
+    "formulaVersion": "impact-c03-v1",
+    "assumptions": [
+      "Minute-level samples are integrated as average power over one minute.",
+      "PCC power uses positive export and negative import convention."
+    ],
+    "evidenceIds": ["C03-EV-003"],
+    "provenance": {
+      "mode": "FIXTURE",
+      "source": "sanitized-golden-fixture",
+      "generatedAt": "2026-01-05T10:45:00Z",
+      "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+      "ruleVersion": "h2-rules-v1",
+      "configurationVersion": "official-constraints-v1",
+      "limitations": [
+        "Synthetic, sanitized C03/C04 contract fixture only.",
+        "Not an official competition dataset or score artifact."
+      ]
+    }
+  },
+  "safetyChecks": [
+    {
+      "checkId": "C03-SAFE-001",
+      "title": "BESS sign convention confirmed",
+      "status": "passed",
+      "message": "Positive BESS power is interpreted as discharge.",
+      "constraintId": "sign-convention-bess-v1",
+      "evidenceIds": ["C03-EV-001", "C03-EV-002"],
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    },
+    {
+      "checkId": "C03-SAFE-002",
+      "title": "SOC remains inside configured range",
+      "status": "passed",
+      "message": "Fixture SOC remains between 20% and 90%.",
+      "constraintId": "bess-soc-range-v1",
+      "evidenceIds": ["C03-EV-002"],
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    }
+  ],
+  "recommendations": [
+    {
+      "recommendationId": "C03-REC-001",
+      "actionKind": "check",
+      "summary": "Verify BESS command and feedback sign mapping before changing dispatch.",
+      "rationale": "The contract separates a likely interface mapping issue from a proven equipment fault.",
+      "safetyCheckIds": ["C03-SAFE-001", "C03-SAFE-002"],
+      "evidenceIds": ["C03-EV-001", "C03-EV-002"],
+      "requiresHumanConfirmation": true,
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    }
+  ],
+  "rootCause": "Likely BESS command/feedback sign mapping mismatch; this is an inference from fixture evidence, not a direct equipment-control finding.",
+  "rootCauseKind": "inference",
+  "reviewState": "open",
+  "provenance": {
+    "mode": "FIXTURE",
+    "source": "sanitized-golden-fixture",
+    "generatedAt": "2026-01-05T10:45:00Z",
+    "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+    "ruleVersion": "h2-rules-v1",
+    "configurationVersion": "official-constraints-v1",
+    "limitations": [
+      "Synthetic, sanitized C03/C04 contract fixture only.",
+      "Not an official competition dataset or score artifact."
+    ]
+  },
+  "requiresHumanConfirmation": true
+}

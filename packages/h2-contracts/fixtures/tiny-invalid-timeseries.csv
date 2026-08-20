@@ -1,0 +1,4 @@
+timestamp,pv_actual_kw,bess_power_kw,pcc_power_kw,total_electrolyzer_power_kw,auxiliary_load_kw,bess_soc_percent,pcc_export_limit_kw,pcc_import_limit_kw,bess_dispatch_command_kw
+2026-01-05T10:20:00Z,820,-180,120,500,140,55,500,450,-180
+2026-01-05T10:20:00Z,815,not-a-number,,505,135,105,500,450,-175
+2026-01-05T10:23:00Z,810,-170,130,500,140,-5,500,450,-170

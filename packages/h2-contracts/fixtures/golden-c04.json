@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "eventId": "C04-20260105-001",
+  "code": "C04",
+  "subtype": "EXPORT_POWER_LIMIT_NOT_TRACKED",
+  "title": "PCC export power exceeds the active boundary",
+  "startTime": "2026-01-05T10:32:00Z",
+  "endTime": "2026-01-05T10:39:00Z",
+  "firstDetectionTime": "2026-01-05T10:34:00Z",
+  "severity": "high",
+  "confidence": 0.91,
+  "primaryControlObject": {
+    "type": "PCC_BOUNDARY_CONTROL",
+    "id": "pcc-boundary-control",
+    "displayName": "PCC boundary controller"
+  },
+  "affectedEquipment": [
+    {
+      "kind": "PCC",
+      "id": "pcc-01",
+      "displayName": "Point of common coupling"
+    },
+    {
+      "kind": "GRID",
+      "id": "grid-connection",
+      "displayName": "Grid interconnection"
+    }
+  ],
+  "evidence": [
+    {
+      "schemaVersion": 1,
+      "evidenceId": "C04-EV-001",
+      "kind": "measurement",
+      "claimKind": "fact",
+      "timestamp": "2026-01-05T10:34:00Z",
+      "variable": "pcc_power_kw",
+      "actualValue": 720,
+      "referenceValue": 500,
+      "unit": "kW",
+      "comparator": ">",
+      "source": "fixture-timeseries",
+      "conclusion": "PCC export power exceeds the active export limit.",
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "evidenceId": "C04-EV-002",
+      "kind": "constraint",
+      "claimKind": "fact",
+      "timestamp": "2026-01-05T10:34:00Z",
+      "variable": "pcc_export_limit_kw",
+      "actualValue": 500,
+      "referenceValue": 500,
+      "unit": "kW",
+      "comparator": "=",
+      "source": "fixture-constraints",
+      "conclusion": "The configured export boundary is active for this interval.",
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "evidenceId": "C04-EV-003",
+      "kind": "derived_metric",
+      "claimKind": "calculation",
+      "interval": {
+        "startTime": "2026-01-05T10:32:00Z",
+        "endTime": "2026-01-05T10:39:00Z"
+      },
+      "variable": "pcc_power_limit_violation_energy_kwh",
+      "actualValue": 29.333333333333332,
+      "referenceValue": 0,
+      "unit": "kWh",
+      "comparator": ">",
+      "source": "impact-c04-v1",
+      "conclusion": "Export-limit violation energy is integrated over the highlighted interval.",
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    }
+  ],
+  "impact": {
+    "metric": "pcc_power_limit_violation_energy_kwh",
+    "value": 29.333333333333332,
+    "unit": "kWh",
+    "formulaVersion": "impact-c04-v1",
+    "assumptions": [
+      "Only positive export excess contributes to this fixture event.",
+      "Minute-level samples are integrated as average power over one minute."
+    ],
+    "evidenceIds": ["C04-EV-001", "C04-EV-002", "C04-EV-003"],
+    "provenance": {
+      "mode": "FIXTURE",
+      "source": "sanitized-golden-fixture",
+      "generatedAt": "2026-01-05T10:45:00Z",
+      "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+      "ruleVersion": "h2-rules-v1",
+      "configurationVersion": "official-constraints-v1",
+      "limitations": [
+        "Synthetic, sanitized C03/C04 contract fixture only.",
+        "Not an official competition dataset or score artifact."
+      ]
+    }
+  },
+  "safetyChecks": [
+    {
+      "checkId": "C04-SAFE-001",
+      "title": "PCC sign convention confirmed",
+      "status": "passed",
+      "message": "Positive PCC power is interpreted as export to the grid.",
+      "constraintId": "sign-convention-pcc-v1",
+      "evidenceIds": ["C04-EV-001"],
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    },
+    {
+      "checkId": "C04-SAFE-002",
+      "title": "Recommendation is advisory only",
+      "status": "passed",
+      "message": "The fixture produces checks, not automatic setpoint changes.",
+      "constraintId": "human-confirmation-v1",
+      "evidenceIds": ["C04-EV-001", "C04-EV-002"],
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    }
+  ],
+  "recommendations": [
+    {
+      "recommendationId": "C04-REC-001",
+      "actionKind": "check",
+      "summary": "Inspect PCC boundary synchronization and meter feedback before any dispatch change.",
+      "rationale": "The event proves a boundary-tracking violation but does not authorize automatic control.",
+      "safetyCheckIds": ["C04-SAFE-001", "C04-SAFE-002"],
+      "evidenceIds": ["C04-EV-001", "C04-EV-002"],
+      "requiresHumanConfirmation": true,
+      "provenance": {
+        "mode": "FIXTURE",
+        "source": "sanitized-golden-fixture",
+        "generatedAt": "2026-01-05T10:45:00Z",
+        "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+        "ruleVersion": "h2-rules-v1",
+        "configurationVersion": "official-constraints-v1",
+        "limitations": [
+          "Synthetic, sanitized C03/C04 contract fixture only.",
+          "Not an official competition dataset or score artifact."
+        ]
+      }
+    }
+  ],
+  "rootCause": "Likely PCC boundary synchronization or tracking issue; the fixture supports a compliance-oriented check, not a direct control action.",
+  "rootCauseKind": "inference",
+  "reviewState": "open",
+  "provenance": {
+    "mode": "FIXTURE",
+    "source": "sanitized-golden-fixture",
+    "generatedAt": "2026-01-05T10:45:00Z",
+    "datasetFingerprint": "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca",
+    "ruleVersion": "h2-rules-v1",
+    "configurationVersion": "official-constraints-v1",
+    "limitations": [
+      "Synthetic, sanitized C03/C04 contract fixture only.",
+      "Not an official competition dataset or score artifact."
+    ]
+  },
+  "requiresHumanConfirmation": true
+}

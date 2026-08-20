@@ -1,0 +1,9 @@
+{
+  "name": "@opendashboard/h2-ems",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx --test test/*.test.ts"
+  }
+}

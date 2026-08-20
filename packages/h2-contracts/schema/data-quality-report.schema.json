@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/data-quality-report.schema.json",
+  "title": "H2DataQualityReport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "reportId",
+    "datasetId",
+    "status",
+    "generatedAt",
+    "rowCount",
+    "timeRange",
+    "checks",
+    "warnings",
+    "blockingReasons",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "reportId": { "type": "string", "minLength": 1 },
+    "datasetId": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["passed", "warning", "blocked"] },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "rowCount": { "type": "integer", "minimum": 0 },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startTime", "endTime"],
+      "properties": {
+        "startTime": { "type": "string", "minLength": 1 },
+        "endTime": { "type": "string", "minLength": 1 }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "checkId",
+          "code",
+          "status",
+          "severity",
+          "affectedFields",
+          "message",
+          "evidenceIds",
+          "provenance"
+        ],
+        "properties": {
+          "checkId": { "type": "string", "minLength": 1 },
+          "code": {
+            "enum": [
+              "field_mapping",
+              "missing_values",
+              "duplicate_timestamps",
+              "irregular_sampling",
+              "invalid_range",
+              "timestamp_order",
+              "power_balance_residual",
+              "row_count"
+            ]
+          },
+          "status": { "enum": ["passed", "warning", "blocked"] },
+          "severity": { "enum": ["info", "warning", "blocking"] },
+          "affectedFields": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "message": { "type": "string", "minLength": 1 },
+          "evidenceIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "observedValue": { "type": ["number", "string"] },
+          "threshold": { "type": ["number", "string"] },
+          "unit": { "type": "string" },
+          "provenance": { "type": "object" }
+        }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blockingReasons": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "provenance": { "type": "object" }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/assistant-answer.schema.json",
+  "title": "H2AssistantAnswer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "answerId",
+    "runId",
+    "questionId",
+    "mode",
+    "generatedAt",
+    "sections",
+    "citations",
+    "refusedControlClaim",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "answerId": { "type": "string", "minLength": 1 },
+    "runId": { "type": "string", "minLength": 1 },
+    "questionId": {
+      "enum": [
+        "H2Q01",
+        "H2Q02",
+        "H2Q03",
+        "H2Q04",
+        "H2Q05",
+        "H2Q06",
+        "H2Q07",
+        "H2Q08",
+        "H2Q09",
+        "H2Q10"
+      ]
+    },
+    "mode": { "enum": ["DETERMINISTIC_TEMPLATE", "LLM_RENDERED"] },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "eventId": { "type": "string" },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sectionId", "claimKind", "text", "citationIds"],
+        "properties": {
+          "sectionId": { "type": "string", "minLength": 1 },
+          "claimKind": {
+            "enum": ["fact", "calculation", "inference", "recommendation"]
+          },
+          "text": { "type": "string", "minLength": 1 },
+          "citationIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "citations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "citationId",
+          "claimKind",
+          "sourceType",
+          "sourceId"
+        ],
+        "properties": {
+          "citationId": { "type": "string", "minLength": 1 },
+          "claimKind": {
+            "enum": ["fact", "calculation", "inference", "recommendation"]
+          },
+          "sourceType": {
+            "enum": [
+              "event",
+              "evidence",
+              "constraint",
+              "variable",
+              "knowledge_base",
+              "report"
+            ]
+          },
+          "sourceId": { "type": "string", "minLength": 1 },
+          "eventId": { "type": "string" }
+        }
+      }
+    },
+    "refusedControlClaim": { "type": "boolean" },
+    "provenance": { "type": "object" }
+  }
+}
