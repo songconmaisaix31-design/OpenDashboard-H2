@@ -40,6 +40,7 @@ export function OverviewPage({ onNavigate, workspace }: OverviewPageProps) {
         }
         description="把跨设备协同异常压缩成可核验的证据、影响与安全检查，让运行人员先理解，再决定。"
         eyebrow="Evidence-first operations"
+        icon="overview"
         title="弱电网绿氢系统，异常一眼可查"
       />
 

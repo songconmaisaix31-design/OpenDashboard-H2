@@ -39,7 +39,7 @@ export function AssistantPage({ answer, error, event, onAsk, pending }: Assistan
 
   return (
     <div className="h2-page h2-assistant-page">
-      <PageHeader description="先引用结构化事件、变量和约束，再生成可读解释；外部 LLM 不是黄金路径依赖。" eyebrow="Deterministic operations assistant" title="运行助手" />
+      <PageHeader description="先引用结构化事件、变量和约束，再生成可读解释；外部 LLM 不是黄金路径依赖。" eyebrow="Deterministic operations assistant" icon="assistant" title="运行助手" />
 
       <div className="h2-assistant-layout">
         <section aria-label="官方问题" className="h2-panel h2-question-list">

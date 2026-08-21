@@ -30,7 +30,7 @@ export function DiagnosisPage({ event, events, onNavigate, series, seriesError }
   if (!event) {
     return (
       <div className="h2-page">
-        <PageHeader description="指定事件不存在或当前数据源未返回该事件。" eyebrow="Safe unknown state" title="无法打开诊断详情" />
+        <PageHeader description="指定事件不存在或当前数据源未返回该事件。" eyebrow="Safe unknown state" icon="diagnosis" title="无法打开诊断详情" />
         <section className="h2-panel h2-empty-panel" role="status">
           <strong>没有可核验的事件数据</strong>
           <p>系统不会用其他事件或推测内容替代。请返回事件中心重新选择。</p>
@@ -64,6 +64,7 @@ export function DiagnosisPage({ event, events, onNavigate, series, seriesError }
         }
         description={event.title}
         eyebrow={`${event.code} · ${event.subtype}`}
+        icon="diagnosis"
         title={H2_CODE_LABELS[event.code]}
       />
 

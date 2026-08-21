@@ -53,6 +53,16 @@ mounts the feature behind an existing router.
 - Unknown safety is distinct from passed safety.
 - Assistant and report actions call only their injected data-source methods.
 
+## Hugo Stack presentation refactor
+
+The competition feature keeps its React/TypeScript runtime and injected data
+contracts. A separate `styles/hugo-stack-refactor.css` layer, plus feature-local
+`H2Shell`, `PageHeader`, `StackWidget`, and inline SVG icon components, ports the
+profile sidebar, article cover, card stack, and context-widget composition used
+by the personal Hugo homepage. No Hugo runtime, new dependency, analytics logic,
+or direct request path is introduced. See the repository-level
+`REFACTOR_NOTES.md` and `design-preview.html` in the delivered archive.
+
 ## ECharts reuse decision
 
 - Need: synchronized time-series, constraint lines, event bands, tooltips, and

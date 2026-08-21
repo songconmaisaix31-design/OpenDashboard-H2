@@ -32,7 +32,7 @@ export function AnalysisPage({ importError, importNotice, importPending, onImpor
 
   return (
     <div className="h2-page h2-analysis-page">
-      <PageHeader description="质量检查先于异常分析；没有标签时不展示伪造的评估指标。" eyebrow="Data quality & model evidence" title="数据分析" />
+      <PageHeader description="质量检查先于异常分析；没有标签时不展示伪造的评估指标。" eyebrow="Data quality & model evidence" icon="analysis" title="数据分析" />
 
       <section className="h2-panel h2-dataset-card">
         <div>

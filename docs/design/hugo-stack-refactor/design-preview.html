@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>H2 Sentinel · Hugo Stack Refactor Preview</title>
+  <link rel="stylesheet" href="./frontend/features/h2-sentinel/styles/h2-sentinel.css" />
+  <link rel="stylesheet" href="./frontend/features/h2-sentinel/styles/hugo-stack-refactor.css" />
+  <style>
+    html,body{margin:0;min-height:100%;background:#171315}
+    .preview-icon{font-size:1rem;font-weight:900}
+    .preview-chart{position:relative;height:18rem;overflow:hidden;border-radius:.8rem;background:linear-gradient(180deg,rgba(255,255,255,.015),transparent),repeating-linear-gradient(0deg,transparent 0 42px,rgba(255,238,233,.06) 43px),repeating-linear-gradient(90deg,transparent 0 82px,rgba(255,238,233,.045) 83px)}
+    .preview-chart svg{position:absolute;inset:0;width:100%;height:100%}
+    .preview-chart .legend{position:absolute;top:.7rem;left:.9rem;display:flex;gap:1rem;color:#c8bdc0;font-size:.65rem}
+  </style>
+</head>
+<body>
+<div class="h2-app" id="preview-app">
+  <button aria-label="关闭导航" class="h2-sidebar-backdrop" id="preview-backdrop" type="button"></button>
+  <aside class="h2-sidebar">
+    <div class="h2-profile-card">
+      <button aria-label="关闭导航" class="h2-sidebar__close" id="preview-close" type="button">×</button>
+      <div class="h2-profile-card__cover"><span></span><span></span><span></span></div>
+      <div class="h2-profile-card__avatar">H<sub>2</sub></div>
+      <div class="h2-profile-card__body">
+        <p>Evidence-first EMS copilot</p>
+        <strong>氢哨 · H2 Sentinel</strong>
+        <span>弱并网绿电制氢异常诊断与运行辅助</span>
+        <div class="h2-profile-card__tags"><span>只读</span><span>离线</span><span>可追溯</span></div>
+      </div>
+    </div>
+    <nav class="h2-nav">
+      <p class="h2-nav__title">Navigation</p>
+      <a class="h2-nav__item is-active" href="#"><span class="h2-nav__icon preview-icon">▦</span><span class="h2-nav__copy"><strong>系统总览</strong><small>关键指标与黄金路径</small></span><span>›</span></a>
+      <a class="h2-nav__item" href="#"><span class="h2-nav__icon preview-icon">!</span><span class="h2-nav__copy"><strong>异常事件</strong><small>筛选与定位事件</small></span><span>›</span></a>
+      <a class="h2-nav__item" href="#"><span class="h2-nav__icon preview-icon">◎</span><span class="h2-nav__copy"><strong>诊断详情</strong><small>证据、影响与安全</small></span><span>›</span></a>
+      <a class="h2-nav__item" href="#"><span class="h2-nav__icon preview-icon">▥</span><span class="h2-nav__copy"><strong>数据分析</strong><small>质量门禁与趋势</small></span><span>›</span></a>
+      <a class="h2-nav__item" href="#"><span class="h2-nav__icon preview-icon">◇</span><span class="h2-nav__copy"><strong>运行助手</strong><small>确定性问答解释</small></span><span>›</span></a>
+      <a class="h2-nav__item" href="#"><span class="h2-nav__icon preview-icon">↗</span><span class="h2-nav__copy"><strong>报告中心</strong><small>结构化结果导出</small></span><span>›</span></a>
+    </nav>
+    <div class="h2-sidebar__boundary"><div><span>✓</span><strong>控制边界</strong></div><p>不执行设备控制，不自动改变调度；所有建议均需人工确认。</p><span class="h2-badge h2-badge--planned">只读决策支持</span></div>
+  </aside>
+  <div class="h2-stage">
+    <header class="h2-topbar"><div class="h2-topbar__leading"><button aria-label="打开导航" class="h2-mobile-menu" id="preview-menu" type="button">☰</button><span class="h2-topbar__page-icon">▦</span><div><span class="h2-topbar__station">系统总览</span><span class="h2-topbar__run">关键指标与黄金路径</span></div></div><div class="h2-topbar__status"><span class="h2-badge h2-badge--fixture">◇ 固定样例</span><span>更新 2026/01/05 12:40</span></div></header>
+    <main class="h2-main">
+      <div class="h2-shell-grid">
+        <div class="h2-content-column">
+          <aside class="h2-provenance"><div class="h2-provenance__lead"><span class="h2-provenance__icon">▱</span><div><div class="h2-provenance__title-row"><strong>来源与可追溯性</strong><span class="h2-badge h2-badge--fixture">◇ 固定样例</span></div><p>使用可重复的演示数据，所有结果可回溯到冻结契约。</p></div></div><dl><div><dt>来源</dt><dd>sanitized fixture</dd></div><div><dt>类型</dt><dd>固定样例</dd></div><div><dt>规则</dt><dd>h2-rules-v1</dd></div></dl></aside>
+          <div class="h2-page h2-overview-page">
+            <header class="h2-page-header"><span class="h2-page-header__icon">▦</span><div class="h2-page-header__copy"><p class="h2-eyebrow">Evidence-first operations</p><h1>弱电网绿氢系统，异常一眼可查</h1><p>把跨设备协同异常压缩成可核验的证据、影响与安全检查，让运行人员先理解，再决定。</p></div><div class="h2-page-header__actions"><button class="h2-button h2-button--primary">查看异常事件</button></div><span class="h2-page-header__ornament"></span></header>
+            <section class="h2-metric-grid">
+              <article class="h2-metric h2-metric--warning"><span>异常事件</span><strong>12</strong><p>当前运行聚合事件</p></article>
+              <article class="h2-metric h2-metric--warning"><span>高风险事件</span><strong>2</strong><p>需优先人工复核</p></article>
+              <article class="h2-metric h2-metric--positive"><span>质量门禁</span><strong>通过</strong><p>69 个字段可用</p></article>
+              <article class="h2-metric"><span>安全建议</span><strong>8</strong><p>全部要求人工确认</p></article>
+            </section>
+            <section class="h2-golden-path"><div class="h2-panel__heading"><div><p class="h2-eyebrow">Golden cases</p><h2>黄金诊断路径</h2></div><span>两次以内直达详情</span></div><div class="h2-golden-grid"><article class="h2-golden-card"><div><span class="h2-code">C03</span><span class="h2-badge h2-badge--warning">样例就绪</span></div><h3>BESS 充放电方向异常</h3><p>对齐调度指令、储能实际方向与并网点响应。</p><dl><div><dt>置信度</dt><dd>96.4%</dd></div><div><dt>影响</dt><dd>21.6 kWh</dd></div></dl><button class="h2-button h2-button--secondary">打开 C03 诊断</button></article><article class="h2-golden-card h2-golden-card--c04"><div><span class="h2-code h2-code--c04">C04</span><span class="h2-badge h2-badge--warning">样例就绪</span></div><h3>PCC 功率边界跟踪异常</h3><p>对齐并网点实际功率、动态边界与超限区间。</p><dl><div><dt>置信度</dt><dd>94.8%</dd></div><div><dt>影响</dt><dd>29.3 kWh</dd></div></dl><button class="h2-button h2-button--secondary">打开 C04 诊断</button></article></div></section>
+            <div class="h2-dashboard-grid">
+              <section class="h2-panel h2-chart-panel h2-dashboard-grid__wide"><div class="h2-panel__heading"><div><p class="h2-eyebrow">PCC boundary</p><h2>并网点功率与动态边界</h2></div><strong>1,842 kW</strong></div><div class="preview-chart"><div class="legend"><span>● 并网点实际功率</span><span>— 送出边界</span><span>— 受电边界</span></div><svg viewBox="0 0 800 280" preserveAspectRatio="none"><path d="M0 190 C90 180,110 120,190 145 S310 210,390 150 S520 70,610 115 S720 175,800 100" fill="none" stroke="#70c2ac" stroke-width="3"/><path d="M0 70 L800 70" fill="none" stroke="#d5a162" stroke-width="2" stroke-dasharray="8 7"/><path d="M0 235 L800 235" fill="none" stroke="#7eb8c5" stroke-width="2" stroke-dasharray="8 7"/></svg></div></section>
+              <section class="h2-panel h2-chart-panel"><div class="h2-panel__heading"><div><p class="h2-eyebrow">BESS state</p><h2>储能 SOC 轨迹</h2></div><strong>62.4%</strong></div><div class="preview-chart"><svg viewBox="0 0 500 280" preserveAspectRatio="none"><path d="M0 80 C70 95,110 125,160 118 S270 155,330 145 S420 180,500 170" fill="none" stroke="#a78ac1" stroke-width="3"/></svg></div></section>
+              <section class="h2-panel h2-latest-events"><div class="h2-panel__heading"><div><p class="h2-eyebrow">Latest events</p><h2>重要事件</h2></div><button class="h2-text-button">全部事件 →</button></div><div class="h2-latest-events__list"><button class="h2-event-row"><span class="h2-code">C03</span><span><strong>BESS 充放电方向异常</strong><small>01/05 10:12 · 待确认</small></span><span class="h2-badge h2-badge--warning">高风险</span></button><button class="h2-event-row"><span class="h2-code h2-code--c04">C04</span><span><strong>PCC 功率边界跟踪异常</strong><small>01/05 11:30 · 已确认</small></span><span class="h2-badge h2-badge--warning">中风险</span></button></div></section>
+            </div>
+          </div>
+        </div>
+        <aside class="h2-widget-rail"><section class="h2-stack-widget h2-stack-widget--accent"><header class="h2-stack-widget__header"><span class="h2-stack-widget__icon">⌁</span><div><p>Live context</p><h2>当前运行</h2></div></header><div class="h2-stack-widget__body"><div class="h2-stack-widget__row"><span>运行 ID</span><strong><code>run-h2-001</code></strong></div><div class="h2-stack-widget__row"><span>状态</span><strong>completed</strong></div><div class="h2-stack-widget__row"><span>更新时间</span><strong>01/05 12:40</strong></div></div></section><section class="h2-stack-widget"><header class="h2-stack-widget__header"><span class="h2-stack-widget__icon">▱</span><div><p>Dataset</p><h2>数据集摘要</h2></div></header><div class="h2-stack-widget__body"><div class="h2-stack-widget__row"><span>名称</span><strong>IGNITE Fixture</strong></div><div class="h2-stack-widget__row"><span>记录数</span><strong>828K</strong></div><div class="h2-stack-widget__row"><span>字段</span><strong>69 个</strong></div><div class="h2-stack-widget__row"><span>采样</span><strong>1 分钟</strong></div></div></section><section class="h2-stack-widget h2-stack-widget--safe"><header class="h2-stack-widget__header"><span class="h2-stack-widget__icon">✓</span><div><p>Human in the loop</p><h2>安全边界</h2></div></header><div class="h2-stack-widget__body"><p class="h2-widget-copy">诊断结果用于运行辅助，不替代 EMS，也不直接控制电解槽、储能或 PCC。</p><div class="h2-widget-checks"><span>✓ 来源可见</span><span>✓ 事实与推断分离</span><span>✓ 必须人工确认</span></div></div><footer class="h2-stack-widget__footer">建议不会自动下发到设备</footer></section></aside>
+      </div>
+    </main>
+  </div>
+</div>
+<script>
+  const app = document.getElementById('preview-app')
+  const openMenu = () => app.classList.add('is-menu-open')
+  const closeMenu = () => app.classList.remove('is-menu-open')
+  document.getElementById('preview-menu').addEventListener('click', openMenu)
+  document.getElementById('preview-close').addEventListener('click', closeMenu)
+  document.getElementById('preview-backdrop').addEventListener('click', closeMenu)
+</script>
+</body>
+</html>

@@ -27,6 +27,7 @@ import {
 } from './routes.ts'
 import type { ReportDefinition } from './pages/reports/ReportsPage.tsx'
 import './styles/h2-sentinel.css'
+import './styles/hugo-stack-refactor.css'
 
 export interface H2SentinelAppProps {
   /** H6 resolves the statically reviewed H2 plugin service and injects it here. */

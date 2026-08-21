@@ -46,6 +46,7 @@ export function EventsPage({ onNavigate, workspace }: EventsPageProps) {
       <PageHeader
         description="按异常类型、风险、设备、置信度和复核状态定位事件；筛选只改变视图，不修改分析结果。"
         eyebrow="Anomaly event center"
+        icon="events"
         title="异常事件中心"
       />
 

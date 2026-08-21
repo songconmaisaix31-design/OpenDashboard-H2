@@ -7,7 +7,7 @@ import type {
 } from '@opendashboard/h2-contracts'
 import { formatH2Timestamp } from './presentation.ts'
 
-const COLORS = ['#49d6bd', '#ffb45d', '#8ea9ff', '#f3778f', '#b393ff'] as const
+const COLORS = ['#70c2ac', '#d5a162', '#7eb8c5', '#d86f7b', '#a78ac1'] as const
 
 interface SeriesDefinition {
   readonly variable: string
@@ -136,14 +136,14 @@ function createLineOption(
     legend: {
       top: 4,
       left: 0,
-      textStyle: { color: '#a9b7c8', fontSize: 11 },
+      textStyle: { color: '#c8bdc0', fontSize: 11 },
     },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'cross', label: { backgroundColor: '#152333' } },
-      backgroundColor: 'rgba(7, 16, 26, 0.96)',
-      borderColor: '#2d4258',
-      textStyle: { color: '#ecf4f6' },
+      axisPointer: { type: 'cross', label: { backgroundColor: '#3a2f33' } },
+      backgroundColor: 'rgba(23, 19, 21, 0.96)',
+      borderColor: '#4a3c41',
+      textStyle: { color: '#f8f2f0' },
     },
     dataZoom: [
       { type: 'inside', filterMode: 'none' },
@@ -151,10 +151,10 @@ function createLineOption(
         type: 'slider',
         height: 16,
         bottom: 4,
-        borderColor: '#26384b',
-        fillerColor: 'rgba(73, 214, 189, 0.12)',
-        handleStyle: { color: '#49d6bd' },
-        textStyle: { color: '#77899c' },
+        borderColor: '#45373c',
+        fillerColor: 'rgba(200, 111, 120, 0.14)',
+        handleStyle: { color: '#c86f78' },
+        textStyle: { color: '#9d9195' },
       },
     ],
     xAxis: {
@@ -162,17 +162,17 @@ function createLineOption(
       boundaryGap: false,
       data: timestamps,
       axisLabel: {
-        color: '#7f91a4',
+        color: '#9d9195',
         formatter: (value: string) => formatH2Timestamp(value),
       },
-      axisLine: { lineStyle: { color: '#304458' } },
+      axisLine: { lineStyle: { color: '#4a3c41' } },
     },
     yAxis: {
       type: 'value',
       name: unit,
-      nameTextStyle: { color: '#7f91a4' },
-      axisLabel: { color: '#7f91a4' },
-      splitLine: { lineStyle: { color: 'rgba(126, 148, 170, 0.14)' } },
+      nameTextStyle: { color: '#9d9195' },
+      axisLabel: { color: '#9d9195' },
+      splitLine: { lineStyle: { color: 'rgba(255, 238, 233, 0.08)' } },
     },
     series: definitions.map((definition, index) => ({
       name: definition.label,
@@ -191,8 +191,8 @@ function createLineOption(
         index === 0 && eventBand
           ? {
               silent: true,
-              itemStyle: { color: 'rgba(243, 119, 143, 0.11)' },
-              label: { color: '#f6a1b2', formatter: eventBand.label },
+              itemStyle: { color: 'rgba(200, 111, 120, 0.13)' },
+              label: { color: '#e7a4aa', formatter: eventBand.label },
               data: [[{ xAxis: eventBand.startTime }, { xAxis: eventBand.endTime }]],
             }
           : undefined,

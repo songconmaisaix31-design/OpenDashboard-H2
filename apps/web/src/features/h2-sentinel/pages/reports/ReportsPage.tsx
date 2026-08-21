@@ -34,7 +34,7 @@ export interface ReportsPageProps {
 export function ReportsPage({ artifact, error, event, notice, onDownload, onExport, pending }: ReportsPageProps) {
   return (
     <div className="h2-page h2-reports-page">
-      <PageHeader description="导出可审计的人类可读报告与机器可读结果；不包含密钥或绝对本地路径。" eyebrow="Deterministic exports" title="报告中心" />
+      <PageHeader description="导出可审计的人类可读报告与机器可读结果；不包含密钥或绝对本地路径。" eyebrow="Deterministic exports" icon="reports" title="报告中心" />
 
       <section aria-label="可用导出" className="h2-report-grid">
         {reports.map((report) => (
