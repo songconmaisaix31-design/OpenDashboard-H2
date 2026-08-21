@@ -1,13 +1,5 @@
 {
   "framework": "vite",
   "buildCommand": "npm run build",
-  "outputDirectory": "apps/web/dist",
-  "redirects": [
-    {
-      "source": "/",
-      "missing": [{ "type": "query", "key": "mode" }],
-      "destination": "/?mode=fixture",
-      "permanent": false
-    }
-  ]
+  "outputDirectory": "apps/web/dist"
 }

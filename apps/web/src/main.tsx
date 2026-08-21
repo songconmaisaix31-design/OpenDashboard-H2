@@ -32,8 +32,12 @@ const readH2Mode = (location: Location): H2Mode => {
   const parameters = new URLSearchParams(location.search)
   const modes = parameters.getAll('mode')
   const hasUnknownParameter = [...parameters.keys()].some((key) => key !== 'mode')
-  if (hasUnknownParameter || modes.length !== 1) {
+  if (hasUnknownParameter || modes.length > 1) {
     throw new Error('Invalid H2 Sentinel entry configuration.')
+  }
+
+  if (modes.length === 0) {
+    return 'fixture'
   }
 
   const mode = modes[0]
