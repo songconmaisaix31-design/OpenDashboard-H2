@@ -5,6 +5,7 @@
   "redirects": [
     {
       "source": "/",
+      "missing": [{ "type": "query", "key": "mode" }],
       "destination": "/?mode=fixture",
       "permanent": false
     }
