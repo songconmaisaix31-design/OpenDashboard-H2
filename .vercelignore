@@ -1,0 +1,7 @@
+node_modules
+apps/web/dist
+h2-plugin-composition
+h2-docs-declaration
+.codegraph
+.git
+*.log
