@@ -5,6 +5,7 @@ import type { H2DatasetManifest } from './dataset.ts'
 import type { H2Provenance } from './provenance.ts'
 import type { H2DataQualityReport } from './quality.ts'
 import type { H2ReportDescriptor } from './report.ts'
+import type { H2EventReview } from './review.ts'
 
 const fixtureGeneratedAt = '2026-01-05T10:45:00Z'
 
@@ -430,21 +431,41 @@ export const H2_FIXTURE_ANALYSIS_RUN = {
   provenance: H2_FIXTURE_PROVENANCE,
 } as const satisfies H2AnalysisRun
 
+export const H2_FIXTURE_EVENT_REVIEW = {
+  schemaVersion: 1,
+  reviewId:
+    'review-run-fixture-h2-sentinel-golden-C03-20260105-001',
+  runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+  eventId: H2_GOLDEN_C03_EVENT.eventId,
+  initialState: 'open',
+  currentState: 'open',
+  revision: 0,
+  entries: [],
+  provenance: H2_FIXTURE_PROVENANCE,
+} as const satisfies H2EventReview
+
 export const H2_FIXTURE_ASSISTANT_ANSWER = {
   schemaVersion: 1,
-  answerId: 'answer-H2Q03-C03-20260105-001',
+  answerId: 'answer-Q03-C03-20260105-001',
   runId: H2_FIXTURE_ANALYSIS_RUN.runId,
-  questionId: 'H2Q03',
+  questionId: 'Q03',
   mode: 'DETERMINISTIC_TEMPLATE',
   generatedAt: fixtureGeneratedAt,
   eventId: H2_GOLDEN_C03_EVENT.eventId,
   sections: [
     {
-      sectionId: 'summary',
+      sectionId: 'observed_direction',
+      claimKind: 'fact',
+      text:
+        '所选 C03 事件显示储能调度指令与实际功率方向相反，事件时间范围和测量证据均来自当前固定样例。',
+      citationIds: ['citation-C03-EV-001'],
+    },
+    {
+      sectionId: 'bounded_impact',
       claimKind: 'calculation',
       text:
-        'The fixture links the reversed BESS response to abnormal PCC exchange through structured evidence and the C03 impact formula.',
-      citationIds: ['citation-C03-EV-001', 'citation-C03-EV-003'],
+        '异常并网交换电量按事件证据中的 impact-c03-v1 公式计算；该关联不等同于已经证明设备因果故障。',
+      citationIds: ['citation-C03-EV-003'],
     },
   ],
   citations: [
@@ -481,6 +502,6 @@ export const H2_FIXTURE_REPORT_DESCRIPTOR = {
   eventId: H2_GOLDEN_C03_EVENT.eventId,
   warnings: [],
   safetyDisclaimer:
-    'H2 Sentinel recommendations are advisory and require human confirmation.',
+    '本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。',
   provenance: H2_FIXTURE_PROVENANCE,
 } as const satisfies H2ReportDescriptor

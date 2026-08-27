@@ -16,6 +16,7 @@ from h2_analytics.api.models import (
     EventListRequest,
     EventRequest,
     ReportRequest,
+    ReviewEventRequest,
     RunIdRequest,
     SeriesRequest,
 )
@@ -35,6 +36,32 @@ from h2_analytics.settings import (
 )
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+_JSON_REQUEST_LIMIT_BYTES = 65_536
+_ERROR_STATUS = {
+    "assistant.event_required": 400,
+    "assistant.event_mismatch": 409,
+    "assistant.evidence_unavailable": 409,
+    "assistant.question_unknown": 422,
+    "quality.blocked": 409,
+    "report.evidence_unavailable": 409,
+    "report.invalid_scope": 422,
+    "report.metrics_unavailable": 409,
+    "report.render_failed": 500,
+    "request.invalid": 422,
+    "review.conflict": 409,
+    "review.idempotency_conflict": 409,
+    "review.invalid_transition": 409,
+    "review.note_required": 422,
+}
+_ERROR_MESSAGE_ZH = {
+    "dataset.not_found": "未找到指定数据集。",
+    "event.not_found": "当前运行中不存在指定事件。",
+    "quality.blocked": "数据质量检查未通过，分析未执行。",
+    "run.not_found": "未找到指定的分析运行。",
+    "series.invalid_range": "时序开始时间不得晚于结束时间。",
+    "series.invalid_variable": "时序请求只能包含已知数值变量。",
+    "time.invalid": "时间必须是包含时区的 ISO-8601 值。",
+}
 
 
 def create_app(service: AnalyticsService | None = None) -> FastAPI:
@@ -55,7 +82,7 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
                 status_code=400,
                 content=error_envelope(
                     code="boundary.invalid_host",
-                    message="The analytics API accepts loopback Host values only.",
+                    message="分析 API 仅接受本机回环 Host。",
                 ),
             )
         origin = request.headers.get("origin")
@@ -69,7 +96,7 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
                     status_code=403,
                     content=error_envelope(
                         code="boundary.invalid_origin",
-                        message="The analytics API accepts loopback browser origins only.",
+                        message="分析 API 仅接受本机回环浏览器来源。",
                     ),
                 )
         content_length = request.headers.get("content-length")
@@ -78,12 +105,17 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
                 declared_length = int(content_length)
             except ValueError:
                 declared_length = -1
-            if declared_length < 0 or declared_length > MAX_CSV_BYTES + 65_536:
+            request_limit = (
+                MAX_CSV_BYTES + _JSON_REQUEST_LIMIT_BYTES
+                if request.url.path == f"{API_NAMESPACE}/datasets:import"
+                else _JSON_REQUEST_LIMIT_BYTES
+            )
+            if declared_length < 0 or declared_length > request_limit:
                 return JSONResponse(
                     status_code=413,
                     content=error_envelope(
                         code="request.too_large",
-                        message="Request exceeds the bounded in-memory API limit.",
+                        message="请求超过本地内存处理上限。",
                     ),
                 )
         return await call_next(request)
@@ -94,27 +126,23 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
             status_code=400,
             content=error_envelope(
                 code=error.code,
-                message=error.message,
-                details=error.details,
+                message="CSV 导入失败，请检查文件名、格式、字段和大小。",
             ),
         )
 
     @application.exception_handler(AnalyticsError)
     async def analytics_error(_request: Request, error: AnalyticsError) -> JSONResponse:
-        status_code = (
-            404
-            if error.code.endswith(".not_found")
-            else 409
-            if error.code == "quality.blocked"
-            else 400
+        status_code = _ERROR_STATUS.get(
+            error.code,
+            404 if error.code.endswith(".not_found") else 400,
         )
         return JSONResponse(
             status_code=status_code,
             content=error_envelope(
                 code=error.code,
-                message=error.message,
+                message=_ERROR_MESSAGE_ZH.get(error.code, error.message),
                 retryable=error.retryable,
-                details=error.details,
+                details=() if error.code in _ERROR_MESSAGE_ZH else error.details,
             ),
         )
 
@@ -132,7 +160,7 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
             status_code=422,
             content=error_envelope(
                 code="request.invalid",
-                message="Request validation failed.",
+                message="请求字段校验失败。",
                 details=tuple(f"Invalid field: {field}" for field in fields),
             ),
         )
@@ -143,7 +171,7 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
             status_code=500,
             content=error_envelope(
                 code="internal.error",
-                message="The analytics request failed; internal details were redacted.",
+                message="分析请求失败，内部细节已隐藏。",
             ),
         )
 
@@ -183,17 +211,21 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
         result = analytics.import_csv(filename=request.filename, text=request.text)
         quality = result["quality"]
         warning_messages = [*quality["warnings"], *quality["blockingReasons"]]
-        warnings = [
+        warnings: list[dict[str, Any]] = [
             {
                 "code": (
                     "quality.blocked"
                     if quality["status"] == "blocked"
                     else "quality.warning"
                 ),
-                "message": message,
+                "message": (
+                    "数据质量检查未通过，请查看质量报告。"
+                    if quality["status"] == "blocked"
+                    else "数据质量检查存在提示，请查看质量报告。"
+                ),
                 "evidenceIds": [],
             }
-            for message in warning_messages
+            for _message in warning_messages
         ]
         return success_envelope(
             result,
@@ -247,6 +279,36 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
     def get_event(request: EventRequest) -> dict[str, Any]:
         event = analytics.get_event(request.run_id, request.event_id)
         return success_envelope(event, provenance=event["provenance"])
+
+    @application.get(
+        f"{API_NAMESPACE}/runs/{{runId}}/events/{{eventId}}/review",
+        operation_id="getEventReview",
+    )
+    def get_event_review(runId: str, eventId: str) -> dict[str, Any]:
+        review = analytics.get_event_review(runId, eventId)
+        return success_envelope(review, provenance=review["provenance"])
+
+    @application.post(
+        f"{API_NAMESPACE}/runs/{{runId}}/events/{{eventId}}:review",
+        operation_id="reviewEvent",
+    )
+    def review_event(
+        runId: str,
+        eventId: str,
+        request: ReviewEventRequest,
+    ) -> dict[str, Any]:
+        if request.run_id != runId or request.event_id != eventId:
+            raise AnalyticsError(
+                "request.invalid",
+                "路径中的运行或事件 ID 与请求体不一致。",
+            )
+        receipt = analytics.review_event(
+            request.model_dump(by_alias=True, exclude_none=True)
+        )
+        return success_envelope(
+            receipt,
+            provenance=receipt["review"]["provenance"],
+        )
 
     @application.post(f"{API_NAMESPACE}/runs/series", operation_id="getSeries")
     def get_series(request: SeriesRequest) -> dict[str, Any]:

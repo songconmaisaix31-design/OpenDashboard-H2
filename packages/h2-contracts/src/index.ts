@@ -74,6 +74,7 @@ export {
   H2_FIXTURE_ANALYSIS_RUN,
   H2_FIXTURE_ASSISTANT_ANSWER,
   H2_FIXTURE_DATASET,
+  H2_FIXTURE_EVENT_REVIEW,
   H2_FIXTURE_PROVENANCE,
   H2_FIXTURE_QUALITY_REPORT,
   H2_FIXTURE_REPORT_DESCRIPTOR,
@@ -102,6 +103,18 @@ export type {
   H2ReportMediaType,
   H2ReportStatus,
 } from './report.ts'
+export type {
+  H2EventReview,
+  H2LocalReviewActor,
+  H2ReviewAction,
+  H2ReviewAuditEvent,
+  H2ReviewAuditEventSnapshot,
+  H2ReviewAuditExport,
+  H2ReviewEntry,
+  H2ReviewEventRequest,
+  H2ReviewMutationReceipt,
+} from './review.ts'
+export { H2_REVIEW_ACTIONS, nextH2ReviewState } from './review.ts'
 export type {
   H2SubmissionColumn,
   H2SubmissionRow,

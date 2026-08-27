@@ -16,8 +16,12 @@ dependencies.
   recommendations, and review state: `H2AnomalyEvent`
 - Provenance vocabulary: `FIXTURE`, `LIVE_ANALYSIS`, `DERIVED`, `MODEL`,
   `RULE`, and `LLM_RENDERED`
-- Assistant question and answer contracts for the ten official questions
-- Report descriptors for HTML, JSON, CSV, validation, and quality artifacts
+- Assistant request and answer contracts for the official `Q01`-`Q10`
+  questions, including the `Q09` generated-report invariant
+- Append-only local event-review requests, entries, projections, receipts, and
+  audit-export contracts with optimistic concurrency and idempotency
+- Report descriptors and request-scope schemas for HTML, JSON, CSV,
+  validation, PCC daily compliance, quality, and review-audit artifacts
 - Exact `submission.csv` row type, column order, row mapping, and serializer
 - `H2SentinelDataSource`, the only Web-facing data source interface
 - API envelopes for success, warning, and redacted-error responses
@@ -32,6 +36,8 @@ dependencies.
 - `confidence` is normalized to `0..1`.
 - Every operational recommendation is advisory and carries
   `requiresHumanConfirmation: true`.
+- Human review changes only the projected `reviewState`; it does not change
+  detector evidence, impact, provenance, or submission mapping.
 - Fixture provenance is explicit and must not be represented as live analysis.
 - Fixture CSV files are checked out with LF endings so byte-level dataset
   fingerprints remain stable when Git uses `core.autocrlf=true` on Windows.
@@ -62,6 +68,9 @@ representations are corrected together and covered by a focused regression test.
 - Report exports return a serializable artifact containing descriptor, media
   type, and string content. Period summaries may provide a canonical time
   range; exports never expose a local path or URL.
+- Review consumers rehydrate history with `getEventReview(runId, eventId)` and
+  mutate it with `reviewEvent(request)`. `requestId` replay is exactly-once and
+  `expectedRevision` prevents lost updates.
 
 ## Focused Verification
 

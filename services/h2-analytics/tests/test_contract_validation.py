@@ -42,7 +42,7 @@ def test_pipeline_outputs_validate_against_frozen_contract_schemas(
 
     answer = service.ask(
         run_id=run["runId"],
-        question_id="H2Q03",
+        question_id="Q09",
         event_id=run["events"][0]["eventId"],
         allow_llm_rendering=False,
     )
@@ -57,6 +57,33 @@ def test_pipeline_outputs_validate_against_frozen_contract_schemas(
     Draft202012Validator(_schema(repository_root, "report-descriptor.schema.json")).validate(
         artifact["descriptor"]
     )
+    review = service.get_event_review(run["runId"], run["events"][0]["eventId"])
+    Draft202012Validator(_schema(repository_root, "event-review.schema.json")).validate(
+        review
+    )
+    receipt = service.review_event(
+        {
+            "schemaVersion": 1,
+            "requestId": "contract-review-confirm",
+            "runId": run["runId"],
+            "eventId": run["events"][0]["eventId"],
+            "action": "confirm",
+            "expectedRevision": 0,
+            "actor": {"kind": "local_operator", "displayName": "本地值班员"},
+        }
+    )
+    Draft202012Validator(
+        _schema(repository_root, "review-mutation-receipt.schema.json")
+    ).validate(receipt)
+    Draft202012Validator(_schema(repository_root, "event-review.schema.json")).validate(
+        receipt["review"]
+    )
+    audit = service.export_report(
+        run_id=run["runId"], kind="review_audit_json"
+    )
+    Draft202012Validator(
+        _schema(repository_root, "review-audit-export.schema.json")
+    ).validate(json.loads(audit["content"]))
     for row in submission_rows(run["events"]):
         Draft202012Validator(_schema(repository_root, "submission-row.schema.json")).validate(
             row

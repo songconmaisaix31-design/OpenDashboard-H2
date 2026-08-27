@@ -3,10 +3,12 @@ import type { H2Provenance } from './provenance.ts'
 export type H2ReportKind =
   | 'single_event_diagnosis'
   | 'period_summary'
+  | 'pcc_daily_compliance'
   | 'analysis_result_json'
   | 'submission_csv'
   | 'validation_metrics'
   | 'quality_report'
+  | 'review_audit_json'
 
 export type H2ReportFormat = 'html' | 'json' | 'csv'
 

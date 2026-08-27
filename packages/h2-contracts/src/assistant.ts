@@ -1,48 +1,47 @@
 import type { H2AnomalyEvent } from './anomaly.ts'
 import type { H2ClaimKind, H2Provenance } from './provenance.ts'
+import type { H2ReportArtifact } from './report.ts'
 
 export const H2_ASSISTANT_QUESTIONS = [
   {
-    questionId: 'H2Q01',
-    prompt: 'What do positive and negative PCC power mean?',
+    questionId: 'Q01',
+    prompt: 'PCC正值和负值分别代表什么？',
   },
   {
-    questionId: 'H2Q02',
-    prompt:
-      'How is a PCC power-limit anomaly different from an energy-quota anomaly?',
+    questionId: 'Q02',
+    prompt: '如何区分PCC功率越限与电量配额异常？',
   },
   {
-    questionId: 'H2Q03',
-    prompt: 'How does a BESS direction anomaly affect PCC power?',
+    questionId: 'Q03',
+    prompt: '储能方向异常如何影响PCC功率？',
   },
   {
-    questionId: 'H2Q04',
-    prompt: 'How is an SOC regulation-reserve shortfall identified?',
+    questionId: 'Q04',
+    prompt: '如何判断SOC调节备用是否不足？',
   },
   {
-    questionId: 'H2Q05',
-    prompt: 'How can a capacity downgrade that was not synchronized be located?',
+    questionId: 'Q05',
+    prompt: '设备降额但EMS未同步如何定位？',
   },
   {
-    questionId: 'H2Q06',
-    prompt:
-      'How can cloud-induced PV fluctuation be distinguished from setpoint oscillation?',
+    questionId: 'Q06',
+    prompt: '如何区分云团变化和控制指令振荡？',
   },
   {
-    questionId: 'H2Q07',
-    prompt: 'How is multi-electrolyzer load allocation evaluated?',
+    questionId: 'Q07',
+    prompt: '如何评价多台电解槽负荷分配？',
   },
   {
-    questionId: 'H2Q08',
-    prompt: 'Which recommendations require human confirmation?',
+    questionId: 'Q08',
+    prompt: '哪些建议必须人工确认？',
   },
   {
-    questionId: 'H2Q09',
-    prompt: 'Generate a diagnosis report for the selected test anomaly.',
+    questionId: 'Q09',
+    prompt: '生成测试集异常诊断报告。',
   },
   {
-    questionId: 'H2Q10',
-    prompt: 'What should a daily PCC compliance report contain?',
+    questionId: 'Q10',
+    prompt: 'PCC合规日报包含哪些内容？',
   },
 ] as const
 
@@ -96,6 +95,7 @@ export interface H2AssistantAnswer {
   readonly eventId?: string
   readonly sections: readonly H2AssistantAnswerSection[]
   readonly citations: readonly H2AssistantCitation[]
-  readonly refusedControlClaim: boolean
+  readonly generatedReport?: H2ReportArtifact
+  readonly refusedControlClaim: true
   readonly provenance: H2Provenance
 }

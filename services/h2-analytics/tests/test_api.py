@@ -77,12 +77,31 @@ def test_complete_api_golden_flow(valid_csv: str) -> None:
         f"{API_NAMESPACE}/assistant:ask",
         json={
             "runId": run_id,
-            "questionId": "H2Q03",
+            "questionId": "Q03",
             "eventId": "C03-20260105-001",
             "allowLlmRendering": False,
         },
     ).json()
     assert answer["data"]["mode"] == "DETERMINISTIC_TEMPLATE"
+
+    initial_review = client.get(
+        f"{API_NAMESPACE}/runs/{run_id}/events/C04-20260105-001/review"
+    ).json()
+    assert initial_review["data"]["revision"] == 0
+
+    reviewed = client.post(
+        f"{API_NAMESPACE}/runs/{run_id}/events/C04-20260105-001:review",
+        json={
+            "schemaVersion": 1,
+            "requestId": "api-review-confirm",
+            "runId": run_id,
+            "eventId": "C04-20260105-001",
+            "action": "confirm",
+            "expectedRevision": 0,
+            "actor": {"kind": "local_operator", "displayName": "本地值班员"},
+        },
+    ).json()
+    assert reviewed["data"]["review"]["currentState"] == "confirmed"
 
     report = client.post(
         f"{API_NAMESPACE}/reports:export",
@@ -98,6 +117,96 @@ def test_complete_api_golden_flow(valid_csv: str) -> None:
         f"{API_NAMESPACE}/submissions:export", json={"runId": run_id}
     ).json()
     assert submission["data"]["descriptor"]["filename"] == "submission.csv"
+
+
+def test_review_and_assistant_errors_are_typed_chinese_and_redacted(
+    valid_csv: str,
+) -> None:
+    client = TestClient(create_app(), base_url="http://127.0.0.1")
+    dataset_id = client.post(
+        f"{API_NAMESPACE}/datasets:import",
+        json={"filename": "tiny-valid-timeseries.csv", "text": valid_csv},
+    ).json()["data"]["dataset"]["datasetId"]
+    run_id = client.post(
+        f"{API_NAMESPACE}/datasets:analyze", json={"datasetId": dataset_id}
+    ).json()["data"]["runId"]
+    event_id = "C04-20260105-001"
+
+    legacy_alias = client.post(
+        f"{API_NAMESPACE}/assistant:ask",
+        json={
+            "runId": run_id,
+            "questionId": "H2Q03",
+            "eventId": "C03-20260105-001",
+            "allowLlmRendering": False,
+        },
+    )
+    assert legacy_alias.status_code == 422
+    assert legacy_alias.json()["error"]["code"] == "assistant.question_unknown"
+    assert "Q01" in legacy_alias.json()["error"]["message"]
+
+    request = {
+        "schemaVersion": 1,
+        "requestId": "api-review-idempotent",
+        "runId": run_id,
+        "eventId": event_id,
+        "action": "confirm",
+        "expectedRevision": 0,
+        "actor": {"kind": "local_operator", "displayName": "本地值班员"},
+        "note": "仅用于当前运行。",
+    }
+    first = client.post(
+        f"{API_NAMESPACE}/runs/{run_id}/events/{event_id}:review",
+        json=request,
+    )
+    replay = client.post(
+        f"{API_NAMESPACE}/runs/{run_id}/events/{event_id}:review",
+        json=request,
+    )
+    assert first.status_code == 200
+    assert replay.json()["data"]["replayed"] is True
+
+    stale = client.post(
+        f"{API_NAMESPACE}/runs/{run_id}/events/{event_id}:review",
+        json={
+            **request,
+            "requestId": "api-review-stale",
+            "action": "add_note",
+            "note": "private-stale-note",
+        },
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"]["code"] == "review.conflict"
+    assert "private-stale-note" not in json.dumps(stale.json())
+
+    mismatch = client.post(
+        f"{API_NAMESPACE}/runs/{run_id}/events/{event_id}:review",
+        json={
+            **request,
+            "requestId": "api-review-mismatch",
+            "eventId": "C03-20260105-001",
+            "note": "private-path-note",
+        },
+    )
+    assert mismatch.status_code == 422
+    assert mismatch.json()["error"]["code"] == "request.invalid"
+    assert "private-path-note" not in json.dumps(mismatch.json())
+
+    unknown_field = client.post(
+        f"{API_NAMESPACE}/runs/{run_id}/events/{event_id}:review",
+        json={**request, "unexpected": "private-value"},
+    )
+    assert unknown_field.status_code == 422
+    assert unknown_field.json()["error"]["code"] == "request.invalid"
+    assert "private-value" not in json.dumps(unknown_field.json())
+
+    oversized_review = client.post(
+        f"{API_NAMESPACE}/runs/{run_id}/events/{event_id}:review",
+        content=b"{}",
+        headers={"content-length": "65537"},
+    )
+    assert oversized_review.status_code == 413
+    assert oversized_review.json()["error"]["code"] == "request.too_large"
 
 
 def test_api_rejects_paths_commands_and_non_loopback_boundaries(valid_csv: str) -> None:
