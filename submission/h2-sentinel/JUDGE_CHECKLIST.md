@@ -1,32 +1,63 @@
-# H2 Sentinel Judge Checklist
+# H2 Sentinel P1 Judge Checklist
 
-## Review framing
+## Current evidence status
 
-- Product: local-first, evidence-first H2 EMS anomaly diagnosis and decision support.
-- Safety: no equipment control; recommendations remain advisory and require human confirmation.
-- Primary cases: sanitized synthetic Fixture C03 BESS direction anomaly and C04 PCC boundary tracking.
-- Candidate: current coordinator-verified assembled snapshot, not a `main` publication or deployment.
+- Product boundary: local-first diagnosis and operations assistance; no
+  equipment commands; every operational recommendation requires a person.
+- Contract baseline: W1 defines the official Q01–Q10 identifiers,
+  deterministic Chinese answers, review journal, Chinese report kinds, and
+  review-audit export.
+- QA tooling: P1-W3 includes zero-dependency slice preparation and measured
+  receipt validation with synthetic fail-closed tests.
+- Integration status: W2 and final coordinator integration remain required.
+- Timed status: no official slice and no two-run receipt were produced in this
+  worker checkout. A sub-180-second claim is prohibited.
 
-## What can be inspected now
+## Before the judge session
 
-| Item | Evidence status | Judge boundary |
+- [ ] Record the exact final integrated commit SHA.
+- [ ] Run all final integrated checks from that clean commit.
+- [ ] Prepare the validation slice from an explicit official-package directory
+      with independently obtained expected source hashes.
+- [ ] Confirm validation-slice.csv contains no label columns.
+- [ ] Confirm the measured receipt records
+      publicLabelsUsedAsDetectorInput: false.
+- [ ] Confirm the manifest selects the earliest public C04 event and records
+      every overlapping public label separately.
+- [ ] Start services before timing and record that exclusion.
+- [ ] Complete two consecutive Live runs, each strictly below 180,000 ms.
+- [ ] Validate the receipt, manifest hash, source hashes, and all six per-run
+      artifact hashes.
+- [ ] Complete desktop and 390x844 visual inspection for overflow, review
+      conflict, disabled/loading states, Chinese reports, and downloads.
+- [ ] Confirm no official data, generated slice, labels, receipt, or artifacts
+      are tracked by Git.
+
+## Judge-visible flow
+
+| Item | Required evidence | Failure condition |
 | --- | --- | --- |
-| Generic product entry | Current H6 evidence | `/` preserves the generic Fixture Demo. |
-| H2 entry | Current H6 evidence | Only `/h2-sentinel/?mode=fixture` and `/h2-sentinel/?mode=local` mount H2. |
-| Safety/provenance | Current H6 evidence | Human confirmation and `FIXTURE` visibility were manually reviewed. |
-| C03/C04 workflow | Current H6 evidence | Fixture overview/C03/C04 were manually checked at desktop and 390x844. |
-| Local deterministic path | Current H6 evidence | Local smoke produced C03 HTML output and a 16-column, two-row validated CSV. |
-| Reproducibility | Current assembled evidence | 92 repository tests, 60 focused H2 tests, 32 Python pytest cases, nine launcher tests, five assembled QA groups, and nine smoke scenarios are recorded for the assembled snapshot. |
-| Visual proof | Manual only | No committed screenshots and no automated screenshot regression. |
-| Fixture report cards | Current plugin evidence | `92f7b78` makes single-event, period, and quality cards deterministic safe HTML; JSON/CSV kinds retain their formats. |
-| Evaluation metrics | Not delivered | No official-data validation report, score, rank, or approval. |
-| Deployment and remote CI | Not delivered | No deployment proof or remote GitHub Actions run; the workflow file alone is insufficient. |
-| Legal inventory | Current source evidence | Notices cover package dependencies; later assets/datasets need a separate review. |
+| Provenance | LIVE_ANALYSIS · 验证集切片, source fingerprint, manifest fingerprint, time range, and row count | Fixture or generic Live wording is shown for the primary run. |
+| Detection | C04 is produced from detector input only | Public-label columns or manifest content are sent to analytics. |
+| Evidence | Timing, variables, limits, exact impact, formula, unit, assumptions, and quality are visible | A label, alert, or single point is presented as proof. |
+| Human review | Allowed transition, note, revision, local-unverified actor notice, and conflict behavior | Review silently overwrites a revision or implies authenticated identity. |
+| Assistant | Official Q09, deterministic Chinese sections, valid citations, matching diagnosis report | H2Qxx, dangling citations, or LLM-dependent core output appears. |
+| Reports | Chinese UTF-8 HTML, safety statement, provenance, safe escaped input, matching SHA-256 | English judge-facing report, unsafe markup, path, secret, or fake zero metric appears. |
+| Audit and submission | Full review audit plus unchanged detector event and exact 16-column submission | Review fields enter submission.csv or event identity changes. |
+| Timing | Two distinct, consecutive passing receipts below 180 seconds | One run, a run at/above 180 seconds, overwritten artifacts, or hash drift. |
 
 ## Plain answers
 
-1. **Is this controlling equipment?** No. It is decision support and requires human confirmation.
-2. **Are C03/C04 official-data results?** No. They are sanitized synthetic Fixture inputs.
-3. **What ran locally?** The assembled snapshot recorded Fixture and Local launcher checks, five assembled QA groups, nine smoke scenarios, deterministic Local C03 HTML output, and a validated two-row/16-column CSV.
-4. **Where are metrics and score?** They are not delivered. A future validation result must remain separate from an organizer score.
-5. **Are screenshots and CI results included?** No. Chrome review was manual with no committed capture; the GitHub workflow is committed but no remote run is claimed.
+1. **Does H2 Sentinel control equipment?** No. It provides monitoring,
+   diagnosis, quantified evidence, and advisory recommendations that require
+   human confirmation.
+2. **Are public labels detector input?** No. They remain in an ignored QA
+   manifest and are used only after analysis for provenance/comparison.
+3. **Is a validation slice full validation?** No. It is a bounded public-data
+   slice around one C04 event.
+4. **Is the result an organizer score or hidden-test result?** No.
+5. **Has the three-minute target passed?** Only if the final integrated receipt
+   validator accepts two consecutive measured runs. P1-W3 produced no such receipt
+   in this checkout.
+6. **Can Fixture replace a failed Live run?** No. Fixture is a separately
+   labeled synthetic fallback and is excluded from the validation receipt.

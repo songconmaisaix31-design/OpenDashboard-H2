@@ -1,5 +1,29 @@
 # H2 Sentinel QA Defect Log
 
+## Open P1 integration defect
+
+### H2-QA-P1-001
+
+| Field | Value |
+| --- | --- |
+| Severity | blocker for the primary validation-slice demo |
+| Scope | P1 validation-slice provenance in analytics-generated HTML |
+| Expected | A prepared validation slice is rendered as LIVE_ANALYSIS · 验证集切片 and remains distinct from Fixture, full validation, test, and generic Live imports. |
+| Actual | Importing non-Fixture CSV bytes with a validation-slice filename produces LIVE_ANALYSIS, but analytics provenance source is in-memory-csv-import and reports render LIVE_ANALYSIS · 本地导入数据. |
+| Reproduction | npm run h2:qa; inspect the P1-API/P1-QA failure after the earlier assistant/review/report assertions execute. |
+| Relevant baseline | W1 integration commit 4c856eb |
+| Owned implementation track | Cross-track analytics provenance plus W2 presentation; coordinator must route the fix because P1-W3 cannot edit either path. |
+| Safety impact | Without the fix, a bounded validation slice is indistinguishable from another local import in judge-visible report evidence. |
+| Status | open; final integrated P1 acceptance is blocked. |
+
+## Pending P1-W2 integration gates
+
+The current P1-W3 base intentionally predates W2. The assembled runner therefore
+also rejects the legacy H2Qxx Web/adapter surface and the English Fixture
+diagnosis HTML. These are expected dependency failures until W2 is integrated;
+they become defects only if they remain after the coordinator integrates the
+accepted W2 commit.
+
 ## Resolved contract defects pending QA consumption
 
 ### H2-QA-001

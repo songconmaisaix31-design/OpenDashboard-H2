@@ -1,46 +1,83 @@
-# H2 Sentinel Demo Script
+# H2 Sentinel Three-Minute Validation-Slice Demo
 
-## Recording boundary
+## Evidence gate
 
-Use the current coordinator-verified assembled snapshot and begin with
-`npm run h2:fixture`. The generic Fixture Demo remains at `/`; record H2 only
-from `/h2-sentinel/?mode=fixture`. Keep `FIXTURE` visible. The demonstration is
-sanitized synthetic data, not official data, live plant evidence, a validation
-result, or an organizer score.
+This is the operational script for the primary P1 demo. It is not yet a timed pass:
+P1-W3 did not receive an official-package path, did not generate an
+official validation slice, and did not produce two measured final-integrated
+runs. Do not call this a three-minute pass until
+validate-demo-receipt.mjs accepts the final receipt and artifacts for the exact
+integrated commit.
 
-## Primary script — 3 to 5 minutes
+Services are started before timing. Installation and launcher startup are
+demonstrated separately and must remain listed as exclusions in the receipt.
 
-| Time | Screen action | Spoken script |
+## Preparation outside the timed window
+
+1. Independently obtain the SHA-256 values of the public validation timeseries
+   and event-label CSV files.
+2. Run prepare-validation-slice.mjs with the explicit official-package
+   directory, package-relative source files, both expected hashes, and a new
+   directory below tests/h2-sentinel/reports/generated/.
+3. Inspect validation-slice-manifest.json: the selected event must be the
+   chronologically earliest public C04 event, the requested range must add 30
+   minutes on both sides, and validation-slice.csv must contain no label
+   columns.
+4. Start the final integrated Local launcher. Confirm the Web and analytics
+   endpoints are loopback-only before opening the timed route.
+5. Create distinct artifact directories for measured runs 1 and 2. Never
+   overwrite one run with the other.
+
+The public labels stay in the ignored QA manifest. Only validation-slice.csv
+may be imported into analytics.
+
+## Timed path — target under 180 seconds
+
+| Budget | Judge action | Visible evidence and narration |
 | --- | --- | --- |
-| 0:00–0:20 | Open the explicit Fixture route. | “H2 Sentinel is a local-first diagnosis and decision-support application for weak-grid green-hydrogen EMS anomalies. It helps a person review evidence; it does not control equipment.” |
-| 0:20–0:40 | Point to `FIXTURE` and provenance. | “This route uses sanitized synthetic Fixture data. The label is deliberate: this is not an official dataset, a plant run, or a score.” |
-| 0:40–1:15 | Open Event Center and select C03. | “C03 is the BESS charge/discharge direction anomaly. Its evidence keeps start, end, first-detection time, equipment, severity, confidence, and the review boundary separate.” |
-| 1:15–1:50 | Open C03 evidence and analysis. | “The diagnosis is evidence before explanation: time-aligned measurements and a reference or constraint appear before the recommendation. The chart supports human review, not an autonomous command.” |
-| 1:50–2:15 | Open C03 impact and safety. | “Impact retains a metric, unit, and assumptions. Safety makes uncertainty visible. Any recommendation remains advisory and requires human confirmation.” |
-| 2:15–2:45 | Select C04. | “C04 tracks a PCC import/export boundary. The corrected Fixture impact is 29.333333333333332 kilowatt-hours from eight one-minute violation rows; it is Fixture evidence, not an official performance metric.” |
-| 2:45–3:15 | Open an assistant answer. | “The deterministic answer is tied to structured evidence. The verified Local golden path does not need an LLM key, so the core review loop is not dependent on an external model service.” |
-| 3:15–3:50 | Switch to the verified Local run only when its launcher is ready. | “In explicit Local mode, the loopback sidecar produced a deterministic C03 HTML report and a two-row submission CSV validated against the exact 16-column contract. This is local deterministic evidence, not an official-data result.” |
-| 3:50–4:10 | Return to provenance and safety summary. | “H2 Sentinel makes a suspected anomaly reviewable: structured evidence first, human decision last.” |
+| 00:00–00:25 | Import validation-slice.csv. | Show LIVE_ANALYSIS · 验证集切片, dataset fingerprint, source range, row count, and quality state. State that this is a prepared public-validation slice, not full validation or an organizer score. |
+| 00:25–01:00 | Run deterministic analysis and open Event Center. | Select the detected C04 candidate without importing the public-label manifest. Show that analysis is local and independent of an LLM. |
+| 01:00–01:30 | Open diagnosis detail. | Show event timing, synchronized evidence, exact impact value/formula/unit/assumptions, safety checks, and provenance. Do not claim the public label proves the detector result. |
+| 01:30–01:55 | Perform human review. | Confirm or reject, add a note, and show the new revision. Explain that the local actor label is unverified attribution and that review does not mutate detector fields. |
+| 01:55–02:25 | Run official question Q09. | Show the deterministic Chinese answer, matching event/report citation, and generated 氢哨异常诊断报告. State that every recommendation still requires human confirmation. |
+| 02:25–02:45 | Export review audit and submission. | Download review_audit_json and submission.csv. Show that review history is in the audit export while the frozen 16 submission columns and event identity remain unchanged. |
+| 02:45–03:00 | Close with hashes and limits. | Show report, audit, submission, detector-input, manifest, and source hashes. State the validation-slice scope and the excluded startup/install time. |
 
-Fixture single-event diagnosis, period summary, and quality cards now produce
-deterministic safe HTML with matching filenames and media types. Demonstrate
-only those three as Fixture HTML reports; analysis and validation artifacts are
-JSON, and submission output is CSV. Fixture output remains synthetic evidence,
-not an official-data result or score.
+## Receipt gate
 
-## 30-second fallback
+Record these fields for each run without absolute local paths:
 
-“H2 Sentinel / 氢哨 turns a suspected H2 EMS coordination anomaly into a human
-review: timing, evidence, impact, safety, provenance, and an advisory next
-step. This view is sanitized synthetic Fixture data, not official plant data or
-a score. The application does not control equipment; every recommendation
-requires human confirmation. The assembled Local golden path also validates a
-deterministic C03 HTML report and a two-row 16-column submission CSV, while
-official data, metrics, deployment, and remote CI evidence remain unclaimed.”
+- distinct run ID and analyzed event ID;
+- start/end timestamps, total duration, and positive stage durations for
+  import, analysis, evidence_review, human_review, q09_report, and
+  artifact_export;
+- Live validation-slice provenance and
+  publicLabelsUsedAsDetectorInput: false;
+- relative artifact paths and SHA-256 values for the diagnosis HTML,
+  review-audit JSON, and submission.csv.
 
-## Failure fallback
+After two consecutive successful runs, validate the receipt against the exact
+manifest, artifact root, and final integrated SHA:
 
-- If H2 does not start, show the generic `/` Fixture Demo and state that it is a separate preserved entry; do not substitute it for H2 evidence.
-- If Local mode fails, return to the explicit Fixture route and state that only the recorded Local smoke supports the report/CSV claim.
-- If the selected report kind is JSON or CSV, narrate its actual format; only the three documented Fixture report kinds are HTML.
-- Do not display secrets, absolute local paths, private datasets, unredacted logs, or generated artifacts outside the approved evidence scope.
+    node tests/h2-sentinel/scripts/validate-demo-receipt.mjs
+      --receipt tests/h2-sentinel/reports/generated/final/demo-receipt.json
+      --manifest tests/h2-sentinel/reports/generated/final/validation-slice-manifest.json
+      --artifacts-root tests/h2-sentinel/reports/generated/final/artifacts
+      --expected-commit <40-character-final-integrated-sha>
+
+Only a successful validator result permits the wording “two consecutive
+validation-slice runs completed in under 180 seconds each.” It still does not
+permit an organizer-score, full-validation, hidden-test, deployment, or
+production claim.
+
+## Fixture fallback
+
+Fixture may be shown only as a separately labeled fallback:
+
+“This is FIXTURE · 固定样例, a sanitized synthetic regression path. It
+demonstrates the interaction model but does not replace the validation-slice
+run and is excluded from the timed receipt.”
+
+If either Live run fails, exceeds the budget, loses provenance, imports labels,
+or produces a hash mismatch, the timed demo is failed. Do not substitute
+Fixture, edit the receipt, or describe a partial run as passing.

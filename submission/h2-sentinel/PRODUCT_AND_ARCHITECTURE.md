@@ -1,74 +1,86 @@
-# H2 Sentinel: Product and Architecture Narrative
+# H2 Sentinel: P1 Product and Architecture
 
-## Product and safety boundary
+## Product boundary
 
-H2 Sentinel / 氢哨 helps an operations engineer review a suspected weak-grid
-green-hydrogen EMS coordination anomaly through timing, evidence, impact,
-safety checks, provenance, and an advisory next step. It is decision support:
-recommendations require human confirmation and it does not control equipment,
-replace an EMS, dispatch power, or turn language output into a control action.
+H2 Sentinel / 氢哨 turns an H2 EMS anomaly candidate into a reviewable chain:
+source provenance, synchronized evidence, bounded diagnosis, exact impact,
+safety checks, human review, deterministic Chinese explanation, and auditable
+exports.
 
-## Assembled architecture
+It is not an EMS replacement or autonomous controller. It does not issue
+equipment commands, change setpoints, or treat language output as an action.
+Every operational recommendation requires human confirmation.
 
-```text
-generic / -> existing Fixture Demo
+## Local architecture
 
-/h2-sentinel/?mode=fixture -> statically registered H2 EMS Fixture plugin
-/h2-sentinel/?mode=local   -> statically registered H2 EMS loopback plugin
-                                   -> same-origin /api/v1/h2-sentinel proxy
-                                       -> 127.0.0.1 deterministic analytics sidecar
-```
+    explicit Fixture route
+      -> in-process sanitized Fixture adapter
+      -> deterministic regression data and reports
 
-The current assembled snapshot preserves the generic default
-and accepts only the two explicit H2 modes. The Fixture path starts no Python
-service. The Local path uses a fixed namespace and a validated loopback target;
-it is not a general sidecar runtime, remote-host interface, dynamic plugin
-loader, arbitrary shell surface, or evidence of broad network isolation.
+    explicit Local route
+      -> same-origin H2 API proxy
+      -> literal-loopback analytics sidecar
+      -> import -> quality -> deterministic analysis
+      -> immutable events + separate append-only review journal
+      -> assistant/report/audit/submission exports
 
-## Current evidence
+The Web consumes one H2SentinelDataSource boundary. Fixture and Local adapters
+must expose the same question, review, and report behavior while preserving
+different provenance. The launcher owns only processes it starts; external
+sidecars remain unowned and must satisfy the complete canonical health
+contract.
 
-The 2026-08-19 H6 record shows the assembled H2 feature, statically reviewed
-plugin service, launcher, and loopback proxy exercising C03/C04. The locked
-Local golden run produced deterministic no-LLM C03 HTML output and a two-row
-`submission.csv` whose validator confirmed the exact 16-column contract. The
-analytics service uses loopback Host/Origin checks and no permissive CORS policy;
-these source and smoke facts are not a claim of a deployed or independently
-penetration-tested service.
+## P1 judge workflow
 
-The recorded hardening checks reject a 307 health redirect without forwarding it,
-cover Windows-owned child cleanup, and make report content hashes visible for
-review. They are bounded local-path evidence, not proof of general network
-isolation.
+The official assistant surface uses Q01 through Q10 and deterministic Chinese
+templates. Q03 and Q09 require event context; Q09 returns exactly one matching
+Chinese single-event diagnosis report. The compatibility flag for LLM rendering
+does not change the result or trigger network/model access.
 
-Manual Chrome review at desktop and 390x844 verified the mounted Fixture
-overview, C03, C04, provenance, human-confirmation boundary, corrected C04
-impact of `29.333333333333332 kWh`, and no document-width overflow. No screenshot
-asset or automated visual-regression proof was produced.
+Human review overlays an immutable detector event. Request IDs provide replay
+idempotency, expected revisions prevent silent concurrent overwrite, and
+reopen makes decision reversal explicit. The audit export retains every event,
+including those at revision zero. Review history never enters the frozen
+16-column competition submission.
 
-## Provenance and known limitation
+Judge-facing HTML is UTF-8 Simplified Chinese with stable English machine IDs,
+exact values/units, provenance, escaped untrusted input, and a no-control safety
+statement. Missing labels or quota evidence is shown as unavailable rather than
+as a fabricated zero.
 
-The C03/C04 Fixture remains sanitized synthetic evidence. `FIXTURE` must never
-be called official data, a plant result, a validation metric, or an organizer
-score. `LIVE_ANALYSIS` describes the explicit Local adapter mode, but no official
-dataset or official-data run is included or claimed.
+## Public-validation slice boundary
 
-Plugin source commit `92f7b78` resolves the Fixture report-format mismatch,
-which coordinator integration `abe454b` contains. Single-event diagnosis,
-period summary, and quality reports now return deterministic safe HTML with
-matching filenames and media types. Analysis and validation artifacts remain
-JSON, and submission output remains CSV. The format correction does not change
-Fixture provenance or create official-data, score, or deployment evidence.
+The primary P1 demo is designed around the chronologically earliest public C04
+validation event:
 
-## Current boundaries
+1. An explicit tool verifies the official timeseries and label source hashes.
+2. It creates a detector CSV from 30 minutes before event start through 30
+   minutes after event end.
+3. Recognized label columns are removed from detector input.
+4. Overlapping public labels remain only in an ignored QA manifest.
+5. A final receipt validator checks two distinct consecutive measured runs,
+   their artifact hashes, and the exact integrated commit.
 
-The candidate includes no official dataset, labels, versioned validation report,
-precision/recall/F1 result, organizer score, deployment record, remote GitHub
-Actions run, network-isolation proof, or committed screenshot asset. The H2
-workflow is committed, but a committed workflow is not proof of a remote run.
+This is bounded validation-slice evidence. It is not full validation, a hidden
+test, an organizer score, deployment proof, or production proof.
 
-## Sources
+## Current evidence and remaining gates
 
-- [H6 integration handoff](../../scripts/h2-sentinel/HANDOFF.md)
-- [H2 contracts handoff](../../packages/h2-contracts/HANDOFF.md)
-- [H2 analytics handoff](../../services/h2-analytics/HANDOFF.md)
-- [H2 QA acceptance matrix](../../tests/h2-sentinel/ACCEPTANCE_MATRIX.md)
+W1 contracts/backend are present in the P1-W3 base. P1-W3 contract/tool tests
+pass on synthetic inputs and the assembled runner exercises public launcher/API
+boundaries. W2 is not yet integrated in this checkout, no official package was
+processed, and no timed receipt was created.
+
+The current assembled QA also exposes a cross-track issue: analytics-generated
+HTML labels a validation-named Live import as generic local input rather than
+LIVE_ANALYSIS · 验证集切片. The final coordinator candidate must correct and
+rerun this gate before using validation-slice wording.
+
+## Evidence sources
+
+- [P1 API contract](../../docs/competition/h2-sentinel/P1_API_CONTRACT.md)
+- [P1 execution specification](../../docs/competition/h2-sentinel/P1_EXECUTION_SPEC.md)
+- [P1 QA acceptance matrix](../../tests/h2-sentinel/ACCEPTANCE_MATRIX.md)
+- [P1 QA script contract](../../tests/h2-sentinel/scripts/README.md)
+- [Claims ledger](CLAIMS_LEDGER.md)
+- [Runtime evidence checklist](RUNTIME_EVIDENCE_CHECKLIST.md)

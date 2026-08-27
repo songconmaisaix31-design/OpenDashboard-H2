@@ -1,32 +1,34 @@
-# H2 Sentinel Claims Ledger
+# H2 Sentinel P1 Claims Ledger
 
-Use this ledger for public copy, demo narration, and judge answers. Current
-evidence is limited to the current coordinator-verified assembled snapshot and
-the H6 checks recorded on 2026-08-19.
+Use the narrowest wording supported by the named evidence. The final integrated
+commit and its fresh verification supersede worker-checkout and historical H6
+records.
 
-| ID | Permitted wording | Classification | Current evidence | Release rule |
-| --- | --- | --- | --- | --- |
-| C01 | “H2 contracts define C01-C07, provenance, and the exact submission-column order.” | Implemented contract fact | `packages/h2-contracts/**` | Say “define”; do not infer an export run. |
-| C02 | “Sanitized synthetic C03/C04 Fixture data is available.” | Fixture evidence | Contract fixtures and assembled Fixture mode | Always say Fixture/synthetic; never official data or a score. |
-| C03 | “The generic Fixture Demo remains at `/`; H2 opens only with explicit `fixture` or `local` mode.” | Current H6 evidence | `apps/web/src/main.tsx`, H6 handoff | Do not say the generic entry was replaced. |
-| C04 | “Local H2 browser requests use a same-origin proxy to a validated loopback analytics target.” | Current H6 evidence | H6 source and smoke | Do not expand this into a network-isolation or deployment claim. |
-| C05 | “The Local golden path produced deterministic no-LLM C03 HTML output and a two-row, 16-column validated submission CSV.” | Local deterministic evidence | H6 smoke and Python validation | Scope the statement to the Local golden path. |
-| C06 | “The assembled verification recorded 92 repository tests, 60 focused H2 tests, 32 Python pytest cases, nine launcher tests, five assembled QA groups, and nine H2 smoke scenarios.” | Current assembled evidence | Assembled QA evidence and analytics handoff | Scope this to the recorded assembled snapshot; do not infer a remote CI run. |
-| C07 | “A human Chrome review checked desktop and 390x844 Fixture screens without document-width overflow.” | Manual Chrome evidence | H6 handoff | Do not call this automated screenshot regression or claim image assets exist. |
-| C08 | “The assembled build processed 684 modules and emitted 900.01 kB minified JavaScript (297.15 kB gzip) plus 47.44 kB CSS; Vite still emitted its standard greater-than-500-kB warning.” | Current assembled evidence | Recorded production build | Do not imply the bundle-warning issue is resolved. |
-| C09 | “Recommendations are advisory and require human confirmation.” | Implemented behavior and contract fact | H2 UI/contract/H6 review | Never describe direct equipment control. |
-| C10 | “Fixture single-event diagnosis, period summary, and quality reports export deterministic safe HTML with matching media type and filename.” | Current plugin evidence | Source `92f7b78`, coordinator integration `abe454b`, focused plugin test coverage | Scope to the three HTML report kinds; JSON and CSV retain their own formats. |
-| C11 | “Official CSV data was imported and analyzed.” | Unverified | No authorized official dataset/run | Prohibited. |
-| C12 | “Validation precision, recall, F1, delay, per-class results, score, rank, or approval are X.” | Unverified | No versioned validation or organizer artifact | Prohibited; a validation report would not equal an organizer score. |
-| C13 | “The app is deployed, online, or present on `main`.” | Unverified | No deployment or main publication evidence | Prohibited. |
-| C14 | “GitHub Actions verified this candidate remotely.” | Unverified | Workflow file is committed only | Prohibited until a specific remote run is available. |
-| C15 | “Optional LLM rendering is required for the golden path.” | False | Local smoke is deterministic and no-LLM | Prohibited. |
+| ID | Wording | Current classification | Required evidence or boundary |
+| --- | --- | --- | --- |
+| C01 | “The frozen P1 contract uses the official Q01 through Q10 identifiers and exact Chinese prompts.” | Implemented contract fact | W1 contract source plus P1-W3 contract conformance test. Do not infer Web integration until W2 is merged and rerun. |
+| C02 | “P1 defines an append-only local review journal with optimistic concurrency and idempotent request IDs.” | Implemented contract/backend fact | W1 contract and analytics implementation. Local actor names are unverified attribution, not authentication. |
+| C03 | “Review state is separate from detector evidence and the frozen 16-column submission.” | Contract and QA requirement | Final integrated QA must show event/submission snapshots unchanged after review. |
+| C04 | “P1-W3 provides a zero-dependency tool that verifies explicit source hashes and prepares an ignored C04 validation slice without label columns.” | Worker implementation evidence | Tool source and synthetic success/failure tests. This does not prove an official package was processed. |
+| C05 | “P1-W3 provides a validator for two distinct consecutive measured runs under 180 seconds each.” | Worker implementation evidence | Validator source and synthetic boundary/hash-drift tests. This does not prove the final demo met the target. |
+| C06 | “All operational recommendations require human confirmation; the app does not issue equipment commands.” | Product and contract fact | Frozen product boundary, assistant/report safety fields, and final UI review. |
+| C07 | “Fixture is a sanitized synthetic fallback.” | Historical and current contract boundary | Always display FIXTURE; never call it validation, official data, a plant run, or a score. |
+| C08 | “The primary demo used a public-validation slice.” | Unverified in this worker checkout | Requires explicit official source hashes, generated manifest/input hashes, final integrated Live run, and retained local receipt. |
+| C09 | “Two consecutive validation-slice runs completed in under 180 seconds each.” | Unverified in this worker checkout | Requires a passing validate-demo-receipt.mjs result for the exact final integrated SHA and all referenced artifacts. |
+| C10 | “Validation precision, recall, F1, delay, per-class results, score, rank, or approval are X.” | Prohibited without separate evidence | Requires labels, split identity, matching definition, implementation/config version, and measured artifact. A validation metric is still not an organizer score. |
+| C11 | “The application passed hidden testing or received an organizer score/approval.” | Prohibited | Only an organizer artifact could support this claim. |
+| C12 | “The application is deployed, online, production-ready, or published on main.” | Unverified | Requires separate deployment, runtime, publication, and production evidence. |
+| C13 | “Remote CI verified the final candidate.” | Unverified | A committed workflow is insufficient; cite a specific successful remote run only after it exists. |
+| C14 | “The validation-slice provenance is correctly visible across Web and reports.” | Pending final integration | Requires W2 integration, analytics provenance correction where needed, assembled QA, and manual rendering inspection. |
 
 ## Forbidden transformations
 
-- Fixture data must not become live plant data, official data, a score, or a validation result.
-- Local deterministic smoke must not become an official-data or deployment claim.
-- Manual Chrome review must not become screenshot automation or a submitted screenshot.
-- A committed workflow must not become a remote CI result.
-- Fixture HTML format parity must not become an official-data, score, deployment, or broad report-format claim.
-- Every recommendation retains the human-confirmation qualification.
+- Computed or matched SHA-256 values do not prove source authorization.
+- A prepared slice does not prove the detector ran.
+- One successful run does not prove the two-run timing gate.
+- A valid local receipt does not prove an organizer score, hidden test,
+  deployment, production readiness, or full validation.
+- Fixture and generic Local smoke do not become validation-slice evidence.
+- HTTP success, route presence, document review, or screenshots do not replace
+  behavior and artifact verification.
+- Review history never becomes control authority or authenticated identity.
