@@ -6,7 +6,7 @@ import {
   type H2NavigationTarget,
   type H2SentinelRoute,
 } from '../../routes.ts'
-import { H2_MODE_COPY, formatH2Timestamp } from '../../model/presentation.ts'
+import { formatH2Timestamp, getH2ProvenanceLabel } from '../../model/presentation.ts'
 import { ProvenanceBanner } from '../provenance/ProvenanceBanner.tsx'
 import { H2Icon, type H2IconName } from './H2Icon.tsx'
 import { StackWidget, StackWidgetRow } from './StackWidget.tsx'
@@ -180,7 +180,10 @@ export function H2Shell({ activeRoute, children, mode, onNavigate, run }: H2Shel
               icon={mode === 'FIXTURE' ? '◇' : '●'}
               tone={mode === 'FIXTURE' ? 'fixture' : 'live'}
             >
-              {H2_MODE_COPY[mode].label}
+              {getH2ProvenanceLabel(run.provenance, [
+                run.dataset.name,
+                run.dataset.sourceFilename,
+              ])}
             </StatusBadge>
             <span>更新 {formatH2Timestamp(run.completedAt ?? run.startedAt)}</span>
           </div>
@@ -189,7 +192,11 @@ export function H2Shell({ activeRoute, children, mode, onNavigate, run }: H2Shel
         <main className="h2-main" id="h2-main" tabIndex={-1}>
           <div className="h2-shell-grid">
             <div className="h2-content-column">
-              <ProvenanceBanner mode={mode} provenance={run.provenance} />
+              <ProvenanceBanner
+                mode={mode}
+                provenance={run.provenance}
+                sourceHints={[run.dataset.name, run.dataset.sourceFilename]}
+              />
               {children}
             </div>
 

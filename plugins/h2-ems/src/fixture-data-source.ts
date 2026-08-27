@@ -1,29 +1,42 @@
 import {
   H2_ASSISTANT_QUESTIONS,
+  H2_REVIEW_ACTIONS,
   H2_FIXTURE_ANALYSIS_RUN,
-  H2_FIXTURE_ASSISTANT_ANSWER,
   H2_FIXTURE_DATASET,
   H2_FIXTURE_QUALITY_REPORT,
   H2_FIXTURE_REPORT_DESCRIPTOR,
   H2_FIXTURE_PROVENANCE,
   H2_GOLDEN_C03_EVENT,
   H2_GOLDEN_C04_EVENT,
+  nextH2ReviewState,
   serializeH2SubmissionRows,
   toH2SubmissionRow,
+  type H2AnalysisRun,
   type H2AnomalyEvent,
+  type H2AssistantAnswer,
+  type H2AssistantCitation,
+  type H2AssistantQuestionId,
   type H2AssistantRequest,
   type H2CsvImportRequest,
   type H2CsvImportResult,
   type H2EventFilter,
+  type H2EventReview,
   type H2ReportArtifact,
   type H2ReportFormat,
   type H2ReportKind,
   type H2ReportMediaType,
   type H2ReportRequest,
+  type H2ReviewAction,
+  type H2ReviewAuditExport,
+  type H2ReviewEntry,
+  type H2ReviewEventRequest,
+  type H2ReviewMutationReceipt,
+  type H2ReviewState,
   type H2SentinelDataSource,
   type H2SeriesRequest,
   type H2SeriesPoint,
   type H2SeriesResponse,
+  type H2TimeRange,
 } from '@opendashboard/h2-contracts'
 
 import { H2EmsAdapterError } from './errors.ts'
@@ -43,37 +56,49 @@ const fixtureReportProfiles = {
     format: 'html',
     mediaType: 'text/html',
     filename: 'single_event_diagnosis-run-fixture-h2-sentinel-golden.html',
-    title: 'Single event diagnosis',
+    title: '氢哨异常诊断报告',
   },
   period_summary: {
     format: 'html',
     mediaType: 'text/html',
     filename: 'period_summary-run-fixture-h2-sentinel-golden.html',
-    title: 'Period summary',
+    title: '氢哨运行摘要',
+  },
+  pcc_daily_compliance: {
+    format: 'html',
+    mediaType: 'text/html',
+    filename: 'pcc_daily_compliance-run-fixture-h2-sentinel-golden.html',
+    title: 'PCC合规日报',
   },
   analysis_result_json: {
     format: 'json',
     mediaType: 'application/json',
     filename: 'analysis_result_json-run-fixture-h2-sentinel-golden.json',
-    title: 'Analysis result',
+    title: '结构化分析结果',
   },
   submission_csv: {
     format: 'csv',
     mediaType: 'text/csv',
     filename: 'submission_csv-run-fixture-h2-sentinel-golden.csv',
-    title: 'Submission CSV',
+    title: '竞赛提交结果',
   },
   validation_metrics: {
     format: 'json',
     mediaType: 'application/json',
     filename: 'validation_metrics-run-fixture-h2-sentinel-golden.json',
-    title: 'Validation metrics',
+    title: '验证指标',
   },
   quality_report: {
     format: 'html',
     mediaType: 'text/html',
     filename: 'quality_report-run-fixture-h2-sentinel-golden.html',
-    title: 'Data quality report',
+    title: '氢哨数据质量报告',
+  },
+  review_audit_json: {
+    format: 'json',
+    mediaType: 'application/json',
+    filename: 'review-audit-run-fixture-h2-sentinel-golden.json',
+    title: '人工复核审计',
   },
 } as const satisfies Readonly<Record<H2ReportKind, FixtureReportProfile>>
 
@@ -83,6 +108,60 @@ const fixtureSubmissionExportProfile = {
   filename: 'h2-fixture-submission.csv',
   title: 'Submission CSV',
 } as const satisfies FixtureReportProfile
+
+const fixtureReviewStates = [
+  'open',
+  'confirmed',
+  'dismissed',
+  'resolved',
+] as const satisfies readonly H2ReviewState[]
+
+const fixtureReviewStateLabels = {
+  open: '待复核',
+  confirmed: '已确认',
+  dismissed: '已驳回',
+  resolved: '已闭环',
+} as const satisfies Readonly<Record<H2ReviewState, string>>
+
+const fixtureReviewActionLabels = {
+  confirm: '确认事件',
+  reject: '驳回事件',
+  resolve: '记录闭环',
+  reopen: '重新打开',
+  add_note: '添加备注',
+} as const satisfies Readonly<Record<H2ReviewAction, string>>
+
+const fixtureTextZh: Readonly<Record<string, string>> = {
+  'Synthetic, sanitized C03/C04 contract fixture only.': '仅包含合成、脱敏的 C03/C04 合同固定样例。',
+  'Not an official competition dataset or score artifact.': '不是官方竞赛数据集或成绩产物。',
+  'Battery energy storage system': '电池储能系统',
+  'Point of common coupling': '并网点',
+  'Grid interconnection': '电网连接点',
+  'The EMS command requested BESS charging.': 'EMS 指令要求储能充电。',
+  'Positive BESS power indicates discharge, opposite to the charge command.': '储能功率为正表示放电，与充电指令方向相反。',
+  'The reversed BESS response is associated with abnormal grid exchange.': '储能反向响应与异常并网交换同时出现。',
+  'PCC export power exceeds the active export limit.': 'PCC 送电功率超过当前生效的送电上限。',
+  'The configured export boundary is active for this interval.': '配置的送电边界在该区间内生效。',
+  'Export-limit violation energy is integrated over the highlighted interval.': '送电越限电量在标记区间内积分得到。',
+  'Likely BESS command/feedback sign mapping mismatch; this is an inference from fixture evidence, not a direct equipment-control finding.': '可能存在储能指令与反馈的符号映射不一致；这是基于固定样例证据的推断。',
+  'Likely PCC boundary synchronization or tracking issue; the fixture supports a compliance-oriented check, not a direct control action.': '可能存在 PCC 边界同步或跟踪问题；固定样例只支持合规核查，不支持直接控制。',
+  'Minute-level samples are integrated as average power over one minute.': '分钟级采样按一分钟平均功率积分。',
+  'PCC power uses positive export and negative import convention.': 'PCC 功率采用正值送电、负值受电约定。',
+  'Only positive export excess contributes to this fixture event.': '该固定样例事件只累计正向送电超限部分。',
+  'BESS sign convention confirmed': '已确认储能功率符号约定',
+  'Positive BESS power is interpreted as discharge.': '储能功率正值按放电解释。',
+  'SOC remains inside configured range': 'SOC 保持在配置范围内',
+  'Fixture SOC remains between 20% and 90%.': '固定样例 SOC 保持在 20% 至 90% 之间。',
+  'PCC sign convention confirmed': '已确认 PCC 功率符号约定',
+  'Positive PCC power is interpreted as export to the grid.': 'PCC 功率正值按向电网送电解释。',
+  'Recommendation is advisory only': '建议仅供决策支持',
+  'The fixture produces checks, not automatic setpoint changes.': '固定样例只生成核查建议，不自动改变设定值。',
+  'Verify BESS command and feedback sign mapping before changing dispatch.': '改变调度前，核查储能指令与反馈的符号映射。',
+  'The contract separates a likely interface mapping issue from a proven equipment fault.': '合同明确区分可能的接口映射问题与已证实的设备故障。',
+  'Inspect PCC boundary synchronization and meter feedback before any dispatch change.': '任何调度变更前，检查 PCC 边界同步与电表反馈。',
+  'The event proves a boundary-tracking violation but does not authorize automatic control.': '事件证明存在边界跟踪异常，但不授予自动控制权限。',
+  'Required fixture fields are present.': '固定样例必需字段均已提供。',
+}
 
 /** Bundled sanitized rows keep Fixture charts usable without filesystem access. */
 const fixtureSeries = [
@@ -155,6 +234,9 @@ const fixturePoints: readonly H2SeriesPoint[] = fixtureSeries.map(
  * not accept CSV input so a Fixture session cannot be mistaken for analysis.
  */
 export function createFixtureH2EmsDataSource(): H2SentinelDataSource {
+  const reviews = new Map<string, H2EventReview>()
+  const requests = new Map<string, FixtureReviewReplay>()
+
   return {
     async getMode() {
       return 'FIXTURE'
@@ -174,21 +256,31 @@ export function createFixtureH2EmsDataSource(): H2SentinelDataSource {
     },
     async runAnalysis(datasetId) {
       assertFixtureDataset(datasetId)
-      return H2_FIXTURE_ANALYSIS_RUN
+      return projectFixtureRun(reviews)
     },
     async getOverview(runId) {
       assertFixtureRun(runId)
-      return H2_FIXTURE_ANALYSIS_RUN
+      return projectFixtureRun(reviews)
     },
     async listEvents(runId, filter) {
       assertFixtureRun(runId)
-      return fixtureEvents.filter((event) => matchesFilter(event, filter))
+      return projectFixtureEvents(reviews).filter((event) => matchesFilter(event, filter))
     },
     async getEvent(runId, eventId) {
       assertFixtureRun(runId)
-      const event = fixtureEvents.find((item) => item.eventId === eventId)
+      const event = projectFixtureEvents(reviews).find((item) => item.eventId === eventId)
       if (!event) throw new H2EmsAdapterError('invalid_fixture_request', false)
       return event
+    },
+    async getEventReview(runId, eventId) {
+      assertFixtureRun(runId)
+      assertFixtureEvent(eventId)
+      return getFixtureReview(reviews, eventId)
+    },
+    async reviewEvent(request) {
+      assertFixtureRun(request.runId)
+      assertFixtureEvent(request.eventId)
+      return applyFixtureReview(reviews, requests, request)
     },
     async getSeries(request) {
       assertFixtureRun(request.runId)
@@ -196,11 +288,11 @@ export function createFixtureH2EmsDataSource(): H2SentinelDataSource {
     },
     async ask(request) {
       assertFixtureAssistantRequest(request)
-      return H2_FIXTURE_ASSISTANT_ANSWER
+      return createFixtureAssistantAnswer(request, reviews)
     },
     async exportReport(request) {
       assertFixtureRun(request.runId)
-      return createFixtureReport(request)
+      return createFixtureReport(request, reviews)
     },
     async exportSubmission(runId) {
       assertFixtureRun(runId)
@@ -211,6 +303,233 @@ export function createFixtureH2EmsDataSource(): H2SentinelDataSource {
     },
   }
 }
+
+interface FixtureReviewReplay {
+  readonly signature: string
+  readonly receipt: H2ReviewMutationReceipt
+}
+
+function assertFixtureEvent(eventId: string): void {
+  if (!fixtureEvents.some((event) => event.eventId === eventId)) {
+    throw new H2EmsAdapterError('invalid_fixture_request', false)
+  }
+}
+
+function getFixtureReview(
+  reviews: Map<string, H2EventReview>,
+  eventId: string,
+): H2EventReview {
+  const existing = reviews.get(eventId)
+  if (existing) return snapshotReview(existing)
+
+  const review = {
+    schemaVersion: 1,
+    reviewId: `review-${H2_FIXTURE_ANALYSIS_RUN.runId}-${eventId}`,
+    runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+    eventId,
+    initialState: 'open',
+    currentState: 'open',
+    revision: 0,
+    entries: [],
+    provenance: H2_FIXTURE_PROVENANCE,
+  } as const satisfies H2EventReview
+  reviews.set(eventId, review)
+  return snapshotReview(review)
+}
+
+function applyFixtureReview(
+  reviews: Map<string, H2EventReview>,
+  requests: Map<string, FixtureReviewReplay>,
+  input: H2ReviewEventRequest,
+): H2ReviewMutationReceipt {
+  validateFixtureReviewRequest(input)
+  const signature = JSON.stringify({
+    schemaVersion: input.schemaVersion,
+    requestId: input.requestId,
+    runId: input.runId,
+    eventId: input.eventId,
+    action: input.action,
+    expectedRevision: input.expectedRevision,
+    actor: {
+      kind: input.actor.kind,
+      displayName: input.actor.displayName,
+    },
+    ...(input.note === undefined ? {} : { note: input.note }),
+  })
+  const replay = requests.get(input.requestId)
+  if (replay) {
+    if (replay.signature !== signature) {
+      throw new H2EmsAdapterError(
+        'review_idempotency_conflict',
+        false,
+        'review.idempotency_conflict',
+      )
+    }
+    return snapshotReceipt(replay.receipt, true)
+  }
+
+  const current = getFixtureReview(reviews, input.eventId)
+  if (input.expectedRevision !== current.revision) {
+    throw new H2EmsAdapterError('review_conflict', false, 'review.conflict')
+  }
+
+  let nextState: H2ReviewState
+  try {
+    nextState = nextH2ReviewState(current.currentState, input.action)
+  } catch {
+    throw new H2EmsAdapterError(
+      'review_invalid_transition',
+      false,
+      'review.invalid_transition',
+    )
+  }
+
+  const revision = current.revision + 1
+  const entry: H2ReviewEntry = {
+    schemaVersion: 1,
+    entryId: `${current.reviewId}-entry-${revision}`,
+    requestId: input.requestId,
+    revision,
+    action: input.action,
+    previousState: current.currentState,
+    nextState,
+    ...(input.note === undefined ? {} : { note: input.note }),
+    actor: { ...input.actor },
+    createdAt: new Date().toISOString(),
+  }
+  const review: H2EventReview = {
+    ...current,
+    currentState: nextState,
+    revision,
+    entries: [...current.entries, entry],
+  }
+  reviews.set(input.eventId, review)
+
+  const receipt: H2ReviewMutationReceipt = {
+    schemaVersion: 1,
+    replayed: false,
+    entry: snapshotEntry(entry),
+    review: snapshotReview(review),
+  }
+  requests.set(input.requestId, { signature, receipt: snapshotReceipt(receipt, false) })
+  return snapshotReceipt(receipt, false)
+}
+
+function validateFixtureReviewRequest(input: H2ReviewEventRequest): void {
+  if (
+    !hasExactKeys(
+      input,
+      [
+        'schemaVersion',
+        'requestId',
+        'runId',
+        'eventId',
+        'action',
+        'expectedRevision',
+        'actor',
+      ],
+      ['note'],
+    ) ||
+    !hasExactKeys(input.actor, ['kind', 'displayName']) ||
+    input.schemaVersion !== 1 ||
+    input.runId !== H2_FIXTURE_ANALYSIS_RUN.runId ||
+    !isFixtureRequestId(input.requestId) ||
+    !Number.isSafeInteger(input.expectedRevision) ||
+    input.expectedRevision < 0 ||
+    input.actor.kind !== 'local_operator' ||
+    !H2_REVIEW_ACTIONS.some((action) => action === input.action) ||
+    !isFixtureActorName(input.actor.displayName) ||
+    (input.note !== undefined && !isFixtureNote(input.note))
+  ) {
+    throw new H2EmsAdapterError('invalid_fixture_request', false, 'request.invalid')
+  }
+  if (reviewActionRequiresNote(input.action) && !input.note) {
+    throw new H2EmsAdapterError(
+      'review_note_required',
+      false,
+      'review.note_required',
+    )
+  }
+}
+
+function hasExactKeys(
+  value: unknown,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const allowed = new Set([...required, ...optional])
+  return (
+    required.every((key) => Object.hasOwn(value, key)) &&
+    Object.keys(value).every((key) => allowed.has(key))
+  )
+}
+
+function isFixtureRequestId(value: string): boolean {
+  return value.trim() === value && /^[\x20-\x7e]{1,128}$/u.test(value)
+}
+
+function isFixtureActorName(value: string): boolean {
+  return (
+    value.trim() === value &&
+    value.length > 0 &&
+    Array.from(value).length <= 64 &&
+    !/[\u0000-\u001f\u007f]/u.test(value)
+  )
+}
+
+function isFixtureNote(value: string): boolean {
+  return (
+    value.trim() === value &&
+    value.length > 0 &&
+    Array.from(value).length <= 2_000 &&
+    !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)
+  )
+}
+
+function reviewActionRequiresNote(action: H2ReviewAction): boolean {
+  return action !== 'confirm'
+}
+
+function snapshotEntry(entry: H2ReviewEntry): H2ReviewEntry {
+  return { ...entry, actor: { ...entry.actor } }
+}
+
+function snapshotReview(review: H2EventReview): H2EventReview {
+  return {
+    ...review,
+    entries: review.entries.map(snapshotEntry),
+  }
+}
+
+function snapshotReceipt(
+  receipt: H2ReviewMutationReceipt,
+  replayed: boolean,
+): H2ReviewMutationReceipt {
+  return {
+    ...receipt,
+    replayed,
+    entry: snapshotEntry(receipt.entry),
+    review: snapshotReview(receipt.review),
+  }
+}
+
+function projectFixtureEvents(
+  reviews: Map<string, H2EventReview>,
+): readonly H2AnomalyEvent[] {
+  return fixtureEvents.map((event) => ({
+    ...event,
+    reviewState: getFixtureReview(reviews, event.eventId).currentState,
+  }))
+}
+
+function projectFixtureRun(reviews: Map<string, H2EventReview>): H2AnalysisRun {
+  return {
+    ...H2_FIXTURE_ANALYSIS_RUN,
+    events: projectFixtureEvents(reviews),
+  }
+}
+
 function assertFixtureDataset(datasetId: string): void {
   if (datasetId !== H2_FIXTURE_DATASET.datasetId) {
     throw new H2EmsAdapterError('invalid_fixture_request', false)
@@ -228,8 +547,201 @@ function assertFixtureAssistantRequest(request: H2AssistantRequest): void {
   if (!H2_ASSISTANT_QUESTIONS.some(({ questionId }) => questionId === request.questionId)) {
     throw new H2EmsAdapterError('invalid_fixture_request', false)
   }
-  if (request.eventId && !fixtureEvents.some((event) => event.eventId === request.eventId)) {
-    throw new H2EmsAdapterError('invalid_fixture_request', false)
+  const event = request.eventId
+    ? fixtureEvents.find((candidate) => candidate.eventId === request.eventId)
+    : undefined
+  if (request.eventId && !event) {
+    throw new H2EmsAdapterError('invalid_fixture_request', false, 'assistant.event_not_found')
+  }
+  if ((request.questionId === 'Q03' || request.questionId === 'Q09') && !event) {
+    throw new H2EmsAdapterError(
+      'assistant_event_required',
+      false,
+      'assistant.event_required',
+    )
+  }
+  const allowedCodes = fixtureAssistantEventCodes[request.questionId]
+  if (
+    event &&
+    allowedCodes &&
+    !allowedCodes.some((code: H2AnomalyEvent['code']) => code === event.code)
+  ) {
+    throw new H2EmsAdapterError(
+      'assistant_event_mismatch',
+      false,
+      'assistant.event_mismatch',
+    )
+  }
+}
+
+const fixtureAssistantEventCodes = {
+  Q01: undefined,
+  Q02: ['C04', 'C05'],
+  Q03: ['C03'],
+  Q04: ['C07'],
+  Q05: ['C02'],
+  Q06: ['C01'],
+  Q07: ['C06'],
+  Q08: undefined,
+  Q09: undefined,
+  Q10: ['C04', 'C05'],
+} as const satisfies Readonly<
+  Record<H2AssistantQuestionId, readonly H2AnomalyEvent['code'][] | undefined>
+>
+
+const fixtureAssistantTemplates = {
+  Q01: {
+    claimKind: 'fact',
+    text: 'PCC 功率为正表示向电网送电，为负表示从电网受电；这与储能功率正值表示放电、负值表示充电的约定不同。',
+  },
+  Q02: {
+    claimKind: 'fact',
+    text: 'PCC 功率越限比较瞬时功率与动态进出线边界，单位为 kW；电量配额异常累计一个自然日的进出线电量并与配额比较，单位为 kWh。C04 对应功率边界，C05 对应日累计电量风险。',
+  },
+  Q03: {
+    claimKind: 'inference',
+    text: '所选 C03 事件显示储能充放电指令与实际方向相反，并与 PCC 功率变化同时出现；这支持检查符号映射和反馈链路，但不足以单独证明设备故障因果。',
+  },
+  Q04: {
+    claimKind: 'calculation',
+    text: 'SOC 调节备用需要同时比较实际与目标 SOC、充放电功率余量、可用能量容量和目标时间窗；该判断用于提前预警，不等同于已经发生越限。当前 Fixture 未包含完整 C07 事件，因此不生成具体余量数值。',
+  },
+  Q05: {
+    claimKind: 'inference',
+    text: '定位设备降额未同步，应在同一时间窗比较设备可用容量、EMS 容量模型和已下发设定值，再确认受影响设备；当前 Fixture 没有 C02 事件，不能虚构降额对象或幅度。',
+  },
+  Q06: {
+    claimKind: 'inference',
+    text: '区分云团变化与控制指令振荡，需要对齐光伏或天气变化、电解槽指令周期性及多设备响应时序；单个告警或单个采样点不足以下结论。当前 Fixture 不包含 C01 事件。',
+  },
+  Q07: {
+    claimKind: 'calculation',
+    text: '多台电解槽负荷分配应比较单机上下限、稳定区间、爬坡、启停和效率曲线对应的能耗基线；现有合同没有电解槽健康分数，当前 Fixture 也不提供 C06 事件。',
+  },
+  Q08: {
+    claimKind: 'recommendation',
+    text: '所有运行建议都只是决策支持，检查、监视、升级处置和报告类建议在执行前都必须由人员确认；运行助手不具备设备控制权限。',
+  },
+  Q10: {
+    claimKind: 'fact',
+    text: 'PCC 合规日报包含实际功率与动态上下限、越限区间和持续时间、越限电量、日累计进出线电量与配额、C04/C05 事件及复核状态、数据质量、来源和安全声明。缺少配额证据时应明确不计算结论。',
+  },
+} as const satisfies Readonly<
+  Record<Exclude<H2AssistantQuestionId, 'Q09'>, {
+    readonly claimKind: H2AssistantCitation['claimKind']
+    readonly text: string
+  }>
+>
+
+async function createFixtureAssistantAnswer(
+  request: H2AssistantRequest,
+  reviews: Map<string, H2EventReview>,
+): Promise<H2AssistantAnswer> {
+  const event = request.eventId
+    ? projectFixtureEvents(reviews).find((candidate) => candidate.eventId === request.eventId)
+    : undefined
+
+  if (request.questionId === 'Q09') {
+    const eventId = request.eventId
+    if (!eventId || !event) {
+      throw new H2EmsAdapterError(
+        'assistant_event_required',
+        false,
+        'assistant.event_required',
+      )
+    }
+    const firstEvidence = event.evidence[0]
+    if (!firstEvidence) {
+      throw new H2EmsAdapterError(
+        'invalid_fixture_request',
+        false,
+        'assistant.evidence_unavailable',
+      )
+    }
+    const generatedReport = await createFixtureReport(
+      {
+        runId: request.runId,
+        kind: 'single_event_diagnosis',
+        eventId,
+      },
+      reviews,
+    )
+    const citation: H2AssistantCitation = {
+      citationId: `citation-report-${generatedReport.descriptor.reportId}`,
+      claimKind: 'fact',
+      sourceType: 'report',
+      sourceId: generatedReport.descriptor.reportId,
+      eventId,
+    }
+    const evidenceCitation: H2AssistantCitation = {
+      citationId: `citation-evidence-${firstEvidence.evidenceId}`,
+      claimKind: 'fact',
+      sourceType: 'evidence',
+      sourceId: firstEvidence.evidenceId,
+      eventId,
+    }
+    return {
+      schemaVersion: 1,
+      answerId: `answer-Q09-${eventId}`,
+      runId: request.runId,
+      questionId: 'Q09',
+      mode: 'DETERMINISTIC_TEMPLATE',
+      generatedAt: H2_FIXTURE_PROVENANCE.generatedAt,
+      eventId,
+      sections: [
+        {
+          sectionId: 'selected_event_evidence',
+          claimKind: 'fact',
+          text: `报告范围绑定当前运行中的所选事件 ${eventId}，并保留该事件的结构化证据链。`,
+          citationIds: [evidenceCitation.citationId],
+        },
+        {
+          sectionId: 'generated_diagnosis_report',
+          claimKind: 'fact',
+          text: `已生成中文单事件诊断报告。该报告来自 FIXTURE 固定样例，不是测试集结果、隐藏标签或官方得分。`,
+          citationIds: [citation.citationId],
+        },
+      ],
+      citations: [evidenceCitation, citation],
+      generatedReport,
+      refusedControlClaim: true,
+      provenance: H2_FIXTURE_PROVENANCE,
+    }
+  }
+
+  const template = fixtureAssistantTemplates[request.questionId]
+  const citations: readonly H2AssistantCitation[] = event
+    ? event.evidence.map((item) => ({
+        citationId: `citation-evidence-${item.evidenceId}`,
+        claimKind: template.claimKind,
+        sourceType: 'evidence',
+        sourceId: item.evidenceId,
+        eventId: event.eventId,
+      }))
+    : [{
+        citationId: `citation-knowledge-${request.questionId}`,
+        claimKind: template.claimKind,
+        sourceType: 'knowledge_base',
+        sourceId: `official-question-${request.questionId}`,
+      }]
+
+  return {
+    schemaVersion: 1,
+    answerId: `answer-${request.questionId}-${event?.eventId ?? 'run'}`,
+    runId: request.runId,
+    questionId: request.questionId,
+    mode: 'DETERMINISTIC_TEMPLATE',
+    generatedAt: H2_FIXTURE_PROVENANCE.generatedAt,
+    ...(event ? { eventId: event.eventId } : {}),
+    sections: [{
+      sectionId: `answer-${request.questionId.toLowerCase()}`,
+      claimKind: template.claimKind,
+      text: template.text,
+      citationIds: citations.map(({ citationId }) => citationId),
+    }],
+    citations,
+    refusedControlClaim: true,
+    provenance: H2_FIXTURE_PROVENANCE,
   }
 }
 
@@ -310,9 +822,11 @@ function isFixtureTimeRange(startTime: string, endTime: string): boolean {
 
 async function createFixtureReport(
   request: H2ReportRequest,
+  reviews: Map<string, H2EventReview>,
 ): Promise<H2ReportArtifact> {
+  assertFixtureReportScope(request)
   const event = request.eventId
-    ? fixtureEvents.find((item) => item.eventId === request.eventId)
+    ? projectFixtureEvents(reviews).find((item) => item.eventId === request.eventId)
     : undefined
   if (request.eventId && !event) throw new H2EmsAdapterError('invalid_fixture_request', false)
 
@@ -321,6 +835,8 @@ async function createFixtureReport(
     request.kind,
     profile,
     event,
+    request.timeRange,
+    reviews,
   )
   return createArtifact(
     request.kind,
@@ -334,12 +850,14 @@ function createFixtureReportContent(
   kind: H2ReportKind,
   profile: FixtureReportProfile,
   event: H2AnomalyEvent | undefined,
+  timeRange: H2TimeRange | undefined,
+  reviews: Map<string, H2EventReview>,
 ): string {
   switch (profile.format) {
     case 'html':
-      return createFixtureHtmlReport(kind, profile.title, event)
+      return createFixtureHtmlReport(kind, profile.title, event, timeRange, reviews)
     case 'json':
-      return createFixtureJsonReport(kind, event)
+      return createFixtureJsonReport(kind, reviews)
     case 'csv':
       return serializeH2SubmissionRows(
         fixtureEvents.map((fixtureEvent) => toH2SubmissionRow(fixtureEvent)),
@@ -351,35 +869,44 @@ function createFixtureHtmlReport(
   kind: H2ReportKind,
   title: string,
   event: H2AnomalyEvent | undefined,
+  timeRange: H2TimeRange | undefined,
+  reviews: Map<string, H2EventReview>,
 ): string {
-  const eventIdentity = event?.eventId ?? 'Not applicable'
-  const humanConfirmation = event?.requiresHumanConfirmation ?? true
+  const eventIdentity = event?.eventId ?? '不适用'
   const limitations = H2_FIXTURE_PROVENANCE.limitations
-    .map((limitation) => `        <li>${escapeHtml(limitation)}</li>`)
+    .map((limitation) => `        <li>${escapeHtml(localizeFixtureText(limitation))}</li>`)
     .join('\n')
+  const sections = createFixtureHtmlSections(kind, event, timeRange, reviews)
 
   return [
     '<!doctype html>',
-    '<html lang="en">',
+    '<html lang="zh-CN">',
     '  <head>',
-    '    <meta charset="utf-8">',
+    '    <meta charset="utf-8" />',
     `    <title>${escapeHtml(title)} | H2 Sentinel</title>`,
+    '    <style>body{font-family:system-ui,sans-serif;line-height:1.6;max-width:960px;margin:auto;padding:24px;color:#10202b}code{overflow-wrap:anywhere}dt{font-weight:700}dd{margin:0 0 8px}</style>',
     '  </head>',
     '  <body>',
     '    <main>',
     `      <h1>${escapeHtml(title)}</h1>`,
-    '      <p>This Fixture report is sanitized demonstration evidence, not an official competition result.</p>',
+    '      <p><strong>FIXTURE · 固定样例</strong>：这是合成脱敏演示证据，不是公开验证集、隐藏测试结果或官方成绩。</p>',
+    '      <h2>报告范围与数据来源</h2>',
     '      <dl>',
-    `        <dt>Report kind</dt><dd>${escapeHtml(kind)}</dd>`,
-    `        <dt>Run ID</dt><dd>${escapeHtml(H2_FIXTURE_ANALYSIS_RUN.runId)}</dd>`,
-    `        <dt>Event ID</dt><dd>${escapeHtml(eventIdentity)}</dd>`,
-    `        <dt>Provenance mode</dt><dd>${escapeHtml(H2_FIXTURE_PROVENANCE.mode)}</dd>`,
-    `        <dt>Provenance source</dt><dd>${escapeHtml(H2_FIXTURE_PROVENANCE.source)}</dd>`,
-    `        <dt>Dataset fingerprint</dt><dd>${escapeHtml(H2_FIXTURE_PROVENANCE.datasetFingerprint ?? 'Not available')}</dd>`,
+    `        <dt>报告类型</dt><dd>${escapeHtml(kind)}</dd>`,
+    `        <dt>运行 ID</dt><dd>${escapeHtml(H2_FIXTURE_ANALYSIS_RUN.runId)}</dd>`,
+    `        <dt>事件 ID</dt><dd>${escapeHtml(eventIdentity)}</dd>`,
+    `        <dt>来源模式</dt><dd>${escapeHtml(H2_FIXTURE_PROVENANCE.mode)}</dd>`,
+    `        <dt>来源标识</dt><dd>${escapeHtml(H2_FIXTURE_PROVENANCE.source)}</dd>`,
+    `        <dt>数据指纹</dt><dd><code>${escapeHtml(H2_FIXTURE_PROVENANCE.datasetFingerprint ?? '未提供')}</code></dd>`,
+    `        <dt>源时间范围</dt><dd>${escapeHtml((timeRange ?? H2_FIXTURE_DATASET.timeRange).startTime)} 至 ${escapeHtml((timeRange ?? H2_FIXTURE_DATASET.timeRange).endTime)}</dd>`,
+    `        <dt>生成时间</dt><dd>${escapeHtml(H2_FIXTURE_REPORT_DESCRIPTOR.generatedAt)}</dd>`,
     '      </dl>',
+    sections,
+    '      <h2>安全声明与限制</h2>',
     `      <p>${escapeHtml(H2_FIXTURE_REPORT_DESCRIPTOR.safetyDisclaimer)}</p>`,
-    `      <p>Human confirmation required: ${escapeHtml(String(humanConfirmation))}.</p>`,
-    '      <h2>Fixture limitations</h2>',
+    '      <p>所有建议仅供人工判断，必须人工确认；本应用不下发设备指令。</p>',
+    '      <p>未加载公开标签，未生成验证指标。</p>',
+    '      <h3>Fixture 限制</h3>',
     '      <ul>',
     limitations,
     '      </ul>',
@@ -392,26 +919,179 @@ function createFixtureHtmlReport(
 
 function createFixtureJsonReport(
   kind: H2ReportKind,
-  event: H2AnomalyEvent | undefined,
+  reviews: Map<string, H2EventReview>,
 ): string {
-  const payload =
-    kind === 'validation_metrics'
-      ? {
-          schemaVersion: 1,
-          reportKind: kind,
-          runId: H2_FIXTURE_ANALYSIS_RUN.runId,
-          quality: H2_FIXTURE_QUALITY_REPORT,
-          provenance: H2_FIXTURE_PROVENANCE,
-        }
-      : {
-          schemaVersion: 1,
-          reportKind: kind,
-          run: H2_FIXTURE_ANALYSIS_RUN,
-          event: event ?? null,
-          provenance: H2_FIXTURE_PROVENANCE,
-        }
+  if (kind === 'review_audit_json') {
+    const payload: H2ReviewAuditExport = {
+      schemaVersion: 1,
+      exportKind: 'event_review_audit',
+      runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+      datasetFingerprint: H2_FIXTURE_DATASET.fingerprint,
+      generatedAt: H2_FIXTURE_REPORT_DESCRIPTOR.generatedAt,
+      actorIdentityNotice: 'local_operator_labels_are_unverified',
+      events: projectFixtureEvents(reviews)
+        .slice()
+        .sort((left, right) =>
+          left.startTime.localeCompare(right.startTime) ||
+          left.eventId.localeCompare(right.eventId),
+        )
+        .map((event) => ({
+          event: {
+            eventId: event.eventId,
+            code: event.code,
+            subtype: event.subtype,
+            startTime: event.startTime,
+            endTime: event.endTime,
+          },
+          review: getFixtureReview(reviews, event.eventId),
+        })),
+      provenance: H2_FIXTURE_PROVENANCE,
+    }
+    return `${JSON.stringify(payload, null, 2)}\n`
+  }
+
+  const payload = kind === 'validation_metrics'
+    ? {
+        schemaVersion: 1,
+        reportKind: kind,
+        runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+        available: false,
+        message: '未加载公开标签，未生成验证指标。',
+        provenance: H2_FIXTURE_PROVENANCE,
+      }
+    : {
+        schemaVersion: 1,
+        reportKind: kind,
+        run: projectFixtureRun(reviews),
+        provenance: H2_FIXTURE_PROVENANCE,
+      }
 
   return `${JSON.stringify(payload, null, 2)}\n`
+}
+
+function createFixtureHtmlSections(
+  kind: H2ReportKind,
+  event: H2AnomalyEvent | undefined,
+  timeRange: H2TimeRange | undefined,
+  reviews: Map<string, H2EventReview>,
+): string {
+  if (kind === 'single_event_diagnosis' && event) {
+    const review = getFixtureReview(reviews, event.eventId)
+    const evidence = event.evidence.map((item) =>
+      `<li><code>${escapeHtml(item.evidenceId)}</code> · 变量 <code>${escapeHtml(item.variable ?? '未提供')}</code> · 实际值 ${escapeHtml(String(item.actualValue ?? '未提供'))}${item.unit ? ` ${escapeHtml(item.unit)}` : ''} · 参考值 ${escapeHtml(String(item.referenceValue ?? '未提供'))} · 比较符 ${escapeHtml(item.comparator ?? '未提供')}。${escapeHtml(localizeFixtureText(item.conclusion))}</li>`,
+    ).join('')
+    const impactEvidence = event.evidence.find(({ evidenceId }) =>
+      event.impact.evidenceIds.includes(evidenceId),
+    )
+    const impactWindow = impactEvidence?.interval
+      ? `${impactEvidence.interval.startTime} 至 ${impactEvidence.interval.endTime}`
+      : `${event.startTime} 至 ${event.endTime}`
+    const assumptions = event.impact.assumptions
+      .map((assumption) => `<li>${escapeHtml(localizeFixtureText(assumption))}</li>`)
+      .join('')
+    const safetyChecks = event.safetyChecks.map((check) =>
+      `<li><code>${escapeHtml(check.checkId)}</code> · ${escapeHtml(check.status)}：${escapeHtml(localizeFixtureText(check.title))}。${escapeHtml(localizeFixtureText(check.message))}</li>`,
+    ).join('')
+    const recommendations = event.recommendations.map((recommendation) =>
+      `<li><code>${escapeHtml(recommendation.recommendationId)}</code> · ${escapeHtml(recommendation.actionKind)}：${escapeHtml(localizeFixtureText(recommendation.summary))}<br />依据：${escapeHtml(localizeFixtureText(recommendation.rationale))}；必须人工确认：${recommendation.requiresHumanConfirmation ? '是' : '否'}。</li>`,
+    ).join('')
+    const journal = review.entries.length === 0
+      ? '<p>尚无人工复核记录。</p>'
+      : `<ol>${review.entries.map((entry) =>
+          `<li>修订 ${entry.revision} · ${escapeHtml(fixtureReviewActionLabels[entry.action])}（<code>${escapeHtml(entry.action)}</code>）· ${escapeHtml(fixtureReviewStateLabels[entry.previousState])} → ${escapeHtml(fixtureReviewStateLabels[entry.nextState])} · ${escapeHtml(entry.createdAt)} · 本地操作人 ${escapeHtml(entry.actor.displayName)}（身份未验证）${entry.note ? `：${escapeHtml(entry.note)}` : ''}</li>`,
+        ).join('')}</ol>`
+    return [
+      `      <h2>异常概览</h2><p>${escapeHtml(event.code)} · ${escapeHtml(event.subtype)} · 严重度 ${escapeHtml(event.severity)} · ${escapeHtml(event.startTime)} 至 ${escapeHtml(event.endTime)} · 首次发现 ${escapeHtml(event.firstDetectionTime)}。</p><p>受影响设备：${event.affectedEquipment.map((item) => `${escapeHtml(localizeFixtureText(item.displayName))}（<code>${escapeHtml(item.id)}</code>）`).join('、')}。</p>`,
+      `      <h2>证据链</h2><ul>${evidence}</ul>`,
+      `      <h2>原因判断：事实与推断</h2><p><strong>推断：</strong>${escapeHtml(localizeFixtureText(event.rootCause))} 该结论不等同于直接设备故障判定。</p>`,
+      `      <h2>影响量化</h2><p><code>${escapeHtml(event.impact.metric)}</code> = ${escapeHtml(String(event.impact.value))} ${escapeHtml(event.impact.unit)}；计算窗口 ${escapeHtml(impactWindow)}；公式版本 <code>${escapeHtml(event.impact.formulaVersion)}</code>。</p><p>计算假设：</p><ul>${assumptions}</ul>`,
+      `      <h2>安全检查</h2><ul>${safetyChecks}</ul><p>安全检查结果不会转化为控制指令。</p>`,
+      `      <h2>建议与人工确认</h2><ul>${recommendations}</ul>`,
+      `      <h2>人工复核记录</h2><p>当前状态：${escapeHtml(fixtureReviewStateLabels[review.currentState])}（<code>${escapeHtml(review.currentState)}</code>），修订 ${review.revision}。操作人名称仅为本地未验证归属，不代表认证身份。</p>${journal}`,
+      `      <h2>版本与溯源</h2><p>规则 <code>${escapeHtml(H2_FIXTURE_PROVENANCE.ruleVersion ?? '未提供')}</code>；配置 <code>${escapeHtml(H2_FIXTURE_PROVENANCE.configurationVersion ?? '未提供')}</code>；模型版本：未声明；渲染由本地 Fixture 适配器完成。</p>`,
+    ].join('\n')
+  }
+
+  if (kind === 'pcc_daily_compliance') {
+    const relatedEvents = projectFixtureEvents(reviews)
+      .filter(({ code }) => code === 'C04' || code === 'C05')
+      .map((item) => `<li>${escapeHtml(item.code)} · <code>${escapeHtml(item.eventId)}</code> · ${escapeHtml(fixtureReviewStateLabels[item.reviewState])}</li>`)
+      .join('')
+    return [
+      `      <h2>日报日期与时间基准</h2><p>${escapeHtml(timeRange?.startTime ?? '')} 至 ${escapeHtml(timeRange?.endTime ?? '')}</p>`,
+      '      <h2>PCC 实际功率与动态限值</h2><p>固定样例在 C04 证据时点的 <code>pcc_power_kw</code> 为 720 kW，生效的 <code>pcc_export_limit_kw</code> 为 500 kW；<code>pcc_import_limit_kw</code> 字段存在，但该事件不是受电越限。</p>',
+      '      <h2>越限区间、持续时间与电量</h2><p>送电越限区间为 2026-01-05T10:32:00Z 至 2026-01-05T10:39:00Z，共 8 个分钟采样点；<code>pcc_power_limit_violation_energy_kwh</code> = 29.333333333333332 kWh，公式版本 <code>impact-c04-v1</code>。固定样例未检测到受电越限区间。</p>',
+      '      <h2>日累计电量与配额</h2><p>证据不足，未计算该项合规结论。</p>',
+      `      <h2>事件与人工复核</h2><ul>${relatedEvents || '<li>当前范围没有 C04/C05 事件。</li>'}</ul>`,
+      `      <h2>数据质量、公式与溯源</h2><p>质量状态 ${escapeHtml(H2_FIXTURE_QUALITY_REPORT.status)}，${H2_FIXTURE_QUALITY_REPORT.rowCount} 行；规则 <code>${escapeHtml(H2_FIXTURE_PROVENANCE.ruleVersion ?? '未提供')}</code>；Fixture 仅覆盖合成脱敏 C03/C04。</p>`,
+    ].join('\n')
+  }
+
+  if (kind === 'quality_report') {
+    const checks = H2_FIXTURE_QUALITY_REPORT.checks
+      .map((check) => `<li><code>${escapeHtml(check.code)}</code> · ${escapeHtml(check.status)}：${escapeHtml(localizeFixtureText(check.message))}；影响字段 ${check.affectedFields.map((field) => `<code>${escapeHtml(field)}</code>`).join('、') || '无'}。</li>`)
+      .join('')
+    return `      <h2>数据范围与质量结论</h2><p>${H2_FIXTURE_QUALITY_REPORT.rowCount} 行；${escapeHtml(H2_FIXTURE_QUALITY_REPORT.timeRange.startTime)} 至 ${escapeHtml(H2_FIXTURE_QUALITY_REPORT.timeRange.endTime)}；质量状态 ${escapeHtml(H2_FIXTURE_QUALITY_REPORT.status)}。</p><h2>质量检查详情</h2><ul>${checks}</ul><p>当前合同未提供缺失值、重复时间戳、不规则采样、非法范围和功率平衡残差的独立检查项，因此不把这些类别推断为零或已通过。</p><h2>阻断、降级与限制</h2><p>当前固定样例没有阻断原因或质量警告；未加载公开标签，未生成验证指标。</p><h2>版本与溯源</h2><p>FIXTURE 固定样例；规则 <code>${escapeHtml(H2_FIXTURE_PROVENANCE.ruleVersion ?? '未提供')}</code>。</p>`
+  }
+
+  const orderedEvents = projectFixtureEvents(reviews).slice().sort((left, right) =>
+    left.startTime.localeCompare(right.startTime) || left.eventId.localeCompare(right.eventId),
+  )
+  const reviewCounts = fixtureReviewStates.map((state) =>
+    `${fixtureReviewStateLabels[state]}（${state}）${orderedEvents.filter((eventItem) => eventItem.reviewState === state).length} 个`,
+  ).join('；')
+  const eventSummary = orderedEvents.map((item) =>
+    `<li>${escapeHtml(item.code)} · <code>${escapeHtml(item.eventId)}</code> · ${escapeHtml(item.startTime)} 至 ${escapeHtml(item.endTime)} · ${escapeHtml(fixtureReviewStateLabels[item.reviewState])} · <code>${escapeHtml(item.impact.metric)}</code> = ${escapeHtml(String(item.impact.value))} ${escapeHtml(item.impact.unit)}</li>`,
+  ).join('')
+  return `      <h2>运行范围与质量</h2><p>${escapeHtml(H2_FIXTURE_DATASET.timeRange.startTime)} 至 ${escapeHtml(H2_FIXTURE_DATASET.timeRange.endTime)}；${H2_FIXTURE_QUALITY_REPORT.rowCount} 行；质量状态 ${escapeHtml(H2_FIXTURE_QUALITY_REPORT.status)}。</p><h2>事件计数</h2><p>按代码：C03 1 个，C04 1 个，其余 C01–C07 为 0 个；按严重度：high 2 个，其余为 0 个。</p><h2>事件与复核摘要</h2><p>${escapeHtml(reviewCounts)}。</p><ul>${eventSummary}</ul><h2>影响与限制</h2><p>不同单位的影响不合并；未加载公开标签，未生成验证指标。</p><h2>版本与溯源</h2><p>FIXTURE 固定样例；规则 <code>${escapeHtml(H2_FIXTURE_PROVENANCE.ruleVersion ?? '未提供')}</code>。</p>`
+}
+
+function assertFixtureReportScope(request: H2ReportRequest): void {
+  const invalid = (): never => {
+    throw new H2EmsAdapterError('report_invalid_scope', false, 'report.invalid_scope')
+  }
+  if (request.kind === 'single_event_diagnosis') {
+    if (!request.eventId || request.timeRange) invalid()
+    return
+  }
+  if (request.eventId) invalid()
+  if (request.kind === 'period_summary') {
+    if (request.timeRange && !isValidTimeRange(request.timeRange)) invalid()
+    return
+  }
+  if (request.kind === 'pcc_daily_compliance') {
+    if (
+      !request.timeRange ||
+      !isCalendarDayRange(request.timeRange) ||
+      !containsFixtureDatasetRange(request.timeRange)
+    ) invalid()
+    return
+  }
+  if (request.timeRange) invalid()
+}
+
+function isValidTimeRange(timeRange: H2TimeRange): boolean {
+  const start = Date.parse(timeRange.startTime)
+  const end = Date.parse(timeRange.endTime)
+  return Number.isFinite(start) && Number.isFinite(end) && start < end
+}
+
+function containsFixtureDatasetRange(timeRange: H2TimeRange): boolean {
+  return (
+    Date.parse(timeRange.startTime) <= Date.parse(H2_FIXTURE_DATASET.timeRange.startTime) &&
+    Date.parse(timeRange.endTime) >= Date.parse(H2_FIXTURE_DATASET.timeRange.endTime)
+  )
+}
+
+function isCalendarDayRange(timeRange: H2TimeRange): boolean {
+  const startMatch = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?(Z|[+-]\d{2}:\d{2})$/u.exec(timeRange.startTime)
+  const endMatch = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.000)?(Z|[+-]\d{2}:\d{2})$/u.exec(timeRange.endTime)
+  return (
+    startMatch !== null &&
+    endMatch !== null &&
+    startMatch[1] === endMatch[1] &&
+    Date.parse(timeRange.endTime) - Date.parse(timeRange.startTime) === 86_400_000
+  )
 }
 
 async function createArtifact(
@@ -447,6 +1127,10 @@ function assertSafeFixtureFilename(
   if (!/^[a-z0-9][a-z0-9._-]*$/.test(filename) || !filename.endsWith(extension)) {
     throw new Error('Invalid Fixture report filename configuration.')
   }
+}
+
+function localizeFixtureText(value: string): string {
+  return fixtureTextZh[value] ?? value
 }
 
 function escapeHtml(value: string): string {

@@ -1,30 +1,23 @@
 import {
   H2_FIXTURE_ANALYSIS_RUN,
-  H2_FIXTURE_ASSISTANT_ANSWER,
   H2_FIXTURE_DATASET,
   H2_FIXTURE_PROVENANCE,
   H2_FIXTURE_QUALITY_REPORT,
-  H2_FIXTURE_REPORT_DESCRIPTOR,
   H2_GOLDEN_C03_EVENT,
   H2_GOLDEN_C04_EVENT,
-  serializeH2SubmissionRows,
-  toH2SubmissionRow,
   type H2AnalysisRun,
   type H2AnomalyEvent,
-  type H2AssistantAnswer,
-  type H2AssistantRequest,
   type H2CsvImportRequest,
   type H2CsvImportResult,
   type H2DataQualityReport,
   type H2DatasetManifest,
   type H2DatasetMode,
   type H2EventFilter,
-  type H2ReportArtifact,
-  type H2ReportRequest,
   type H2SentinelDataSource,
   type H2SeriesRequest,
   type H2SeriesResponse,
 } from '@opendashboard/h2-contracts'
+import { createFixtureH2EmsDataSource } from '@opendashboard/h2-ems'
 
 export const CORRECTED_C04_IMPACT_KWH = 29.333333333333332
 
@@ -58,6 +51,7 @@ export function createH2WebFixtureDataSource(
   } = {},
 ): H2SentinelDataSource {
   const series = createFixtureSeries()
+  const p1Fixture = createFixtureH2EmsDataSource()
 
   return {
     async getMode(): Promise<H2DatasetMode> {
@@ -91,6 +85,8 @@ export function createH2WebFixtureDataSource(
       if (!event) throw new Error('Unknown fixture event.')
       return event
     },
+    getEventReview: p1Fixture.getEventReview,
+    reviewEvent: p1Fixture.reviewEvent,
     async getSeries(request: H2SeriesRequest): Promise<H2SeriesResponse> {
       assertReference(request.runId, H2_WEB_FIXTURE_RUN.runId)
       if (options.failSeries) throw new Error('Fixture series failure.')
@@ -105,64 +101,9 @@ export function createH2WebFixtureDataSource(
         })),
       }
     },
-    async ask(request: H2AssistantRequest): Promise<H2AssistantAnswer> {
-      assertReference(request.runId, H2_WEB_FIXTURE_RUN.runId)
-      if (request.questionId === H2_FIXTURE_ASSISTANT_ANSWER.questionId) {
-        return H2_FIXTURE_ASSISTANT_ANSWER
-      }
-      return {
-        ...H2_FIXTURE_ASSISTANT_ANSWER,
-        answerId: `answer-${request.questionId}-fixture`,
-        questionId: request.questionId,
-        ...(request.eventId ? { eventId: request.eventId } : {}),
-        sections: [
-          {
-            sectionId: 'fixture-boundary',
-            claimKind: 'fact',
-            text: '此固定样例回答来自结构化模板；不会发出设备控制指令。',
-            citationIds: [],
-          },
-        ],
-        citations: [],
-      }
-    },
-    async exportReport(request: H2ReportRequest): Promise<H2ReportArtifact> {
-      assertReference(request.runId, H2_WEB_FIXTURE_RUN.runId)
-      const format = request.kind === 'analysis_result_json' ? 'json' : 'html'
-      const mediaType = format === 'json' ? 'application/json' : 'text/html'
-      const filename = `h2-fixture-${request.kind}.${format}`
-      const content =
-        format === 'json'
-          ? `${JSON.stringify(H2_WEB_FIXTURE_RUN, null, 2)}\n`
-          : `<main><h1>H2 Sentinel Fixture Report</h1><p>Advisory only. Human confirmation required.</p></main>`
-
-      return {
-        descriptor: {
-          ...H2_FIXTURE_REPORT_DESCRIPTOR,
-          reportId: `report-fixture-${request.kind}`,
-          kind: request.kind,
-          format,
-          filename,
-          ...(request.eventId ? { eventId: request.eventId } : {}),
-        },
-        mediaType,
-        content,
-      }
-    },
-    async exportSubmission(runId: string): Promise<H2ReportArtifact> {
-      assertReference(runId, H2_WEB_FIXTURE_RUN.runId)
-      return {
-        descriptor: {
-          ...H2_FIXTURE_REPORT_DESCRIPTOR,
-          reportId: 'report-fixture-submission',
-          kind: 'submission_csv',
-          format: 'csv',
-          filename: 'submission.csv',
-        },
-        mediaType: 'text/csv',
-        content: serializeH2SubmissionRows(H2_WEB_FIXTURE_EVENTS.map(toH2SubmissionRow)),
-      }
-    },
+    ask: p1Fixture.ask,
+    exportReport: p1Fixture.exportReport,
+    exportSubmission: p1Fixture.exportSubmission,
   }
 }
 

@@ -1,4 +1,8 @@
 import type {
+  H2AssistantAnswer,
+  H2AssistantRequest,
+  H2ReviewEventRequest,
+  H2ReviewMutationReceipt,
   H2SentinelDataSource,
   H2SeriesRequest,
   H2SeriesResponse,
@@ -21,6 +25,10 @@ import {
   verifyReportIdentity,
 } from './remote-response-validation.ts'
 import {
+  isEventReview,
+  isReviewMutationReceipt,
+} from './remote-review-validation.ts'
+import {
   isIsoTimestamp,
   verifyRemoteIdentity,
 } from './remote-validation-primitives.ts'
@@ -42,6 +50,8 @@ export const H2_EMS_LIVE_ROUTES = {
   overview: '/api/v1/h2-sentinel/runs/overview',
   events: '/api/v1/h2-sentinel/runs/events',
   event: '/api/v1/h2-sentinel/runs/event',
+  eventReview: '/api/v1/h2-sentinel/runs/{runId}/events/{eventId}/review',
+  reviewEvent: '/api/v1/h2-sentinel/runs/{runId}/events/{eventId}:review',
   series: '/api/v1/h2-sentinel/runs/series',
   assistant: '/api/v1/h2-sentinel/assistant:ask',
   report: '/api/v1/h2-sentinel/reports:export',
@@ -102,19 +112,36 @@ export function createLiveH2EmsDataSource(
       await request(H2_EMS_LIVE_ROUTES.event, { runId, eventId }, isEvent),
       (event) => event.eventId === eventId,
     ),
+    getEventReview: async (runId, eventId) => verifyRemoteIdentity(
+      await request(
+        reviewRoute(H2_EMS_LIVE_ROUTES.eventReview, runId, eventId),
+        undefined,
+        isEventReview,
+      ),
+      (review) => review.runId === runId && review.eventId === eventId,
+    ),
+    reviewEvent: async (input) => verifyRemoteIdentity(
+      await request(
+        reviewRoute(H2_EMS_LIVE_ROUTES.reviewEvent, input.runId, input.eventId),
+        input,
+        isReviewMutationReceipt,
+      ),
+      (receipt) => reviewReceiptMatchesRequest(receipt, input),
+    ),
     getSeries: async (input) => verifyRemoteIdentity(
       await request(H2_EMS_LIVE_ROUTES.series, input, isSeriesResponse),
       (series) => seriesMatchesRequest(series, input),
     ),
-    ask: async (input) => verifyRemoteIdentity(
-      await request(H2_EMS_LIVE_ROUTES.assistant, input, isAssistantAnswer),
-      (answer) =>
-        answer.runId === input.runId &&
-        answer.questionId === input.questionId &&
-        answer.eventId === input.eventId &&
-        answer.refusedControlClaim &&
-        (input.allowLlmRendering || answer.mode !== 'LLM_RENDERED'),
-    ),
+    ask: async (input) => {
+      const answer = verifyRemoteIdentity(
+        await request(H2_EMS_LIVE_ROUTES.assistant, input, isAssistantAnswer),
+        (candidate) => assistantAnswerMatchesRequest(candidate, input),
+      )
+      if (answer.generatedReport) {
+        await verifyReportContentHash(answer.generatedReport)
+      }
+      return answer
+    },
     exportReport: async (input) => verifyReportIdentity(
       await verifyReportContentHash(
         await request(H2_EMS_LIVE_ROUTES.report, input, isReportArtifact),
@@ -195,12 +222,24 @@ async function requestEnvelope<T>(
     if (!hasExpectedResponseOrigin(response, baseUrl)) {
       throw new H2EmsAdapterError('remote_response_invalid', false)
     }
-    if (!response.ok) throw new H2EmsAdapterError('remote_request_failed', response.status >= 500)
     let body: unknown
     try {
       body = await response.json()
     } catch {
-      throw new H2EmsAdapterError('remote_response_invalid', false)
+      throw new H2EmsAdapterError(
+        response.ok ? 'remote_response_invalid' : 'remote_request_failed',
+        response.status >= 500,
+      )
+    }
+    if (!response.ok) {
+      try {
+        unwrapRemoteEnvelope(body, guard)
+      } catch (error: unknown) {
+        if (error instanceof H2EmsAdapterError && error.code === 'remote_error') {
+          throw error
+        }
+      }
+      throw new H2EmsAdapterError('remote_request_failed', response.status >= 500)
     }
     return unwrapRemoteEnvelope(body, guard)
   } catch (error: unknown) {
@@ -216,6 +255,41 @@ async function requestEnvelope<T>(
     clearTimeout(timer)
     if (upstreamSignal && upstreamAbort) upstreamSignal.removeEventListener('abort', upstreamAbort)
   }
+}
+
+function reviewRoute(template: string, runId: string, eventId: string): string {
+  return template
+    .replace('{runId}', encodeURIComponent(runId))
+    .replace('{eventId}', encodeURIComponent(eventId))
+}
+
+function reviewReceiptMatchesRequest(
+  receipt: H2ReviewMutationReceipt,
+  input: H2ReviewEventRequest,
+): boolean {
+  return (
+    receipt.review.runId === input.runId &&
+    receipt.review.eventId === input.eventId &&
+    receipt.entry.requestId === input.requestId &&
+    receipt.entry.action === input.action &&
+    receipt.entry.revision === input.expectedRevision + 1 &&
+    receipt.entry.actor.kind === input.actor.kind &&
+    receipt.entry.actor.displayName === input.actor.displayName &&
+    receipt.entry.note === input.note
+  )
+}
+
+function assistantAnswerMatchesRequest(
+  answer: H2AssistantAnswer,
+  input: H2AssistantRequest,
+): boolean {
+  return (
+    answer.runId === input.runId &&
+    answer.questionId === input.questionId &&
+    answer.eventId === input.eventId &&
+    answer.mode === 'DETERMINISTIC_TEMPLATE' &&
+    answer.refusedControlClaim
+  )
 }
 
 function hasExpectedResponseOrigin(response: Response, baseUrl: URL): boolean {

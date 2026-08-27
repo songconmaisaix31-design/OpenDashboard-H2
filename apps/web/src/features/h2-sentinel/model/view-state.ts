@@ -3,7 +3,9 @@ import type {
   H2AssistantAnswer,
   H2DatasetManifest,
   H2DatasetMode,
+  H2EventReview,
   H2ReportArtifact,
+  H2ReviewAction,
   H2SeriesResponse,
   H2AnomalyEvent,
 } from '@opendashboard/h2-contracts'
@@ -27,8 +29,11 @@ export type H2PendingOperation =
   | 'assistant'
   | 'event-report'
   | 'period-report'
+  | 'pcc-report'
   | 'analysis-json'
+  | 'validation-metrics'
   | 'quality-report'
+  | 'review-audit'
   | 'submission'
   | 'import'
 
@@ -46,4 +51,20 @@ export const INITIAL_H2_COMMAND_STATE: H2CommandState = {
   error: null,
   assistantAnswer: null,
   artifact: null,
+}
+
+export interface H2ReviewCommandState {
+  readonly review: H2EventReview | null
+  readonly loading: boolean
+  readonly pending: H2ReviewAction | null
+  readonly error: string | null
+  readonly notice: string | null
+}
+
+export const INITIAL_H2_REVIEW_COMMAND_STATE: H2ReviewCommandState = {
+  review: null,
+  loading: false,
+  pending: null,
+  error: null,
+  notice: null,
 }

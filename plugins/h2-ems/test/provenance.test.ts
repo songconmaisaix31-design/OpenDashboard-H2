@@ -20,6 +20,11 @@ describe('H2 EMS provenance and reports', () => {
         mediaType: 'text/html',
         filename: 'period_summary-run-fixture-h2-sentinel-golden.html',
       },
+      pcc_daily_compliance: {
+        format: 'html',
+        mediaType: 'text/html',
+        filename: 'pcc_daily_compliance-run-fixture-h2-sentinel-golden.html',
+      },
       analysis_result_json: {
         format: 'json',
         mediaType: 'application/json',
@@ -40,6 +45,11 @@ describe('H2 EMS provenance and reports', () => {
         mediaType: 'text/html',
         filename: 'quality_report-run-fixture-h2-sentinel-golden.html',
       },
+      review_audit_json: {
+        format: 'json',
+        mediaType: 'application/json',
+        filename: 'review-audit-run-fixture-h2-sentinel-golden.json',
+      },
     } as const satisfies Readonly<Record<H2ReportKind, Pick<H2ReportArtifact['descriptor'], 'format' | 'filename'> & Pick<H2ReportArtifact, 'mediaType'>>>
 
     for (const [kind, expected] of Object.entries(expectations) as readonly [
@@ -49,6 +59,15 @@ describe('H2 EMS provenance and reports', () => {
       const request =
         kind === 'single_event_diagnosis'
           ? { runId: 'run-fixture-h2-sentinel-golden', kind, eventId: 'C03-20260105-001' }
+          : kind === 'pcc_daily_compliance'
+            ? {
+                runId: 'run-fixture-h2-sentinel-golden',
+                kind,
+                timeRange: {
+                  startTime: '2026-01-05T00:00:00Z',
+                  endTime: '2026-01-06T00:00:00Z',
+                },
+              }
           : { runId: 'run-fixture-h2-sentinel-golden', kind }
       const report = await source.exportReport(request)
       const repeatedReport = await source.exportReport(request)
@@ -70,12 +89,19 @@ describe('H2 EMS provenance and reports', () => {
       if (expected.format === 'html') {
         assert.match(report.content, /^<!doctype html>/)
         assert.match(report.content, /run-fixture-h2-sentinel-golden/)
-        assert.match(report.content, /Provenance mode<\/dt><dd>FIXTURE/)
-        assert.match(report.content, /recommendations are advisory and require human confirmation/)
-        assert.match(report.content, /Human confirmation required: true/)
+        assert.match(report.content, /来源模式<\/dt><dd>FIXTURE/)
+        assert.match(report.content, /本应用仅提供监视、诊断、量化和建议/)
+        assert.match(report.content, /必须人工确认/)
       } else if (expected.format === 'json') {
         const payload: unknown = JSON.parse(report.content)
-        assert.equal((payload as { reportKind?: unknown }).reportKind, kind)
+        if (kind === 'review_audit_json') {
+          assert.equal(
+            (payload as { exportKind?: unknown }).exportKind,
+            'event_review_audit',
+          )
+        } else {
+          assert.equal((payload as { reportKind?: unknown }).reportKind, kind)
+        }
       } else {
         assert.match(report.content, /^pred_event_id,/)
         assert.equal(report.content.split('\n').filter(Boolean).length, 3)
@@ -94,7 +120,7 @@ describe('H2 EMS provenance and reports', () => {
 
     assert.equal(report.mediaType, 'text/html')
     assert.equal(report.descriptor.filename, 'single_event_diagnosis-run-fixture-h2-sentinel-golden.html')
-    assert.match(report.content, /Event ID<\/dt><dd>C03-20260105-001/)
+    assert.match(report.content, /事件 ID<\/dt><dd>C03-20260105-001/)
     assert.doesNotMatch(report.content, /<script/i)
     assert.equal(submission.mediaType, 'text/csv')
     assert.match(submission.content, /^pred_event_id,/)
