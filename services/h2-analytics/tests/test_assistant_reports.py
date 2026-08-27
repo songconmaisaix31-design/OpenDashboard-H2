@@ -149,6 +149,23 @@ def test_q09_returns_one_matching_chinese_generated_report(valid_csv: str) -> No
     _assert_hash(artifact)
 
 
+def test_validation_slice_source_label_is_preserved_in_report(valid_csv: str) -> None:
+    service = AnalyticsService()
+    dataset_id = service.import_csv(
+        filename="validation-slice-timeseries.csv", text=f"{valid_csv}\n"
+    )["dataset"]["datasetId"]
+    run_id = service.run_analysis(dataset_id)["runId"]
+
+    artifact = service.export_report(
+        run_id=run_id,
+        kind="single_event_diagnosis",
+        event_id="C04-20260105-001",
+    )
+
+    assert "LIVE_ANALYSIS · 验证集切片" in artifact["content"]
+    _assert_hash(artifact)
+
+
 @pytest.mark.parametrize(
     ("kind", "event_id", "time_range", "expected_format", "expected_media_type"),
     [

@@ -400,7 +400,12 @@ def _evidence_value(event: dict[str, Any], variable: str) -> Any:
 def _source_label(run: dict[str, Any]) -> str:
     if run["dataset"]["mode"] == "FIXTURE":
         return "FIXTURE · 脱敏固定样例（不是测试集结果）"
-    source = str(run["provenance"].get("source", ""))
+    source = " ".join(
+        (
+            str(run["provenance"].get("source", "")),
+            str(run["dataset"].get("sourceFilename", "")),
+        )
+    )
     if "validation" in source.lower():
         return "LIVE_ANALYSIS · 验证集切片"
     return "LIVE_ANALYSIS · 本地导入数据"
