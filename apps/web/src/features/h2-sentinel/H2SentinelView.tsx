@@ -6,7 +6,12 @@ import { H2Shell } from './components/common/H2Shell.tsx'
 import { EmptyDatasetState } from './components/common/EmptyDatasetState.tsx'
 import { ViewState } from './components/common/ViewState.tsx'
 import { findH2Event } from './model/presentation.ts'
-import type { H2CommandState, H2WorkspaceState } from './model/view-state.ts'
+import type { H2ReviewDraft } from './model/review.ts'
+import type {
+  H2CommandState,
+  H2ReviewCommandState,
+  H2WorkspaceState,
+} from './model/view-state.ts'
 import type { H2NavigationTarget } from './routes.ts'
 import { OverviewPage } from './pages/overview/OverviewPage.tsx'
 import { EventsPage } from './pages/events/EventsPage.tsx'
@@ -23,7 +28,12 @@ export interface H2SentinelViewProps {
   readonly onExport: (definition: ReportDefinition) => void
   readonly onImport: (file: File) => void
   readonly onNavigate: (target: H2NavigationTarget) => void
+  readonly onReloadReview: () => void
   readonly onRetry: () => void
+  readonly onReview: (draft: H2ReviewDraft) => void
+  readonly onSelectEvent: (eventId: string | null) => void
+  readonly reviewState: H2ReviewCommandState
+  readonly selectedEventId: string | null
   readonly workspaceState: H2WorkspaceState
 }
 
@@ -35,7 +45,12 @@ export function H2SentinelView({
   onExport,
   onImport,
   onNavigate,
+  onReloadReview,
   onRetry,
+  onReview,
+  onSelectEvent,
+  reviewState,
+  selectedEventId,
   workspaceState,
 }: H2SentinelViewProps) {
   if (workspaceState.status === 'loading') {
@@ -74,7 +89,12 @@ export function H2SentinelView({
   }
 
   const { workspace } = workspaceState
-  const selectedEvent = findH2Event(workspace.events, navigation.eventId)
+  const selectedEvent = findH2Event(
+    workspace.events,
+    (navigation.route === 'diagnosis'
+      ? navigation.eventId ?? selectedEventId
+      : selectedEventId) ?? undefined,
+  )
 
   return (
     <H2Shell
@@ -94,6 +114,9 @@ export function H2SentinelView({
           event={selectedEvent}
           events={workspace.events}
           onNavigate={onNavigate}
+          onReloadReview={onReloadReview}
+          onReview={onReview}
+          reviewState={reviewState}
           series={workspace.series}
           seriesError={workspace.seriesError}
         />
@@ -112,7 +135,10 @@ export function H2SentinelView({
           answer={commandState.assistantAnswer}
           error={commandState.error}
           event={selectedEvent}
+          events={workspace.events}
           onAsk={onAsk}
+          onDownload={onDownload}
+          onSelectEvent={onSelectEvent}
           pending={commandState.pending === 'assistant'}
         />
       ) : null}

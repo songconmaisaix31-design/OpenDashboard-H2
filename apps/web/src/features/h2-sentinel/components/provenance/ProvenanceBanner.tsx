@@ -1,15 +1,26 @@
 import type { H2DatasetMode, H2Provenance } from '@opendashboard/h2-contracts'
-import { H2_MODE_COPY, H2_PROVENANCE_LABELS } from '../../model/presentation.ts'
+import {
+  getH2ProvenanceLabel,
+  H2_MODE_COPY,
+  H2_PROVENANCE_LABELS,
+} from '../../model/presentation.ts'
 import { H2Icon } from '../common/H2Icon.tsx'
 import { StatusBadge } from '../common/StatusBadge.tsx'
 
 export interface ProvenanceBannerProps {
   readonly mode: H2DatasetMode
   readonly provenance: H2Provenance
+  readonly sourceHints?: readonly string[]
 }
 
-export function ProvenanceBanner({ mode, provenance }: ProvenanceBannerProps) {
+export function ProvenanceBanner({ mode, provenance, sourceHints = [] }: ProvenanceBannerProps) {
   const copy = H2_MODE_COPY[mode]
+  const label = getH2ProvenanceLabel(provenance, sourceHints)
+  const description = label.includes('验证集切片')
+    ? '来自公开验证数据的本地准备切片；不是完整验证集、隐藏测试结果或官方成绩。'
+    : label.includes('完整验证集')
+      ? '来自完整公开验证数据的本地分析；不是隐藏测试结果、官方成绩或生产证明。'
+    : copy.description
 
   return (
     <aside className="h2-provenance" aria-label="数据来源与限制">
@@ -24,10 +35,10 @@ export function ProvenanceBanner({ mode, provenance }: ProvenanceBannerProps) {
               icon={mode === 'FIXTURE' ? '◇' : '●'}
               tone={mode === 'FIXTURE' ? 'fixture' : 'live'}
             >
-              {copy.label}
+              {label}
             </StatusBadge>
           </div>
-          <p>{copy.description}</p>
+          <p>{description}</p>
         </div>
       </div>
       <dl>

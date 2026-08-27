@@ -1,5 +1,7 @@
 import type { H2AnomalyEvent, H2SeriesResponse } from '@opendashboard/h2-contracts'
 import type { H2NavigationTarget } from '../../routes.ts'
+import type { H2ReviewDraft } from '../../model/review.ts'
+import type { H2ReviewCommandState } from '../../model/view-state.ts'
 import {
   formatH2Confidence,
   formatH2Duration,
@@ -16,17 +18,30 @@ import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
 import { EvidencePanel } from '../../components/evidence/EvidencePanel.tsx'
 import { ImpactPanel } from '../../components/impact/ImpactPanel.tsx'
+import { EventReviewPanel } from '../../components/review/EventReviewPanel.tsx'
 import { SafetyPanel } from '../../components/safety/SafetyPanel.tsx'
 
 export interface DiagnosisPageProps {
   readonly event: H2AnomalyEvent | null
   readonly events: readonly H2AnomalyEvent[]
   readonly onNavigate: (target: H2NavigationTarget) => void
+  readonly onReloadReview: () => void
+  readonly onReview: (draft: H2ReviewDraft) => void
+  readonly reviewState: H2ReviewCommandState
   readonly series: H2SeriesResponse | null
   readonly seriesError: string | null
 }
 
-export function DiagnosisPage({ event, events, onNavigate, series, seriesError }: DiagnosisPageProps) {
+export function DiagnosisPage({
+  event,
+  events,
+  onNavigate,
+  onReloadReview,
+  onReview,
+  reviewState,
+  series,
+  seriesError,
+}: DiagnosisPageProps) {
   if (!event) {
     return (
       <div className="h2-page">
@@ -111,6 +126,12 @@ export function DiagnosisPage({ event, events, onNavigate, series, seriesError }
       </div>
 
       <SafetyPanel event={event} />
+
+      <EventReviewPanel
+        onReload={onReloadReview}
+        onSubmit={onReview}
+        state={reviewState}
+      />
 
       <section className="h2-panel h2-provenance-detail">
         <div className="h2-panel__heading"><div><p className="h2-eyebrow">Traceability</p><h2>版本与来源</h2></div><StatusBadge tone="fixture">{H2_PROVENANCE_LABELS[event.provenance.mode]}</StatusBadge></div>

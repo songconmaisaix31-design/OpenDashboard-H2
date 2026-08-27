@@ -9,6 +9,7 @@ import {
 import { H2SentinelView } from '../H2SentinelView.tsx'
 import {
   INITIAL_H2_COMMAND_STATE,
+  INITIAL_H2_REVIEW_COMMAND_STATE,
   type H2WorkspaceState,
 } from '../model/view-state.ts'
 import {
@@ -49,7 +50,7 @@ describe('H2 Sentinel presentation', () => {
       [{ route: 'events' }, '异常事件中心'],
       [{ route: 'diagnosis', eventId: H2_WEB_FIXTURE_EVENTS[0].eventId }, '证据链'],
       [{ route: 'analysis' }, '字段字典'],
-      [{ route: 'assistant' }, '十个运行问题'],
+      [{ route: 'assistant' }, '十个官方问题'],
       [{ route: 'reports' }, '竞赛提交结果'],
     ] as const satisfies readonly [H2NavigationTarget, string][]
 
@@ -163,7 +164,12 @@ function renderView(
       onExport={noop}
       onImport={noop}
       onNavigate={noop}
+      onReloadReview={noop}
       onRetry={noop}
+      onReview={noop}
+      onSelectEvent={noop}
+      reviewState={INITIAL_H2_REVIEW_COMMAND_STATE}
+      selectedEventId={navigation.eventId ?? null}
       workspaceState={workspaceState}
     />,
   )

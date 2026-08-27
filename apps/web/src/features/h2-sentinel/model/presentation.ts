@@ -6,6 +6,7 @@ import type {
   H2DataQualityStatus,
   H2DatasetMode,
   H2EvidenceValue,
+  H2Provenance,
   H2ProvenanceMode,
   H2ReviewState,
   H2SafetyStatus,
@@ -33,8 +34,8 @@ export const H2_SEVERITY_LABELS = {
 export const H2_REVIEW_LABELS = {
   open: '待复核',
   confirmed: '已确认',
-  dismissed: '已排除',
-  resolved: '已解决',
+  dismissed: '已驳回',
+  resolved: '已闭环',
 } as const satisfies Readonly<Record<H2ReviewState, string>>
 
 export const H2_CLAIM_LABELS = {
@@ -73,12 +74,37 @@ export const H2_MODE_COPY = {
     description: '合成脱敏数据，仅用于可重复演示，不代表官方数据或成绩。',
   },
   LIVE_ANALYSIS: {
-    label: 'LIVE · 本地分析',
+    label: 'LIVE_ANALYSIS · 本地数据',
     description: '来自已导入数据的本地分析结果，建议仍需人工确认。',
   },
 } as const satisfies Readonly<
   Record<H2DatasetMode, { readonly label: string; readonly description: string }>
 >
+
+export function getH2ProvenanceLabel(
+  provenance: H2Provenance,
+  sourceHints: readonly string[] = [],
+): string {
+  if (provenance.mode === 'FIXTURE') return 'FIXTURE · 固定样例'
+  const evidence = [
+    provenance.source,
+    ...provenance.limitations,
+    ...sourceHints,
+  ].join(' ').toLocaleLowerCase('zh-CN')
+  if (
+    evidence.includes('validation slice') ||
+    evidence.includes('validation-slice') ||
+    evidence.includes('validation_slice') ||
+    evidence.includes('验证集切片')
+  ) return 'LIVE_ANALYSIS · 验证集切片'
+  if (
+    evidence.includes('full validation') ||
+    evidence.includes('full-validation') ||
+    evidence.includes('full_validation') ||
+    evidence.includes('完整验证集')
+  ) return 'LIVE_ANALYSIS · 完整验证集'
+  return 'LIVE_ANALYSIS · 本地数据'
+}
 
 export interface H2OverviewMetric {
   readonly label: string
