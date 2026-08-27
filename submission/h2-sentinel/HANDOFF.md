@@ -2,13 +2,16 @@
 
 ## Scope and current truth
 
-- This package describes the P1 judge workflow on the W1-based P1-W3 checkout.
-- W2 and the validation-slice provenance correction are not integrated here.
-- The final candidate SHA remains coordinator-owned.
+- This package describes the integrated P1 judge workflow.
+- W1, W2, P1-W3 QA, and the validation-slice provenance correction are
+  integrated in coordinator behavior candidate `a7f7093`.
+- The exact final documentation HEAD is recorded by Git rather than
+  self-referenced inside the commit that contains this file.
 - No official validation package or generated slice was supplied or committed.
 - No two-run timing receipt, organizer result, full-validation result,
-  deployment, publication, remote-CI result, or final visual evidence exists in
-  this worker checkout.
+  deployment, publication, or remote-CI result exists.
+- The final coordinator completed automated checks plus desktop and 390x844
+  primary Fixture runtime inspection.
 
 The documentation now makes the prepared public-validation slice the primary
 three-minute path and keeps Fixture as a visibly synthetic fallback. Claims are
@@ -27,19 +30,21 @@ pending integrated behavior, and unsupported outcomes.
   organizer, deployment, or full-validation claims.
 - `PRODUCT_AND_ARCHITECTURE.md` and `TEN_PAGE_PROJECT_NARRATIVE.md` connect the
   review-only workflow to evidence immutability and the no-control boundary.
-- `SCREENSHOT_SHOT_LIST.md` leaves all new visual evidence pending rather than
-  reusing stale screenshots.
+- `SCREENSHOT_SHOT_LIST.md` distinguishes runtime-observed Fixture states from
+  official-slice and retained-screenshot evidence that still does not exist.
 - `scripts/validate-submission.ps1` checks the P1 package structure and required
   truth-boundary phrases; it does not validate runtime behavior.
 
-## Current blocker and dependency
+## Resolved integration findings
 
-The W1 analytics path does not preserve the validation-slice identity into
-report provenance. Current reports therefore show
-`LIVE_ANALYSIS · 本地导入数据`, not the required
-`LIVE_ANALYSIS · 验证集切片`. This is tracked as `H2-QA-P1-001`; the
-coordinator must route a fix outside W3. W2 must also be integrated before the
-Chinese Fixture/report and official-question UI gates can pass.
+`H2-QA-P1-001` was fixed by preserving the prepared-slice filename alongside
+analytics provenance. The integrated assembled QA now distinguishes
+`LIVE_ANALYSIS · 验证集切片`, generic Live imports, and Fixture. W2's Chinese
+Fixture/report, official-question, review, and audit surfaces are integrated.
+
+The remaining dependency is evidence, not code integration: an authorized
+official package and expected hashes are required before producing the ignored
+slice and two measured receipts.
 
 ## Verification
 
@@ -48,9 +53,10 @@ Run the package-only check with:
     pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1
     git diff --check -- submission/h2-sentinel
 
-The final integrated candidate must additionally pass the commands and evidence
-gates in `../../tests/h2-sentinel/HANDOFF.md`. The official slice and two-run
-receipt must remain ignored local evidence and must match the exact final SHA.
+The final integrated candidate passed the repository command gates summarized
+in `../../tests/h2-sentinel/reports/ASSEMBLED_QA_EVIDENCE.md`. The official
+slice and two-run receipt must remain ignored local evidence and must match the
+exact final SHA.
 
-Project `MEMORY.md` was not updated because it is outside the task write
-allowlist.
+Project `MEMORY.md` was updated by the coordinator with durable P1 decisions and
+verified boundaries.

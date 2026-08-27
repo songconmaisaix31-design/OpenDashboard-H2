@@ -60,7 +60,7 @@ $requiredP1Phrases = @{
     'Fixture may be shown only as a separately labeled fallback'
   )
   'CLAIMS_LEDGER.md' = @(
-    'Unverified in this worker checkout',
+    'Unverified without an official package',
     'organizer score',
     'Fixture and generic Local smoke do not become validation-slice evidence'
   )
@@ -72,7 +72,7 @@ $requiredP1Phrases = @{
   'RUNTIME_EVIDENCE_CHECKLIST.md' = @(
     'Official package/slice: not supplied or generated in P1-W3',
     'Timed receipt: not produced in P1-W3',
-    'Open integration gate'
+    'Integrated automated pass; official slice not run'
   )
 }
 foreach ($entry in $requiredP1Phrases.GetEnumerator()) {

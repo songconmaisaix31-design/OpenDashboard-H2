@@ -66,15 +66,16 @@ test, an organizer score, deployment proof, or production proof.
 
 ## Current evidence and remaining gates
 
-W1 contracts/backend are present in the P1-W3 base. P1-W3 contract/tool tests
-pass on synthetic inputs and the assembled runner exercises public launcher/API
-boundaries. W2 is not yet integrated in this checkout, no official package was
-processed, and no timed receipt was created.
+W1 contracts/backend, W2 Web/runtime behavior, P1-W3 QA, and the cross-track
+provenance correction are integrated. The final assembled runner passes all six
+groups; TypeScript, Python, repository, launcher, and production-build checks
+also pass. Primary Fixture flows were inspected at desktop and 390x844 widths.
 
-The current assembled QA also exposes a cross-track issue: analytics-generated
-HTML labels a validation-named Live import as generic local input rather than
-LIVE_ANALYSIS · 验证集切片. The final coordinator candidate must correct and
-rerun this gate before using validation-slice wording.
+The provenance correction preserves a prepared-slice filename alongside the
+analytics source so assembled Local QA renders
+LIVE_ANALYSIS · 验证集切片 rather than generic local input. No authorized
+official package was processed and no timed receipt was created, so this
+automated result is not a claim that the primary validation demo ran.
 
 ## Evidence sources
 

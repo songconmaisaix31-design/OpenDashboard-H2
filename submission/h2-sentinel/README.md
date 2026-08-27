@@ -9,9 +9,10 @@ and measured competition evidence.
   review, audit, and Chinese analytics report contracts.
 - P1-W3 supplies independent contract/assembled QA, validation-slice
   preparation, and two-run receipt validation.
-- W2 integration, cross-track fixes, final project checks, runtime visual
-  inspection, official-package preparation, and timed runs remain
-  coordinator-owned.
+- W2, the cross-track provenance fix, final project checks, and primary Fixture
+  desktop/mobile runtime inspection are integrated and coordinator-verified.
+- Official-package preparation and two timed runs remain unavailable because no
+  authorized package or expected source hashes were supplied.
 - No official dataset, generated slice, public labels, timed receipt,
   organizer score, full-validation result, deployment, or remote CI result is
   included or claimed.
@@ -26,7 +27,7 @@ authenticated identity.
 | Label | Meaning |
 | --- | --- |
 | Contract evidence | A frozen type/schema or deterministic implementation boundary. It does not prove the final UI or runtime. |
-| Worker QA evidence | A test or tool executed in the P1-W3 checkout. It does not prove final integration. |
+| Worker QA evidence | A test or tool executed in the P1-W3 checkout. Historical worker failures remain preserved even after later integration. |
 | Final integrated evidence | A fresh command or runtime observation from the exact coordinator candidate. |
 | Validation-slice evidence | A bounded Live run from a hash-locked public-validation slice with labels isolated from detector input. It is not full validation or an organizer score. |
 | Fixture evidence | Sanitized synthetic fallback, visibly FIXTURE, excluded from validation claims and timed receipts. |
@@ -69,6 +70,6 @@ failed Live validation-slice run.
     pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1
     git diff --check
 
-The coordinator must additionally run the full final integrated gate from one
-clean commit. Historical H6 counts, screenshots, and local smokes are not
-carried forward as fresh P1 evidence.
+The coordinator ran the full integrated gate and fresh Fixture runtime review.
+Historical H6 counts, screenshots, and local smokes are not carried forward as
+fresh P1 evidence.

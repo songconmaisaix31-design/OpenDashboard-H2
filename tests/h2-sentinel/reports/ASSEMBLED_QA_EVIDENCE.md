@@ -2,10 +2,30 @@
 
 ## Evidence boundary
 
-This ledger records the P1-W3 worker checkout on 2026-08-28. The checkout is
-based on W1 commit `4c856eb`; W2 is intentionally not integrated. It contains
-no official validation package, prepared official slice, measured demo receipt,
-organizer result, deployment proof, remote-CI result, or completed visual review.
+This ledger preserves the P1-W3 worker checkout result from 2026-08-28. That
+historical checkout was based on W1 commit `4c856eb` and intentionally excluded
+W2. The coordinator result below supersedes it for current integration status.
+Neither result contains an official validation package, prepared official slice,
+measured demo receipt, organizer result, deployment proof, or remote-CI result.
+
+## Coordinator integration result
+
+The coordinator integrated W2 and the validation-slice provenance correction in
+behavior candidate `a7f7093`. Fresh verification on the integrated tree passed:
+
+- `npm run h2:check`: TypeScript, 76 H2 tests, all six assembled QA groups,
+  9 launcher tests, and the production build;
+- `npm test`: 91 tests;
+- Python: 52 pytest tests, Ruff, and Mypy across 38 source files;
+- runtime Fixture review: C03 advanced from revision 0 to confirmed revision 1
+  while C04 remained independently at revision 0;
+- runtime exports: deterministic Q09 diagnosis HTML, PCC compliance HTML, and
+  review-audit JSON were generated and their bytes inspected;
+- visual review: 1427px desktop and 390x844 narrow-width primary Fixture flows
+  had no page-level horizontal overflow, visible control clipping, or overlap.
+
+These are integrated local and Fixture results. They are not official-data,
+timed-demo, organizer, deployment, production, or remote-CI evidence.
 
 The primary command is:
 
@@ -17,7 +37,7 @@ runner validates responses and report bytes in memory, emits a redacted summary,
 and cleans its owned processes. It does not persist generated reports, process
 identifiers, absolute paths, credentials, or raw startup output.
 
-## P1-W3 result
+## Historical P1-W3 worker result
 
 | Gate | Result | Current evidence |
 | --- | --- | --- |
@@ -44,12 +64,11 @@ Focused worker results on this exact pre-commit tree:
   because `H2_WEB_URL` was not set; this is not runtime evidence;
 - `git diff --check` and changed-path allowlist audit: passed.
 
-## Final-candidate gates
+## Remaining evidence gates
 
-After W2 and the provenance correction are integrated, the coordinator must run
-the full command set from one clean candidate SHA. The primary demo additionally
-requires an authorized public package, explicit expected source hashes, an
-ignored generated-output directory, and two consecutive measured runs whose
-receipt passes `validate-demo-receipt.mjs`. Historical H6 evidence, Fixture,
-HTTP success, route declarations, and this worker's synthetic tests do not
-substitute for those gates.
+The integrated command set and primary Fixture visual review have passed. The
+primary validation-slice demo still requires an authorized public package,
+explicit expected source hashes, an ignored generated-output directory, and two
+consecutive measured runs whose receipt passes `validate-demo-receipt.mjs` for
+the exact final SHA. Historical H6 evidence, Fixture, HTTP success, route
+declarations, and synthetic tests do not substitute for those gates.

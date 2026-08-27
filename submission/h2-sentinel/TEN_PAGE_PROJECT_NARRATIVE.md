@@ -92,16 +92,17 @@ question rejection, citation integrity, every review transition, replay and
 conflict behavior, audit completeness, submission immutability, Chinese report
 structure/escaping, provenance separation, and explicit unavailable metrics.
 
-Visual desktop and 390x844 inspection remains a separate coordinator gate.
+The coordinator inspected primary Fixture review, assistant, and report flows at
+desktop and 390x844 widths. Official-slice and visible conflict-state captures
+remain separate evidence gates.
 
 ## Page 10 — Current truth and release boundary
 
-W1 is present in the P1-W3 base; W2 and final integration remain external to
-this worker. Synthetic QA for the slice and receipt tools passes. No official
-package was processed and no timed receipt exists.
+W1, W2, P1-W3 QA, and the provenance correction are integrated. The assembled
+suite now passes all six groups, and the coordinator completed the required
+local project checks plus primary Fixture visual review.
 
-Current assembled QA identifies two expected W2 gaps and one cross-track
-blocker: the legacy Web/adapter surface, English Fixture report output, and
-generic Local provenance in analytics-generated HTML for a validation-named
-input. The coordinator must integrate/fix these and rerun every final gate
-before the submission uses validation-slice or timing claims.
+No official package was processed and no timed receipt exists. Therefore the
+submission may describe implemented validation-slice tooling and integrated
+automated provenance behavior, but it may not claim an official slice run,
+sub-180-second demo, full validation, or organizer result.

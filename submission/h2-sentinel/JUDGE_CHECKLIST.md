@@ -9,14 +9,16 @@
   review-audit export.
 - QA tooling: P1-W3 includes zero-dependency slice preparation and measured
   receipt validation with synthetic fail-closed tests.
-- Integration status: W2 and final coordinator integration remain required.
-- Timed status: no official slice and no two-run receipt were produced in this
-  worker checkout. A sub-180-second claim is prohibited.
+- Integration status: W2, independent P1 QA, and the provenance correction are
+  integrated; final local checks and primary Fixture visual review passed.
+- Timed status: no official slice and no two-run receipt were produced. A
+  sub-180-second claim is prohibited. P1-W3 produced no such receipt, and the
+  final coordinator did not invent one.
 
 ## Before the judge session
 
-- [ ] Record the exact final integrated commit SHA.
-- [ ] Run all final integrated checks from that clean commit.
+- [x] Record the exact final integrated commit SHA in the coordinator handoff.
+- [x] Run all final integrated checks from the final candidate.
 - [ ] Prepare the validation slice from an explicit official-package directory
       with independently obtained expected source hashes.
 - [ ] Confirm validation-slice.csv contains no label columns.
@@ -28,9 +30,10 @@
 - [ ] Complete two consecutive Live runs, each strictly below 180,000 ms.
 - [ ] Validate the receipt, manifest hash, source hashes, and all six per-run
       artifact hashes.
-- [ ] Complete desktop and 390x844 visual inspection for overflow, review
-      conflict, disabled/loading states, Chinese reports, and downloads.
-- [ ] Confirm no official data, generated slice, labels, receipt, or artifacts
+- [ ] Capture the remaining official-slice and review-conflict visual states.
+      Primary Fixture flows passed desktop and 390x844 inspection, including
+      review, Q09, Chinese reports, and generated download bytes.
+- [x] Confirm no official data, generated slice, labels, receipt, or artifacts
       are tracked by Git.
 
 ## Judge-visible flow
@@ -57,7 +60,7 @@
    slice around one C04 event.
 4. **Is the result an organizer score or hidden-test result?** No.
 5. **Has the three-minute target passed?** Only if the final integrated receipt
-   validator accepts two consecutive measured runs. P1-W3 produced no such receipt
-   in this checkout.
+   validator accepts two consecutive measured runs. P1-W3 produced no such receipt,
+   and no final receipt exists.
 6. **Can Fixture replace a failed Live run?** No. Fixture is a separately
    labeled synthetic fallback and is excluded from the validation receipt.
