@@ -1,90 +1,74 @@
 # H2 Sentinel Submission Package
 
-## Status
+## P1 status
 
-This package records the current coordinator-verified H6 assembled snapshot.
-H6 began from original integration gate `8bcc8d59e352def535c26504683975959ff7f18d`;
-the final candidate SHA is pending coordinator handoff. It is not a claim
-that `main` changed, that the application was deployed, or that a GitHub Actions
-workflow has run remotely.
+This package separates implemented contracts, worker QA, final integration,
+and measured competition evidence.
 
-H2 Sentinel / 氢哨 is a local-first, evidence-first H2 EMS diagnosis and
-decision-support application. It presents advisory recommendations that require
-human confirmation; it does not issue equipment commands or replace the EMS.
+- W1 is present in this checkout at 4c856eb and supplies official Q01–Q10,
+  review, audit, and Chinese analytics report contracts.
+- P1-W3 supplies independent contract/assembled QA, validation-slice
+  preparation, and two-run receipt validation.
+- W2 integration, cross-track fixes, final project checks, runtime visual
+  inspection, official-package preparation, and timed runs remain
+  coordinator-owned.
+- No official dataset, generated slice, public labels, timed receipt,
+  organizer score, full-validation result, deployment, or remote CI result is
+  included or claimed.
 
-## Evidence labels
+H2 Sentinel / 氢哨 is local-first diagnosis and operations assistance. It does
+not issue equipment commands. Every operational recommendation requires human
+confirmation, and local actor labels are unverified attribution rather than
+authenticated identity.
+
+## Evidence classes
 
 | Label | Meaning |
 | --- | --- |
-| Current H6 evidence | A reproducible command or manual check recorded for the current assembled snapshot on 2026-08-19. |
-| Fixture evidence | Sanitized synthetic C03/C04 data, visibly `FIXTURE`; never official data, a score, or live plant evidence. |
-| Local deterministic evidence | The explicit loopback analytics path with deterministic fallback; it is not an official-data validation result. |
-| Manual Chrome evidence | A human desktop/390x844 observation, not screenshot automation and not a submitted image asset. |
-| Unverified or undelivered | Official data, scores, deployment, remote CI execution, network-isolation proof, and screenshot assets. |
+| Contract evidence | A frozen type/schema or deterministic implementation boundary. It does not prove the final UI or runtime. |
+| Worker QA evidence | A test or tool executed in the P1-W3 checkout. It does not prove final integration. |
+| Final integrated evidence | A fresh command or runtime observation from the exact coordinator candidate. |
+| Validation-slice evidence | A bounded Live run from a hash-locked public-validation slice with labels isolated from detector input. It is not full validation or an organizer score. |
+| Fixture evidence | Sanitized synthetic fallback, visibly FIXTURE, excluded from validation claims and timed receipts. |
+| Not evidenced | Organizer result, hidden test, full validation, deployment, production readiness, remote CI, and any claim without its required artifact. |
 
-## Reproduction entry points
+## Primary P1 workflow
 
-The generic Fixture Demo remains the default at `/`. H2 mounts only at these
-explicit modes:
+1. Prepare a hash-locked earliest-C04 validation slice with
+   tests/h2-sentinel/scripts/prepare-validation-slice.mjs.
+2. Run the final integrated Local workflow twice with services already
+   started.
+3. Export the Chinese diagnosis report, review-audit JSON, and exact
+   16-column submission for each run.
+4. Validate the receipt, slice manifest, artifacts, durations, and final SHA
+   with tests/h2-sentinel/scripts/validate-demo-receipt.mjs.
+5. Keep all generated inputs, labels, receipts, and artifacts in the ignored
+   tests/h2-sentinel/reports/generated/ tree.
 
-```text
-/h2-sentinel/?mode=fixture
-/h2-sentinel/?mode=local
-```
-
-From the repository root, use `npm run h2:fixture` for the no-Python Fixture
-path or `npm run h2:local` for the deterministic local sidecar path. Local
-browser requests stay same-origin; Vite proxies only
-`/api/v1/h2-sentinel` to a validated `127.0.0.1` target. The route does not
-prove network isolation beyond the exercised loopback policy.
-
-## Current H6 evidence and limitation
-
-The assembled verification recorded 92 repository tests, 60 focused H2 tests,
-32 Python pytest cases, nine launcher tests, five assembled QA groups, and
-nine H2 smoke scenarios. This is current-worktree evidence for the assembled
-snapshot, not a remote CI result.
-
-The Local golden path produced a deterministic no-LLM C03 HTML report and a
-two-row `submission.csv` validated against its exact 16 columns. Manual Chrome
-review checked the Fixture overview, C03, and C04 at desktop and 390x844 without
-document-width overflow. The assembled production build processed 684 modules
-and emitted 900.01 kB minified JavaScript (297.15 kB gzip) plus 47.44 kB CSS;
-Vite still emits its standard greater-than-500-kB warning.
-
-The recorded local hardening checks reject a 307 health redirect, cover
-Windows-owned child cleanup, and make report content hashes visible for review.
-These are not network-isolation or deployment claims.
-
-Fixture report-format parity is resolved by plugin source commit
-`92f7b78027b9492a5a5fe8ced2e851ed4199aeaa`, integrated by the coordinator as
-`abe454b`. Single-event diagnosis, period summary, and quality Fixture reports
-now use deterministic safe HTML with matching media type and filename. JSON and
-CSV report kinds retain their corresponding formats. This resolves format parity
-only; it does not turn Fixture output into official data, a score, or a
-deployment artifact.
+The Fixture route remains a separate regression fallback. It cannot replace a
+failed Live validation-slice run.
 
 ## Contents
 
 - [Product and architecture narrative](PRODUCT_AND_ARCHITECTURE.md)
 - [Ten-page project narrative](TEN_PAGE_PROJECT_NARRATIVE.md)
-- [Demo and fallback scripts](DEMO_SCRIPT.md)
+- [Three-minute demo and fallback script](DEMO_SCRIPT.md)
 - [Screenshot shot list](SCREENSHOT_SHOT_LIST.md)
 - [Claims ledger](CLAIMS_LEDGER.md)
 - [License and third-party checklist](LICENSE_AND_THIRD_PARTY_CHECKLIST.md)
 - [Judge checklist](JUDGE_CHECKLIST.md)
 - [Runtime evidence checklist](RUNTIME_EVIDENCE_CHECKLIST.md)
-- [Handoff](HANDOFF.md)
+- [Worker handoff](HANDOFF.md)
 
-## Source inputs
+## Validation commands
 
-- [H6 integration handoff](../../scripts/h2-sentinel/HANDOFF.md)
-- [H2 contracts](../../packages/h2-contracts/README.md)
-- [H2 analytics handoff](../../services/h2-analytics/HANDOFF.md)
-- [H2 plugin handoff](../../plugins/h2-ems/HANDOFF.md)
-- [H2 Web handoff](../../apps/web/src/features/h2-sentinel/HANDOFF.md)
-- [H2 QA acceptance matrix](../../tests/h2-sentinel/ACCEPTANCE_MATRIX.md)
+    node --test "tests/h2-sentinel/contract/*.test.mjs"
+    npm run h2:qa
+    npm run h2:launcher:test
+    node tests/h2-sentinel/golden-path/run-offline-golden-path.mjs
+    pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1
+    git diff --check
 
-Run `pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1`
-from the repository root to validate this package's required files, local links,
-ten-page structure, and placeholder scan.
+The coordinator must additionally run the full final integrated gate from one
+clean commit. Historical H6 counts, screenshots, and local smokes are not
+carried forward as fresh P1 evidence.

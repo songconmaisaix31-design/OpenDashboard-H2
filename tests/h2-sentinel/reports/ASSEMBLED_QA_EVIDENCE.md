@@ -1,67 +1,55 @@
-# H2 Sentinel Assembled QA Evidence
+# H2 Sentinel P1 Assembled QA Evidence
 
-## Execution contract
+## Evidence boundary
 
-Run `npm run h2:qa` from the repository root. The command runs C01-C04 and
-then starts Fixture and Local sessions only through the public H6 launcher. The
-final stdout line is a JSON object with test IDs, statuses, safe assertion
-details, aggregate counts, and the explicit manual-visual boundary.
+This ledger records the P1-W3 worker checkout on 2026-08-28. The checkout is
+based on W1 commit `4c856eb`; W2 is intentionally not integrated. It contains
+no official validation package, prepared official slice, measured demo receipt,
+organizer result, deployment proof, remote-CI result, or completed visual review.
 
-The runner never writes a report artifact, raw startup output, absolute path,
-secret, listener PID, or process tree into this repository. It validates report
-content in memory and recomputes its SHA-256 descriptor hash.
+The primary command is:
 
-## Baseline result — 2026-08-19
+    npm run h2:qa
 
-At QA baseline `6d04ee38f39d81801c87190f31eff0a1915862c6`:
+It runs dependency-free contract/tool tests, the frozen C01-C04 harness, and
+then the assembled Fixture and Local probes through the public launcher. The
+runner validates responses and report bytes in memory, emits a redacted summary,
+and cleans its owned processes. It does not persist generated reports, process
+identifiers, absolute paths, credentials, or raw startup output.
 
-| Gate | Result | Evidence |
+## P1-W3 result
+
+| Gate | Result | Current evidence |
 | --- | --- | --- |
-| C01-C04 | PASS | Frozen contract harness passed all five assertions. |
-| A01/A03/A04/A05/A07 Local API | PASS | Import, C03/C04 analysis/events, `29.333333333333332`, no-LLM answer, C03 HTML/hash, exact CSV, loopback Host/Origin policy, and redacted failure passed. |
-| A02 Fixture process isolation | PASS | Fixture `READY` has no analytics URL/PID; Web PID exited and port rebound after shutdown. |
-| A04/A07 launcher failures | PASS | Occupied Web/analytics ports and redirecting health endpoint were rejected with actionable errors. |
-| A05 Fixture C03 report | FAIL | Public Fixture report was JSON rather than the required HTML; recorded as H2-QA-002. |
-| A06/A08 entry/navigation | PASS (source/HTTP) | Generic/H2 entry and six navigation declarations were found; invalid mode routes to the visible alert path. |
-| Visual desktop/390 px | MANUAL REQUIRED | No browser automation dependency is installed or implied. |
+| Official Q01-Q10, review, and report contracts | PASS | Static contract conformance tests require exact IDs/prompts, review actions/bounds, eight report kinds, and the review-free submission schema. |
+| Slice and receipt tools | PASS with synthetic inputs | Tests cover source hashes, earliest C04 selection, 30-minute padding, label isolation, ignored output, two-run timing boundaries, and artifact hash drift. This is not an official-data or timed-demo result. |
+| Fixture P1 report | FAIL pending W2 | The pre-W2 adapter still returns an English diagnosis; P1 requires Chinese structure and explicit FIXTURE provenance. |
+| Local P1 API and review workflow | Assertions exercised; group FAIL | Q01-Q10, citations, review transitions, replay/conflict handling, audit export, submission immutability, report hashes, escaping, and safety assertions pass before the final provenance assertion. |
+| Validation-slice provenance | FAIL, `H2-QA-P1-001` | The prepared-slice filename is not retained in analytics provenance, so the report shows `LIVE_ANALYSIS · 本地导入数据` instead of `LIVE_ANALYSIS · 验证集切片`. |
+| P1-W2 source surface | FAIL pending W2 | The current source still exposes the legacy H2Qxx surface and lacks the accepted P1 Web/review presentation. |
+| Launcher failure and external-sidecar boundaries | PASS | Occupied ports, redirecting or malformed health responses, loopback ownership, process exit, and port rebind remain covered. |
+| Entry/navigation source gate | PASS | Route declarations and invalid-mode handling are inspected; this is not browser or screenshot evidence. |
+| Desktop and 390x844 rendering | MANUAL REQUIRED | No automated visual result is claimed. |
 
-## Correction rerun — 2026-08-19
+The assembled summary on this worker baseline is `PASS=3`, `FAIL=3`. Those
+failures are retained as failures: two depend on W2 integration, while the
+validation-slice provenance failure needs a coordinator-routed cross-track fix.
 
-After the H2 Plugin correction
-`92f7b78027b9492a5a5fe8ced2e851ed4199aeaa`, `npm run h2:qa` passed all C01-C04
-and assembled A01-A08 automated assertions: four assembled groups passed and
-none failed. The correction changed the Fixture C03 report to `text/html` with
-a safe `.html` filename and a matching SHA-256 descriptor. The occupied-port,
-redirect-timeout, direct external-Host `400`, external-Origin `403`, redacted
-error, PID-exit, and rebind assertions also passed.
+Focused worker results on this exact pre-commit tree:
 
-The visual desktop/390 px line remains `MANUAL REQUIRED`. This file does not
-turn it into screenshot automation or assert a new manual review that was not
-performed by this QA runner.
+- contract/tool tests: 12 passed, 0 failed;
+- launcher tests: 9 passed, 0 failed;
+- submission package validator: passed;
+- offline golden-path probe: exited successfully with an explicit `SKIP`
+  because `H2_WEB_URL` was not set; this is not runtime evidence;
+- `git diff --check` and changed-path allowlist audit: passed.
 
-## Post-audit correction rerun — 2026-08-19
+## Final-candidate gates
 
-The QA branch consumed the coordinator-approved verification dependencies only:
-analytics `53733ae`, H6 `df8fbec`, plugin `0e6847e`, and the plugin series/
-citation follow-up `1192b6a`. They are not part of the QA deliverable write
-set.
-
-| Gate | Result | Independent runner evidence |
-| --- | --- | --- |
-| Six Local report kinds | PASS | `single_event_diagnosis`, `period_summary`, `analysis_result_json`, `submission_csv`, `validation_metrics`, and `quality_report` all passed kind/format/media/filename/hash checks through the public API. |
-| Quality and validation semantics | PASS | Quality HTML contained report identity, status, check table, and emitted quality codes. Validation parsed as JSON bound to the run, quality object, and provenance. |
-| External health lookalikes | PASS | Minimal, wrong-namespace, wrong-host, and extra-top-level envelopes all exited non-zero and emitted no `READY`. |
-| Canonical external sidecar | PASS | Exact health emitted `READY`; analytics PID was null, owned Web exited, Web port rebound, and the external sidecar stayed reachable until the test closed it. |
-| Existing Local and Fixture gates | PASS | Import/analyze/events, C03/C04, no-LLM assistant, redaction, Host/Origin, occupied ports, redirect timeout, Fixture-no-Python, report hash, PID exit, and rebind all remained green. |
-| Visual desktop/390 px | COORDINATOR MANUAL | Not claimed as QA screenshot automation. |
-
-The last `npm run h2:qa` emitted five automated assembled groups with
-`PASS=5`, `FAIL=0`. No generated report, PID, raw process output, absolute path,
-or secret is retained in this evidence ledger.
-
-`npm run h2:check` subsequently passed with 42 focused H2 tests, the same QA
-runner, seven launcher tests, strict type checking, and a production build.
-`npm run h2:smoke` passed its eight H6 smoke scenarios. Those are supplementary
-integration evidence; the Local API and external-sidecar assertions above come
-from the independent QA runner.
-`npm test` also passed 74 repository tests on this assembled snapshot.
+After W2 and the provenance correction are integrated, the coordinator must run
+the full command set from one clean candidate SHA. The primary demo additionally
+requires an authorized public package, explicit expected source hashes, an
+ignored generated-output directory, and two consecutive measured runs whose
+receipt passes `validate-demo-receipt.mjs`. Historical H6 evidence, Fixture,
+HTTP success, route declarations, and this worker's synthetic tests do not
+substitute for those gates.

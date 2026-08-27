@@ -1,201 +1,92 @@
-# H2 Sentinel QA Handoff
+# H2 Sentinel P1-W3 QA Handoff
 
-## Post-H6 assembly update (2026-08-19)
+## Scope and ownership
 
-- QA reassembly base: `6d04ee38f39d81801c87190f31eff0a1915862c6`.
-- Write boundary remains `tests/h2-sentinel/**` only; no root script, runtime,
-  submission, CI, dependency, or implementation file was changed.
-- `run-contract-qa.mjs` no longer turns A01-A08 into assembly `SKIP` rows.
-  After C01-C04 it starts the H6 public launcher in Fixture and Local modes and
-  invokes `assembled/run-assembled-qa.mjs`.
-- The assembled runner parses `--ready-json`, uses only local ephemeral ports,
-  validates owned PID exit and port rebind, and emits a redacted JSON summary.
-  It retains neither PIDs nor generated reports.
-- Independent Local API checks passed for import, analyze, C03/C04 events,
-  corrected C04 `29.333333333333332`, direct loopback Host/Origin policy,
-  deterministic no-LLM assistant, C03 HTML/hash/safe filename, exact 16-column
-  submission CSV, and redacted unknown-run error.
-- Launcher checks passed for Fixture-no-Python, occupied Web/analytics ports,
-  redirecting unhealthy sidecar timeout, and cleanup.
-- A source/HTTP gate verified generic and H2 entries, closed invalid-mode alert
-  path, and six navigation declarations. It is not visual automation.
-- H2-QA-002 was reproduced on the QA baseline and then fixed by the supplied
-  H2 Plugin dependency `92f7b78027b9492a5a5fe8ced2e851ed4199aeaa` (cherry-pick
-  `93bc789` in this isolated QA tree). The rerun verified Fixture C03
-  `text/html`, a safe `.html` filename, and a matching SHA-256 descriptor.
+- Task: P1-W3 QA, validation-demo tooling, and submission evidence.
+- Base: W1 commit `4c856eb` (`feat(h2): add P1 assistant review and report contracts`).
+- W2 state: intentionally not integrated in this worker checkout.
+- Owned paths: `tests/h2-sentinel/**` and `submission/h2-sentinel/**` only.
+- Dependencies: none added; new CLI tools use Node.js built-ins.
+- Official data: not supplied, read, generated, or committed.
 
-## Current rerun commands
+The worker commit SHA is reported in the Orca completion payload because this
+tracked handoff cannot truthfully self-reference the commit that contains it.
 
-```text
-npm ci
-npm run h2:qa
-npm run h2:check
-git diff --check 6d04ee38f39d81801c87190f31eff0a1915862c6..HEAD
-```
+## Delivered QA
 
-`npm run h2:qa` passes after the fixture correction. Manual desktop and 390 px
-review remains required because this lane intentionally adds no browser
-automation dependency.
+- Contract conformance for exact official Q01-Q10 prompts and identifiers,
+  review actions/bounds, eight report kinds, and the frozen review-free
+  16-column submission.
+- Assembled Fixture/Local coverage for assistant answers, citations, context
+  errors, every review transition, exact replay, stale revisions, request-ID
+  conflicts, required notes, forbidden transitions, revision-zero audit events,
+  event/submission immutability, Chinese report structure, escaping, safety,
+  hashes, provenance separation, and explicit unavailable validation metrics.
+- W2 source-surface checks authored against the frozen P1 contract; final
+  execution remains coordinator-owned.
+- A zero-dependency validation-slice preparer requiring explicit package paths,
+  expected SHA-256 values, and an explicit ignored output directory. It selects
+  the earliest public C04 event, applies inclusive 30-minute padding, validates
+  complete monotonic detector input, and strips label columns.
+- A zero-dependency receipt validator requiring exactly two distinct consecutive
+  successful runs below 180 seconds, the final candidate SHA, matching slice
+  provenance, and recomputed hashes for diagnosis, audit, and submission
+  artifacts.
+- Synthetic success and failure tests for both tools. Synthetic receipts prove
+  validator behavior only; they are not timed demo evidence.
 
-## Post-audit verification update (2026-08-19)
+## Current integration findings
 
-- Verification-only dependencies were cherry-picked without QA edits outside its
-  allowlist: analytics `53733ae` as `f929bc3`, H6 `df8fbec` as `21f68b8`,
-  plugin `0e6847e` as `2fd5870`, and series/citation follow-up `1192b6a` as
-  `5d334e5`.
-- The QA runner now invokes all six Local `reports:export` kinds and verifies
-  contract kind, format, media type, safe extension, SHA-256, quality HTML
-  semantics, validation JSON semantics, and exact submission export parity.
-- A separate H6 public-launcher probe starts an unowned loopback sidecar. It
-  rejects minimal, wrong-namespace, wrong-host, and extra-top-level health
-  lookalikes without `READY`; exact canonical health reaches `READY`, cleans
-  only its owned Web child, and leaves the external sidecar alive.
-- `npm run h2:qa` passed with five assembled PASS groups and zero failures after
-  this change. It is independent evidence; it does not call H6 `h2:smoke`.
-- `npm run h2:check` passed with strict type checking, 42 focused H2 tests, the
-  QA runner, seven launcher tests, and a production build. `npm run h2:smoke`
-  separately passed all eight H6 scenarios. The production build retains its
-  known over-500-kB chunk warning, not a failed verification result.
-- `npm test` passed 74 repository tests on the same assembled snapshot.
-- Visual desktop/390 px evidence remains coordinator manual review, not a QA
-  screenshot claim or an automated artifact.
+`H2-QA-P1-001` blocks the primary validation-slice demo. Analytics imports CSV
+bytes as `in-memory-csv-import`, so the report renders
+`LIVE_ANALYSIS · 本地导入数据` even when the public input filename identifies a
+prepared validation slice. The coordinator must route the smallest provenance
+fix outside this lane and preserve the distinction among validation slice,
+generic Live import, and Fixture.
 
-## Ownership and base
+The current checkout also predates W2. Consequently, the assembled runner
+correctly rejects the English Fixture diagnosis and the legacy H2Qxx Web/plugin
+surface. These are expected integration-only failures until W2 is accepted and
+integrated; they must not be converted to passes in worker evidence.
 
-- Branch: `songconmaisaix31-design/h2-qa`
-- Worktree: `C:\Users\DW\orca\workspaces\OpenDashboard\h2-qa`
-- Immutable base SHA: `f9dd7df83a81da57fdaa2b03cd67470c8c7a22c4`
-- Current head before this final handoff archive: `93e6238400e86e4402c084fc56ae15f9f36d149f`
-- Owned write paths: `tests/h2-sentinel/**` only.
-- Verified before editing: the branch was at the immutable gate and `git status
-  --short` was empty.
+## Verification interpretation
 
-## Pushed archive commits
+Run from the repository root:
 
-| SHA | Purpose | Checks |
-| --- | --- | --- |
-| `041f83803a9ffa3a30c8c1b744d973f7442692aa` | Contract acceptance harness, assembly scripts, matrix, and defect protocol | Node syntax checks passed; submission conformance passed; API and Web scripts explicitly skipped without assembled URLs; contract harness found H2-QA-001; `git diff --check` passed. |
-| `93e6238400e86e4402c084fc56ae15f9f36d149f` | Correct QA expectation to canonical C04 impact | Read-only verified corrected integration gate `4f2a8a3156a96a7670f4ee9830ff1c560faf1c94`; syntax and diff checks passed; archived-H0 tests intentionally reject the old `86.5` value. |
+    node --check tests/h2-sentinel/scripts/prepare-validation-slice.mjs
+    node --check tests/h2-sentinel/scripts/validate-demo-receipt.mjs
+    node --check tests/h2-sentinel/assembled/run-assembled-qa.mjs
+    node --test "tests/h2-sentinel/contract/*.test.mjs"
+    npm run h2:qa
+    npm run h2:launcher:test
+    node tests/h2-sentinel/golden-path/run-offline-golden-path.mjs
+    pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1
+    git diff --check
 
-## Delivered behavior
+Exact worker results are recorded in the Orca completion payload and
+`reports/ASSEMBLED_QA_EVIDENCE.md`. A golden-path `SKIP` without `H2_WEB_URL`
+is not runtime proof.
 
-- `run-contract-qa.mjs` is a dependency-free Node contract gate. It checks the
-  sanitized fixture fingerprint, C03 command/BESS evidence, C04 impact
-  calculation, Fixture provenance, human-confirmation boundary, and the
-  report/submission/redaction contract surface.
-- `ACCEPTANCE_MATRIX.md` separates runnable H0 rows from analytics, plugin,
-  offline journey, loopback, report, provenance, redaction, and responsive UI
-  suites that require later assembly.
-- `DEFECT_LOG.md` contains H2-QA-001 with exact reproduction and contract-track
-  ownership. The coordinator resolved it in corrected integration contract gate
-  `4f2a8a3156a96a7670f4ee9830ff1c560faf1c94`; this worker does not merge it.
+On the final pre-commit worker tree, the contract/tool suite passed 12 tests,
+the launcher suite passed 9 tests, the submission validator passed, and
+`git diff --check` plus the changed-path allowlist audit passed. `npm run h2:qa`
+exited non-zero only for the three recorded groups: pre-W2 Chinese Fixture,
+`H2-QA-P1-001` validation-slice provenance, and pre-W2 source migration. The
+offline golden-path command exited zero with an explicit `SKIP` because
+`H2_WEB_URL` was unset; it is not claimed as runtime verification.
 
-## Public interfaces consumed
+## Remaining coordinator gates
 
-- Canonical H2 JSON Schemas, C03/C04 fixtures, CSV fixture, report descriptor,
-  API envelope, and exact submission-column contract.
-- H2 PRD, branch overview, and H4 task acceptance requirements.
+1. Integrate the accepted W2 commit and route `H2-QA-P1-001` to its owning path.
+2. Run all project checks from one clean final candidate SHA, including Python
+   analytics tests, repository tests, type checking, build, and assembled QA.
+3. Obtain the authorized public package and expected hashes without reading
+   credentials; prepare the slice only in an ignored explicit output directory.
+4. Execute and retain two distinct measured validation-slice runs, then pass
+   the receipt validator against the exact final SHA and artifact bytes.
+5. Complete desktop and 390x844 visual inspection and update submission claims
+   only from the resulting evidence.
 
-## Public interfaces produced
-
-None. This QA lane produces executable probes and evidence only.
-
-## Verification commands and exact results
-
-Run from repository root:
-
-```bash
-node --check tests/h2-sentinel/run-contract-qa.mjs
-node --check tests/h2-sentinel/api/run-api-safety.mjs
-node --check tests/h2-sentinel/golden-path/run-offline-golden-path.mjs
-node --test "tests/h2-sentinel/contract/*.test.mjs"
-node tests/h2-sentinel/api/run-api-safety.mjs
-node tests/h2-sentinel/golden-path/run-offline-golden-path.mjs
-node tests/h2-sentinel/run-contract-qa.mjs
-git diff --check
-```
-
-- Syntax checks: passed.
-- Submission conformance: 2 passed, 0 failed.
-- API safety probe: `SKIP A01/A04/A07` because `H2_ANALYTICS_URL` is unset on
-  H0.
-- Offline Web entry probe: `SKIP A03/A06/A08` because `H2_WEB_URL` is unset on
-  H0.
-- Archived-H0 contract harness: `PASS=4 SKIP=8 FAIL=1`; the one failure was
-  H2-QA-001. The harness now expects corrected C04 impact
-  `29.333333333333332 kWh` and must pass after QA consumes the corrected gate.
-- `git diff --check`: passed before archive commit.
-
-Read-only correction verification:
-
-```bash
-git show 4f2a8a3156a96a7670f4ee9830ff1c560faf1c94:packages/h2-contracts/fixtures/golden-c04.json
-```
-
-The corrected integration object contains both C04 derived evidence and impact
-value `29.333333333333332`. No integration or main branch was modified,
-checked out, merged, or cherry-picked by this QA lane.
-
-The existing TypeScript contract-owner test command could not run because this
-restricted QA worktree lacks the already-locked `tsx` dependency. Installing it
-would write outside this lane's allowlist, so no root dependency mutation was
-performed.
-
-## Generated artifacts
-
-- `ACCEPTANCE_MATRIX.md`
-- `DEFECT_LOG.md`
-- dependency-free Node scripts under `api/`, `golden-path/`, and the QA root
-
-## Known limitations
-
-- H0 contains no H2 analytics API, H2 EMS adapter, H2 Web feature, report
-  exporter, or local sidecar; all eight corresponding acceptance rows are
-  explicit `SKIP`.
-- H2-QA-001 is resolved by corrected integration contract gate
-  `4f2a8a3156a96a7670f4ee9830ff1c560faf1c94`. This branch intentionally stays
-  on archived H0 and therefore still demonstrates the pre-correction failure.
-
-## Contract change request CCR-H4-001
-
-- Requesting branch: `songconmaisaix31-design/h2-qa`
-- Requesting commit: `041f83803a9ffa3a30c8c1b744d973f7442692aa`
-- Existing schema/type: C04 canonical golden fixture impact and evidence.
-- Problem demonstrated by: `node tests/h2-sentinel/run-contract-qa.mjs`.
-- Smallest proposed change: make C04's declared impact agree with its frozen
-  minute CSV and PRD formula, or correct the CSV/interval with matching schema
-  tests and an updated contract gate. Completed by corrected gate
-  `4f2a8a3156a96a7670f4ee9830ff1c560faf1c94`.
-- Backward compatibility: fixture output value changes; downstream expectations
-  must be updated deliberately.
-- Golden fixture impact: C04 report and submission evidence are blocked.
-- Other tracks affected: H0 Contracts, H1 Analytics, H2 Plugin, H3 Web, H5
-  Submission, and H6 Integration.
-- Blocker severity: resolved by corrected contract gate; QA consumption pending.
-
-## Integration changes required outside this track
-
-H6 should invoke the commands in `README.md` after assembly and provide only
-loopback `H2_ANALYTICS_URL`, optional `H2_API_FAILURE_URL`, and `H2_WEB_URL` to
-the respective public probes. Browser-level route selectors and screenshot
-checks must be added after the Web track publishes its route contract.
-
-## Open-source reuse decisions
-
-No dependency or external code was added; all QA programs use Node built-ins.
-
-## Golden-path risk
-
-Do not claim a passing C04 golden journey on archived H0. Re-run the QA harness
-against corrected integration gate `4f2a8a3156a96a7670f4ee9830ff1c560faf1c94`
-before accepting the correction.
-
-## Recommended cherry-pick order
-
-1. `041f83803a9ffa3a30c8c1b744d973f7442692aa`
-2. `93e6238400e86e4402c084fc56ae15f9f36d149f`
-3. This final handoff archive commit
-
-The exact pushed worker `HEAD` for this self-describing handoff archive is
-reported in the orchestration completion payload after commit and push; this
-file intentionally does not self-reference an as-yet-uncreated Git object.
+No organizer score, full-validation result, deployment, publication, remote CI,
+or sub-180-second demo pass is claimed. Project `MEMORY.md` was not updated
+because it is outside the task write allowlist.

@@ -1,0 +1,520 @@
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { describe, it } from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const directory = resolve(fileURLToPath(new URL('.', import.meta.url)))
+const repositoryRoot = resolve(directory, '../../..')
+const generatedRoot = resolve(repositoryRoot, 'tests/h2-sentinel/reports/generated')
+const prepareScript = resolve(repositoryRoot, 'tests/h2-sentinel/scripts/prepare-validation-slice.mjs')
+const receiptScript = resolve(repositoryRoot, 'tests/h2-sentinel/scripts/validate-demo-receipt.mjs')
+
+const timeseriesColumns = [
+  'timestamp',
+  'pv_actual_kw',
+  'bess_power_kw',
+  'pcc_power_kw',
+  'total_electrolyzer_power_kw',
+  'auxiliary_load_kw',
+  'bess_soc_percent',
+  'pcc_export_limit_kw',
+  'pcc_import_limit_kw',
+  'bess_dispatch_command_kw',
+  'ground_truth_label',
+  'event_id',
+  'anomaly_subtype',
+]
+
+const submissionColumns = [
+  'pred_event_id',
+  'start_time',
+  'end_time',
+  'anomaly_code',
+  'anomaly_subtype',
+  'severity',
+  'primary_control_object',
+  'affected_equipment',
+  'confidence',
+  'evidence_json',
+  'root_cause',
+  'recommended_action',
+  'primary_impact_metric',
+  'estimated_impact_value',
+  'first_detection_time',
+  'requires_human_confirmation',
+]
+
+const diagnosisSections = [
+  '报告范围与数据来源',
+  '异常概览',
+  '证据链',
+  '原因判断：事实与推断',
+  '影响量化',
+  '安全检查',
+  '建议与人工确认',
+  '人工复核记录',
+  '版本与溯源',
+  '安全声明与限制',
+]
+
+function sha256(value) {
+  return `sha256:${createHash('sha256').update(value).digest('hex')}`
+}
+
+function createTimeseries() {
+  const rows = []
+  for (let minute = 0; minute <= 120; minute += 10) {
+    const timestamp = new Date(Date.UTC(2026, 0, 5, 9, minute)).toISOString()
+    rows.push([
+      timestamp,
+      '1000',
+      '0',
+      minute >= 60 && minute <= 70 ? '720' : '450',
+      '300',
+      '20',
+      '50',
+      '500',
+      '600',
+      '0',
+      minute >= 60 && minute <= 70 ? 'C04' : '',
+      minute >= 60 && minute <= 70 ? 'public-c04-earliest' : '',
+      minute >= 60 && minute <= 70 ? 'EXPORT_POWER_LIMIT_NOT_TRACKED' : '',
+    ])
+  }
+  return `${[timeseriesColumns, ...rows].map((row) => row.join(',')).join('\n')}\n`
+}
+
+function createLabels() {
+  return [
+    'event_id,anomaly_code,start_time,end_time,comment',
+    'public-c04-later,C04,2026-01-05T10:20:00Z,2026-01-05T10:25:00Z,later',
+    'public-c03-overlap,C03,2026-01-05T09:50:00Z,2026-01-05T10:00:00Z,overlap',
+    'public-c04-earliest,C04,2026-01-05T10:00:00Z,2026-01-05T10:10:00Z,"earliest, selected"',
+    'public-c01-outside,C01,2026-01-05T11:30:00Z,2026-01-05T11:35:00Z,outside',
+    '',
+  ].join('\n')
+}
+
+async function createPackage() {
+  const packageRoot = await mkdtemp(join(tmpdir(), 'h2-public-validation-'))
+  const dataDirectory = join(packageRoot, 'public-validation')
+  await mkdir(dataDirectory)
+  const timeseries = createTimeseries()
+  const labels = createLabels()
+  await Promise.all([
+    writeFile(join(dataDirectory, 'validation-timeseries.csv'), timeseries, 'utf8'),
+    writeFile(join(dataDirectory, 'validation-labels.csv'), labels, 'utf8'),
+  ])
+  return {
+    packageRoot,
+    timeseries,
+    labels,
+    timeseriesRelativePath: 'public-validation/validation-timeseries.csv',
+    labelsRelativePath: 'public-validation/validation-labels.csv',
+  }
+}
+
+function runPrepare(fixture, outputDirectory, overrides = {}) {
+  return spawnSync(
+    process.execPath,
+    [
+      prepareScript,
+      '--package',
+      fixture.packageRoot,
+      '--timeseries',
+      fixture.timeseriesRelativePath,
+      '--labels',
+      fixture.labelsRelativePath,
+      '--timeseries-sha256',
+      overrides.timeseriesHash ?? sha256(fixture.timeseries),
+      '--labels-sha256',
+      overrides.labelsHash ?? sha256(fixture.labels),
+      '--output',
+      outputDirectory,
+    ],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      shell: false,
+      windowsHide: true,
+    },
+  )
+}
+
+async function prepareFixtureSlice(caseName) {
+  await mkdir(generatedRoot, { recursive: true })
+  const caseRoot = await mkdtemp(join(generatedRoot, `${caseName}-`))
+  const fixture = await createPackage()
+  const outputDirectory = join(caseRoot, 'prepared')
+  const result = runPrepare(fixture, outputDirectory)
+  assert.equal(result.status, 0, result.stderr)
+  const manifestPath = join(outputDirectory, 'validation-slice-manifest.json')
+  const manifestBytes = await readFile(manifestPath)
+  return {
+    caseRoot,
+    fixture,
+    outputDirectory,
+    manifestPath,
+    manifestBytes,
+    manifest: JSON.parse(manifestBytes.toString('utf8')),
+    result,
+  }
+}
+
+function artifactRecord(relativePath, content) {
+  return { relativePath, sha256: sha256(content) }
+}
+
+async function writeRunArtifacts(root, sequence, runId, analyzedEventId) {
+  const runDirectory = join(root, `run-${sequence}`)
+  await mkdir(runDirectory)
+  const diagnosis = [
+    '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"></head><body>',
+    ...diagnosisSections.map((heading) => `<h2>${heading}</h2><p>验证内容。</p>`),
+    '<p>所有操作建议均须人工确认。</p></body></html>',
+  ].join('')
+  const audit = `${JSON.stringify({
+    schemaVersion: 1,
+    exportKind: 'event_review_audit',
+    runId,
+    actorIdentityNotice: 'local_operator_labels_are_unverified',
+    events: [],
+  })}\n`
+  const submission = `${submissionColumns.join(',')}\n${[
+    analyzedEventId,
+    '2026-01-05T10:00:00Z',
+    '2026-01-05T10:10:00Z',
+    'C04',
+    'EXPORT_POWER_LIMIT_NOT_TRACKED',
+    'high',
+    'pcc',
+    'pcc:PCC-01',
+    '0.9',
+    '[]',
+    'bounded cause',
+    'manual review',
+    'pcc_power_limit_violation_energy_kwh',
+    '1.0',
+    '2026-01-05T10:00:00Z',
+    'true',
+  ].join(',')}\n`
+  await Promise.all([
+    writeFile(join(runDirectory, 'diagnosis.html'), diagnosis, 'utf8'),
+    writeFile(join(runDirectory, 'review-audit.json'), audit, 'utf8'),
+    writeFile(join(runDirectory, 'submission.csv'), submission, 'utf8'),
+  ])
+  return {
+    diagnosisReport: artifactRecord(`run-${sequence}/diagnosis.html`, diagnosis),
+    reviewAudit: artifactRecord(`run-${sequence}/review-audit.json`, audit),
+    submissionCsv: artifactRecord(`run-${sequence}/submission.csv`, submission),
+  }
+}
+
+function measuredRun({ sequence, runId, analyzedEventId, startedAt, completedAt, totalDurationMs, artifacts }) {
+  return {
+    sequence,
+    status: 'passed',
+    runId,
+    analyzedEventId,
+    startedAt,
+    completedAt,
+    totalDurationMs,
+    stageDurations: [
+      { stage: 'import', durationMs: 10_000 },
+      { stage: 'analysis', durationMs: 30_000 },
+      { stage: 'evidence_review', durationMs: 15_000 },
+      { stage: 'human_review', durationMs: 15_000 },
+      { stage: 'q09_report', durationMs: 25_000 },
+      { stage: 'artifact_export', durationMs: 15_000 },
+    ],
+    provenanceMode: 'LIVE_ANALYSIS',
+    publicLabelsUsedAsDetectorInput: false,
+    artifacts,
+  }
+}
+
+async function createReceiptFixture(caseName) {
+  const prepared = await prepareFixtureSlice(caseName)
+  const artifactsRoot = join(prepared.caseRoot, 'artifacts')
+  await mkdir(artifactsRoot)
+  const firstArtifacts = await writeRunArtifacts(
+    artifactsRoot,
+    1,
+    'run-validation-1',
+    'detected-c04-1',
+  )
+  const secondArtifacts = await writeRunArtifacts(
+    artifactsRoot,
+    2,
+    'run-validation-2',
+    'detected-c04-2',
+  )
+  const candidateCommit = 'a'.repeat(40)
+  const receipt = {
+    schemaVersion: 1,
+    receiptKind: 'h2_validation_slice_demo',
+    recordedAt: '2026-08-28T12:05:00Z',
+    candidateCommit,
+    targetEnvironment: {
+      machine: 'qa-test-machine',
+      os: 'Windows test fixture',
+      cpu: 'test cpu',
+      nodeVersion: 'v22.0.0',
+    },
+    servicesStartedBeforeTimer: true,
+    timedScopeExcludes: ['installation', 'launcher_startup'],
+    provenance: {
+      mode: 'LIVE_ANALYSIS',
+      scope: 'VALIDATION_SLICE',
+      displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+    },
+    sourceHashes: {
+      timeseries: prepared.manifest.sources.timeseries.sha256,
+      labels: prepared.manifest.sources.labels.sha256,
+      sliceManifest: sha256(prepared.manifestBytes),
+      detectorInput: prepared.manifest.slice.sha256,
+    },
+    selectedEvent: prepared.manifest.selectedEvent,
+    runs: [
+      measuredRun({
+        sequence: 1,
+        runId: 'run-validation-1',
+        analyzedEventId: 'detected-c04-1',
+        startedAt: '2026-08-28T12:00:00Z',
+        completedAt: '2026-08-28T12:02:00Z',
+        totalDurationMs: 120_000,
+        artifacts: firstArtifacts,
+      }),
+      measuredRun({
+        sequence: 2,
+        runId: 'run-validation-2',
+        analyzedEventId: 'detected-c04-2',
+        startedAt: '2026-08-28T12:02:10Z',
+        completedAt: '2026-08-28T12:04:20Z',
+        totalDurationMs: 130_000,
+        artifacts: secondArtifacts,
+      }),
+    ],
+    claims: {
+      organizerScore: false,
+      fullValidation: false,
+      hiddenTest: false,
+      deployment: false,
+      productionProof: false,
+      fixtureSubstitution: false,
+    },
+  }
+  const receiptPath = join(prepared.caseRoot, 'demo-receipt.json')
+  await writeFile(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8')
+  return {
+    ...prepared,
+    artifactsRoot,
+    receipt,
+    receiptPath,
+    candidateCommit,
+  }
+}
+
+function runReceiptValidator(fixture, receiptPath = fixture.receiptPath) {
+  return spawnSync(
+    process.execPath,
+    [
+      receiptScript,
+      '--receipt',
+      receiptPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--artifacts-root',
+      fixture.artifactsRoot,
+      '--expected-commit',
+      fixture.candidateCommit,
+    ],
+    {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+      shell: false,
+      windowsHide: true,
+    },
+  )
+}
+
+async function cleanup(fixture) {
+  await Promise.all([
+    rm(fixture.caseRoot, { recursive: true, force: true }),
+    rm(fixture.fixture.packageRoot, { recursive: true, force: true }),
+  ])
+}
+
+describe('P1 public-validation slice preparation', () => {
+  it('selects the earliest C04 event, pads 30 minutes, verifies hashes, and isolates labels', async () => {
+    const fixture = await prepareFixtureSlice('slice-success')
+    try {
+      const output = JSON.parse(fixture.result.stdout)
+      const slice = await readFile(join(fixture.outputDirectory, 'validation-slice.csv'), 'utf8')
+      const rows = slice.trimEnd().split('\n')
+
+      assert.equal(output.status, 'prepared')
+      assert.equal(output.selectedEventId, 'public-c04-earliest')
+      assert.equal(fixture.manifest.selectedEvent.eventId, 'public-c04-earliest')
+      assert.deepEqual(fixture.manifest.slice.requestedTimeRange, {
+        startTime: '2026-01-05T09:30:00.000Z',
+        endTime: '2026-01-05T10:40:00.000Z',
+      })
+      assert.equal(fixture.manifest.slice.rowCount, 8)
+      assert.equal(rows.length, 9)
+      assert.doesNotMatch(rows[0], /ground_truth_label|event_id|anomaly_subtype/)
+      assert.deepEqual(fixture.manifest.slice.removedLabelColumns, [
+        'ground_truth_label',
+        'event_id',
+        'anomaly_subtype',
+      ])
+      assert.deepEqual(
+        fixture.manifest.overlappingLabels.map(({ eventId }) => eventId),
+        ['public-c03-overlap', 'public-c04-earliest', 'public-c04-later'],
+      )
+      assert.equal(fixture.manifest.slice.sha256, sha256(slice))
+      assert.equal(fixture.manifest.sources.timeseries.sha256, sha256(fixture.fixture.timeseries))
+      assert.equal(fixture.manifest.sources.labels.sha256, sha256(fixture.fixture.labels))
+      assert.ok(!fixture.result.stdout.includes(fixture.fixture.packageRoot))
+      assert.ok(!fixture.result.stdout.includes(fixture.outputDirectory))
+    } finally {
+      await cleanup(fixture)
+    }
+  })
+
+  it('fails closed on a source-hash mismatch before creating output', async () => {
+    await mkdir(generatedRoot, { recursive: true })
+    const caseRoot = await mkdtemp(join(generatedRoot, 'slice-hash-failure-'))
+    const fixture = await createPackage()
+    const outputDirectory = join(caseRoot, 'prepared')
+    try {
+      const result = runPrepare(fixture, outputDirectory, {
+        timeseriesHash: `sha256:${'0'.repeat(64)}`,
+      })
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /SHA-256 does not match/)
+      await assert.rejects(readFile(join(outputDirectory, 'validation-slice.csv')))
+    } finally {
+      await Promise.all([
+        rm(caseRoot, { recursive: true, force: true }),
+        rm(fixture.packageRoot, { recursive: true, force: true }),
+      ])
+    }
+  })
+
+  it('fails closed when the public label schema is incomplete', async () => {
+    await mkdir(generatedRoot, { recursive: true })
+    const caseRoot = await mkdtemp(join(generatedRoot, 'slice-schema-failure-'))
+    const fixture = await createPackage()
+    fixture.labels = 'event_id,anomaly_code,start_time\npublic-c04,C04,2026-01-05T10:00:00Z\n'
+    await writeFile(
+      join(fixture.packageRoot, fixture.labelsRelativePath),
+      fixture.labels,
+      'utf8',
+    )
+    try {
+      const result = runPrepare(fixture, join(caseRoot, 'prepared'))
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /exactly one endTime column/)
+    } finally {
+      await Promise.all([
+        rm(caseRoot, { recursive: true, force: true }),
+        rm(fixture.packageRoot, { recursive: true, force: true }),
+      ])
+    }
+  })
+
+  it('fails closed when a required detector value is not numeric', async () => {
+    await mkdir(generatedRoot, { recursive: true })
+    const caseRoot = await mkdtemp(join(generatedRoot, 'slice-numeric-failure-'))
+    const fixture = await createPackage()
+    fixture.timeseries = fixture.timeseries.replace(',1000,0,450,', ',not-a-number,0,450,')
+    await writeFile(
+      join(fixture.packageRoot, fixture.timeseriesRelativePath),
+      fixture.timeseries,
+      'utf8',
+    )
+    try {
+      const result = runPrepare(fixture, join(caseRoot, 'prepared'))
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /values must be finite numbers/)
+    } finally {
+      await Promise.all([
+        rm(caseRoot, { recursive: true, force: true }),
+        rm(fixture.packageRoot, { recursive: true, force: true }),
+      ])
+    }
+  })
+
+  it('rejects an explicit output path that is not Git-ignored', async () => {
+    const fixture = await createPackage()
+    const outputDirectory = join(directory, `unignored-output-${process.pid}-${Date.now()}`)
+    try {
+      const result = runPrepare(fixture, outputDirectory)
+      assert.equal(result.status, 1)
+      assert.match(result.stderr, /must be covered by the repository Git ignore rules/)
+      await assert.rejects(readFile(join(outputDirectory, 'validation-slice.csv')))
+    } finally {
+      await rm(fixture.packageRoot, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('P1 measured demo receipt validation', () => {
+  it('accepts two consecutive measured validation-slice runs under 180 seconds', async () => {
+    const fixture = await createReceiptFixture('receipt-success')
+    try {
+      const result = runReceiptValidator(fixture)
+      assert.equal(result.status, 0, result.stderr)
+      const output = JSON.parse(result.stdout)
+      assert.deepEqual(output.durationsMs, [120_000, 130_000])
+      assert.equal(output.eachUnder180Seconds, true)
+      assert.equal(output.consecutiveRuns, 2)
+      assert.ok(Object.values(output.unsupportedClaims).every((value) => value === false))
+    } finally {
+      await cleanup(fixture)
+    }
+  })
+
+  it('rejects 180 seconds, detector-input drift, and artifact hash drift', async () => {
+    const fixture = await createReceiptFixture('receipt-failure')
+    try {
+      const slowReceipt = structuredClone(fixture.receipt)
+      slowReceipt.runs[1].totalDurationMs = 180_000
+      slowReceipt.runs[1].completedAt = '2026-08-28T12:05:10Z'
+      const slowPath = join(fixture.caseRoot, 'slow-receipt.json')
+      await writeFile(slowPath, `${JSON.stringify(slowReceipt, null, 2)}\n`, 'utf8')
+      const slowResult = runReceiptValidator(fixture, slowPath)
+      assert.equal(slowResult.status, 1)
+      assert.match(slowResult.stderr, /less than 180 seconds/)
+
+      const detectorInputPath = join(fixture.outputDirectory, 'validation-slice.csv')
+      const detectorInput = await readFile(detectorInputPath)
+      await writeFile(detectorInputPath, Buffer.concat([detectorInput, Buffer.from('\n')]))
+      const detectorDriftResult = runReceiptValidator(fixture)
+      assert.equal(detectorDriftResult.status, 1)
+      assert.match(detectorDriftResult.stderr, /Detector input SHA-256 does not match/)
+      await writeFile(detectorInputPath, detectorInput)
+
+      const driftReceipt = structuredClone(fixture.receipt)
+      driftReceipt.runs[0].artifacts.diagnosisReport.sha256 = `sha256:${'0'.repeat(64)}`
+      const driftPath = join(fixture.caseRoot, 'drift-receipt.json')
+      await writeFile(driftPath, `${JSON.stringify(driftReceipt, null, 2)}\n`, 'utf8')
+      const driftResult = runReceiptValidator(fixture, driftPath)
+      assert.equal(driftResult.status, 1)
+      assert.match(driftResult.stderr, /does not match the artifact bytes/)
+    } finally {
+      await cleanup(fixture)
+    }
+  })
+})

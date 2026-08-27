@@ -52,9 +52,43 @@ foreach ($markdownFile in $markdownFiles) {
   }
 }
 
+$requiredP1Phrases = @{
+  'DEMO_SCRIPT.md' = @(
+    'not yet a timed pass',
+    'prepare-validation-slice.mjs',
+    'validate-demo-receipt.mjs',
+    'Fixture may be shown only as a separately labeled fallback'
+  )
+  'CLAIMS_LEDGER.md' = @(
+    'Unverified in this worker checkout',
+    'organizer score',
+    'Fixture and generic Local smoke do not become validation-slice evidence'
+  )
+  'JUDGE_CHECKLIST.md' = @(
+    'publicLabelsUsedAsDetectorInput',
+    'strictly below 180,000 ms',
+    'P1-W3 produced no such receipt'
+  )
+  'RUNTIME_EVIDENCE_CHECKLIST.md' = @(
+    'Official package/slice: not supplied or generated in P1-W3',
+    'Timed receipt: not produced in P1-W3',
+    'Open integration gate'
+  )
+}
+foreach ($entry in $requiredP1Phrases.GetEnumerator()) {
+  $path = Join-Path $packageRoot $entry.Key
+  if (-not (Test-Path -LiteralPath $path)) { continue }
+  $content = Get-Content -LiteralPath $path -Raw
+  foreach ($phrase in $entry.Value) {
+    if (-not $content.Contains($phrase)) {
+      $errors.Add("Missing P1 evidence boundary in $($entry.Key): $phrase")
+    }
+  }
+}
+
 if ($errors.Count -gt 0) {
   $errors | ForEach-Object { Write-Error $_ }
   exit 1
 }
 
-Write-Output "Submission package validation passed: $($requiredFiles.Count) required documents, 10 narrative pages, local links, and placeholder scan."
+Write-Output "Submission package validation passed: $($requiredFiles.Count) required documents, 10 narrative pages, local links, placeholder scan, and P1 evidence boundaries."

@@ -1,47 +1,107 @@
-# H2 Sentinel Ten-Page Project Narrative
+# H2 Sentinel P1 Project Narrative
 
-This narrative describes the current coordinator-verified assembled snapshot and recorded H6 evidence. It does not claim publication to `main`, deployment, official data, validation metrics, organizer results, remote CI execution, network-isolation proof, or committed screenshot assets.
+This narrative describes the P1 design and the evidence still required from the
+final integrated commit. It does not claim an official-data run, timed pass,
+full validation, hidden test, organizer result, deployment, production
+readiness, remote CI, or committed screenshots.
 
-## Page 1 — Title and outcome
+## Page 1 — Operational problem
 
-**H2 Sentinel / 氢哨** is a local-first H2 EMS anomaly-diagnosis and decision-support application. It makes a suspected coordination anomaly reviewable through evidence, impact, safety checks, provenance, and an advisory next step requiring human confirmation.
+Weak-grid green-hydrogen operations span PCC boundaries, storage direction,
+electrolyzer allocation, changing capacity, and imperfect data. A useful tool
+must do more than raise an alarm: it must make the evidence, impact,
+uncertainty, safety boundary, and next human decision inspectable.
 
-## Page 2 — The operator problem
+H2 Sentinel focuses on that review loop. It does not replace the EMS and does
+not create equipment-control authority.
 
-An alarm does not explain whether a disturbance is routine renewable variation, when it began, which equipment is involved, or what should be reviewed. H2 Sentinel turns available deterministic evidence into a traceable review workflow rather than an opaque classifier, notebook, or chat response.
+## Page 2 — Evidence-first product
 
-## Page 3 — Product boundary
+Each anomaly event retains timing, first detection, code/subtype, affected
+equipment, confidence, evidence, impact formula/unit/assumptions, safety checks,
+recommendations, provenance, and review state. Facts, calculations, inferences,
+and recommendations remain distinguishable.
 
-The application supports diagnosis and bounded operational review. It does not replace an EMS, control equipment, autonomously dispatch power, or permit a language model to decide a control action. Models detect, deterministic rules verify, explanations remain bounded by structured evidence, and people decide.
+The user impact is traceability: an operator can see what was measured, what was
+derived, and what still requires judgment.
 
-## Page 4 — Evidence before explanation
+## Page 3 — Official assistant questions
 
-The assembled flow exposes event interval, variable identity, observed value, reference or constraint, impact, safety state, and machine-readable conclusion before a recommendation. This preserves traceability and makes uncertainty visible instead of hiding it behind generated prose.
+P1 standardizes the official Q01 through Q10 identifiers and exact Chinese
+prompts. Answers are deterministic and evidence-cited whether the compatibility
+LLM flag is true or false. Event-specific questions reject missing or mismatched
+context instead of silently returning a generic answer.
 
-## Page 5 — Explicit local-first composition
+Q09 generates one matching Chinese event report. Every answer explicitly
+refuses direct control authority.
 
-The generic Fixture Demo remains at `/`. H2 is deliberately opt-in at `/h2-sentinel/?mode=fixture` or `/h2-sentinel/?mode=local`. Fixture statically registers the reviewed H2 plugin without starting Python. Local mode uses the same-origin `/api/v1/h2-sentinel` proxy to a validated `127.0.0.1` analytics target; it is not a remote-control or general plugin system.
+## Page 4 — Human review without detector mutation
 
-## Page 6 — Fixture and Local provenance
+Review is a separate append-only journal. Confirm, reject, resolve, reopen, and
+note actions follow an explicit state machine. Expected revisions surface
+concurrent edits, and request IDs make accepted mutations exactly-once.
 
-The contracts distinguish `FIXTURE`, `LIVE_ANALYSIS`, `DERIVED`, `MODEL`, `RULE`, and `LLM_RENDERED`. C03/C04 Fixture content is sanitized synthetic evidence and remains visibly labeled. The Local golden path is deterministic and no-LLM, but it is still not official-data validation evidence.
+Review may change only the projected review state and journal. Event timing,
+classification, evidence, impact, provenance, and submission mapping remain
+analysis-owned.
 
-## Page 7 — Seven anomaly classes
+## Page 5 — Auditable exports
 
-The contract vocabulary covers C01-C07 across electrolyzer setpoints, available capacity, BESS direction, PCC boundaries, energy quotas, load allocation, and SOC/reserve. Event start, end, and first-detection time remain distinct, and confidence is normalized to 0..1. These interfaces do not establish detector performance on official data.
+The review-audit JSON includes every event, including revision-zero events, with
+stable event and revision order plus an explicit notice that local actor labels
+are unverified.
 
-## Page 8 — C03 evidence-first case
+The competition submission remains exactly 16 columns. Review notes, actor
+labels, revisions, and decisions never enter submission cells.
 
-C03 is the BESS charge/discharge direction anomaly. H6 Local smoke produced a deterministic no-LLM C03 HTML report and a two-row `submission.csv` that passed its exact 16-column validator. Plugin source `92f7b78` also makes the Fixture single-event diagnosis deterministic safe HTML. These are local/Fixture outputs, not official-data results.
+## Page 6 — Chinese report safety
 
-## Page 9 — C04 boundary-tracking case
+Single-event diagnosis, period summary, PCC daily compliance, and quality
+reports are designed as UTF-8 zh-CN HTML. They retain canonical IDs and exact
+numeric values while localizing judge-visible structure and unavailable states.
 
-C04 is PCC import/export boundary tracking. The sanitized Fixture includes eight inclusive one-minute points at 720 kW against a 500 kW limit, yielding `29.333333333333332 kWh`. Manual Chrome review inspected the mounted C04 flow; it did not create a screenshot asset or validate a plant boundary.
+Imported filenames, evidence text, actor labels, and review notes are untrusted
+and must be escaped. Reports contain no scripts or required remote assets and
+repeat the human-confirmation/no-control boundary.
 
-## Page 10 — Reproducibility and honest evaluation
+## Page 7 — Public-validation slice
 
-The assembled snapshot recorded 92 repository tests, 60 focused H2 tests, 32 Python pytest cases, nine launcher tests, five assembled QA groups, and nine H2 smoke scenarios. Its production build processed 684 modules and emitted 900.01 kB minified JavaScript (297.15 kB gzip) plus 47.44 kB CSS, while still emitting Vite's standard greater-than-500-kB warning. The recorded local path rejects a 307 health redirect, covers Windows-owned child cleanup, and exposes report content hashes for review; none of these facts proves general network isolation. Official data, validation metrics, organizer score, deployment, remote GitHub Actions run, network isolation proof, and committed screenshots remain undelivered.
+The primary demo input is a hash-locked slice around the earliest public C04
+validation event. The requested range adds 30 minutes before event start and 30
+minutes after event end.
 
-## Source basis
+Detector input excludes label columns. Public labels remain only in a separate
+ignored QA manifest for post-analysis comparison and provenance. Neither the
+official package nor generated data is committed.
 
-Derived from the [H6 integration handoff](../../scripts/h2-sentinel/HANDOFF.md) and bounded by the [H2 contract package](../../packages/h2-contracts/README.md).
+## Page 8 — Three-minute evidence contract
+
+Services start before timing, and that exclusion is disclosed. The measured
+path covers import, analysis, evidence review, human review, Q09/report, and
+audit/submission export.
+
+The target may be claimed only after two distinct consecutive runs complete in
+less than 180 seconds each and the validator recomputes the manifest and
+artifact hashes for the exact final integrated SHA.
+
+## Page 9 — Independent QA
+
+P1-W3 adds contract checks, public-launcher/API assembled checks, slice-tool
+tests, and receipt boundary tests without a new dependency. It tests legacy
+question rejection, citation integrity, every review transition, replay and
+conflict behavior, audit completeness, submission immutability, Chinese report
+structure/escaping, provenance separation, and explicit unavailable metrics.
+
+Visual desktop and 390x844 inspection remains a separate coordinator gate.
+
+## Page 10 — Current truth and release boundary
+
+W1 is present in the P1-W3 base; W2 and final integration remain external to
+this worker. Synthetic QA for the slice and receipt tools passes. No official
+package was processed and no timed receipt exists.
+
+Current assembled QA identifies two expected W2 gaps and one cross-track
+blocker: the legacy Web/adapter surface, English Fixture report output, and
+generic Local provenance in analytics-generated HTML for a validation-named
+input. The coordinator must integrate/fix these and rerun every final gate
+before the submission uses validation-slice or timing claims.

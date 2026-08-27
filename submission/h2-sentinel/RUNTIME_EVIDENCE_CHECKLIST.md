@@ -1,41 +1,49 @@
-# H6 Runtime Evidence Checklist
+# H2 Sentinel P1 Runtime Evidence Checklist
 
 ## Candidate record
 
-- Original H6 integration gate: `8bcc8d59e352def535c26504683975959ff7f18d`.
-- Current coordinator-verified assembled snapshot; final candidate SHA is pending coordinator handoff.
-- Evidence date: 2026-08-19, as recorded in the H6 handoff.
-- Scope: current-worktree evidence only; it does not prove `main`, deployment,
-  remote GitHub Actions execution, network isolation, official data, or scores.
+- P1-W1 baseline in this worker checkout:
+  4c856eb (feat(h2): add P1 assistant review and report contracts).
+- P1-W3 QA commit: recorded in the worker handoff after commit.
+- Final integrated candidate SHA: coordinator-owned and intentionally not
+  inferred from this worker branch.
+- Official package/slice: not supplied or generated in P1-W3.
+- Timed receipt: not produced in P1-W3.
 
-| ID | Required evidence | Status at candidate | What it proves and does not prove |
+| ID | Required evidence | Worker status | Final release rule |
 | --- | --- | --- | --- |
-| R01 | Candidate SHA and source inventory | Pending coordinator handoff | The final candidate SHA must identify the current H6 composition; it is not a `main` publication. |
-| R02 | Windows and shell launcher commands | Passed | `npm run h2:fixture`, `npm run h2:local`, and wrappers are recorded in the H6 handoff. |
-| R03 | Fixture-only start without Python or LLM key | Passed | The smoke covered Fixture without analytics; no-LLM golden determinism is separately exercised in Local mode. |
-| R04 | Fixture C03 journey | Passed | Mounted Fixture C03 UI was manually reviewed; `92f7b78` additionally makes its single-event report deterministic safe HTML. |
-| R05 | Fixture C04 detail and export journey | Passed for detail | C04 and corrected `29.333333333333332 kWh` were reviewed; do not upgrade this to official-data evidence. |
-| R06 | Generated `submission.csv` and validator | Passed in Local deterministic smoke | Two rows and the exact 16 columns passed the Python validator. |
-| R07 | Generated report evidence | Passed for Local C03 and designated Fixture HTML reports | `92f7b78` maps single-event, period, and quality Fixture reports to safe HTML; JSON/CSV kinds retain their own formats. |
-| R08 | Loopback health, proxy, and failures | Passed | Smoke rejects a 307 health redirect and covers occupied ports, Windows-owned child cleanup, Local cleanup, and preview proxy; no broad isolation claim follows. |
-| R09 | Official CSV import and quality record | Not delivered | Official data is absent. |
-| R10 | Versioned validation report and metrics | Not delivered | No matching policy/metrics artifact exists. |
-| R11 | Desktop and narrow-width visual evidence | Manual pass; assets not delivered | Human Chrome review at desktop and 390x844 found no document-width overflow; no automated screenshot suite or committed images exists. |
-| R12 | TypeScript, Web, launcher, Python, and diff checks | Current assembled pass | The assembled snapshot recorded 92 repository tests, 60 focused H2 tests, 32 Python pytest cases, nine launcher tests, five assembled QA groups, and nine smoke scenarios. |
-| R13 | Third-party notice and asset review | Notice passed; assets not delivered | `THIRD_PARTY_NOTICES.md` inventories shipped dependencies; screenshots/datasets/reports are absent and need review before distribution. |
-| R14 | Release/archive manifest and hashes | Not delivered | There is no release or deployment archive proof. |
+| R01 | Exact candidate SHA and clean changed-path audit | Pending coordinator | Record final SHA; ensure only accepted commits and no generated data are present. |
+| R02 | Official source files and expected SHA-256 values | Not supplied | Resolve from an authorized public package; do not search credentials or infer hashes. |
+| R03 | Earliest C04 slice manifest and detector CSV | Tool implemented; synthetic tests passed | Run on the explicit package into an ignored directory; verify 30-minute padding, coverage, and label removal. |
+| R04 | Official Q01–Q10 deterministic answers | Backend QA authored | Final integrated run must pass both allowLlmRendering values, citation invariants, context errors, and H2Qxx rejection. |
+| R05 | Human review transitions and reliability | Backend QA authored | Final run must pass every allowed transition, replay, stale revision, request-ID conflict, missing note, and forbidden transition. |
+| R06 | Detector/submission immutability after review | Backend QA authored | Compare before/after event snapshots and exact submission.csv bytes. |
+| R07 | Review-audit export | Backend QA authored | Include revision-zero events, ordered entries, UTF-8 notes, unverified actor notice, and matching content hash. |
+| R08 | Chinese report structure and safety | Backend QA authored; Fixture adapter integration pending | Verify UTF-8 zh-CN, required sections, escaped actor/note/filename, provenance, safety text, no scripts/remotes/paths/secrets. |
+| R09 | Validation-slice provenance across Web and reports | Open integration gate | Generic LIVE_ANALYSIS · 本地导入数据 is insufficient for the prepared slice; require LIVE_ANALYSIS · 验证集切片. |
+| R10 | Exact report kind/format/media/hash matrix | Backend QA authored | Seven available kinds pass; unlabeled validation_metrics must fail explicitly instead of returning zero metrics. |
+| R11 | Fixture fallback separation | W2 integration pending | Fixture report/UI must remain Chinese and visibly FIXTURE, never validation evidence. |
+| R12 | Two consecutive measured runs below 180 seconds | Not run | Receipt validator must pass against final SHA, exact manifest, and distinct per-run artifacts. |
+| R13 | Desktop and 390x844 rendering | Coordinator manual | Inspect overflow, overlap, focus, disabled/loading, conflict recovery, report downloads, and provenance. |
+| R14 | Required project checks | Pending final integration | Run typecheck, h2:check, Python tests, repository tests, build, diff check, and clean status from final commit. |
+| R15 | Organizer result, full validation, deployment, remote CI | Not evidenced | Keep all claims false unless separate authoritative evidence is produced. |
 
-## Smoke coverage
+## P1-W3 command set
 
-`npm run h2:smoke` recorded nine H2 smoke scenarios. This is executable
-assembled-snapshot evidence; it is neither a production deployment nor a remote
-CI run.
+    node --test "tests/h2-sentinel/contract/*.test.mjs"
+    npm run h2:qa
+    npm run h2:launcher:test
+    node tests/h2-sentinel/golden-path/run-offline-golden-path.mjs
+    pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1
+    git diff --check
 
-## Report-format correction
+The worker records exact pass/fail results in its handoff. Failures caused by a
+not-yet-integrated W2 lane or an exposed cross-track provenance defect remain
+failures; they are not converted into worker-local passes.
 
-Plugin source `92f7b78027b9492a5a5fe8ced2e851ed4199aeaa`, integrated by the
-coordinator as `abe454b`, resolves the H6-discovered Fixture format mismatch.
-It proves deterministic safe HTML only for single-event diagnosis, period
-summary, and quality reports. It does not change the evidence limits for JSON,
-CSV, official data, scores, deployment, remote CI, screenshots, or network
-isolation.
+## Timed receipt interpretation
+
+A passing receipt proves that the referenced local artifacts and timestamps
+meet the P1 evidence schema for two runs on the named target environment. It
+does not prove full validation, hidden testing, organizer scoring, deployment,
+remote CI, production behavior, or correctness beyond the recorded slice.
