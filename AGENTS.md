@@ -69,4 +69,3 @@ Use the narrowest relevant commands during implementation. Before integration co
 - Workers send exactly one Orca `worker_done` report for the active Dispatch and then stop.
 - Do not merge, push, amend, force-push, reset, clean, or delete worktrees unless the coordinator explicitly assigns that action.
 - The coordinator owns integration, cross-track fixes, final tests, runtime inspection, and the completion summary.
-
