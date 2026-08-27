@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/report-request.schema.json",
+  "title": "H2ReportRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["runId", "kind"],
+  "properties": {
+    "runId": { "type": "string", "minLength": 1 },
+    "kind": {
+      "enum": [
+        "single_event_diagnosis",
+        "period_summary",
+        "pcc_daily_compliance",
+        "analysis_result_json",
+        "submission_csv",
+        "validation_metrics",
+        "quality_report",
+        "review_audit_json"
+      ]
+    },
+    "eventId": { "type": "string", "minLength": 1 },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startTime", "endTime"],
+      "properties": {
+        "startTime": { "type": "string", "minLength": 1 },
+        "endTime": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": { "kind": { "const": "single_event_diagnosis" } }
+      },
+      "then": {
+        "required": ["eventId"],
+        "not": { "required": ["timeRange"] }
+      },
+      "else": { "not": { "required": ["eventId"] } }
+    },
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": { "kind": { "const": "pcc_daily_compliance" } }
+      },
+      "then": { "required": ["timeRange"] }
+    },
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "enum": [
+              "analysis_result_json",
+              "submission_csv",
+              "validation_metrics",
+              "quality_report",
+              "review_audit_json"
+            ]
+          }
+        }
+      },
+      "then": { "not": { "required": ["timeRange"] } }
+    }
+  ]
+}

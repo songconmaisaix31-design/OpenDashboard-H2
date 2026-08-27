@@ -19,6 +19,16 @@ ROUTE_MAP: Final[tuple[dict[str, str], ...]] = (
     {"operationId": "getOverview", "method": "POST", "path": f"{API_NAMESPACE}/runs/overview"},
     {"operationId": "listEvents", "method": "POST", "path": f"{API_NAMESPACE}/runs/events"},
     {"operationId": "getEvent", "method": "POST", "path": f"{API_NAMESPACE}/runs/event"},
+    {
+        "operationId": "getEventReview",
+        "method": "GET",
+        "path": f"{API_NAMESPACE}/runs/{{runId}}/events/{{eventId}}/review",
+    },
+    {
+        "operationId": "reviewEvent",
+        "method": "POST",
+        "path": f"{API_NAMESPACE}/runs/{{runId}}/events/{{eventId}}:review",
+    },
     {"operationId": "getSeries", "method": "POST", "path": f"{API_NAMESPACE}/runs/series"},
     {"operationId": "ask", "method": "POST", "path": f"{API_NAMESPACE}/assistant:ask"},
     {"operationId": "exportReport", "method": "POST", "path": f"{API_NAMESPACE}/reports:export"},

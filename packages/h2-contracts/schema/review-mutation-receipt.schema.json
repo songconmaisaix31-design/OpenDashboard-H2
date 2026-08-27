@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/review-mutation-receipt.schema.json",
+  "title": "H2ReviewMutationReceipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "replayed", "entry", "review"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "replayed": { "type": "boolean" },
+    "entry": { "type": "object" },
+    "review": { "type": "object" }
+  }
+}

@@ -32,17 +32,20 @@ provider without inferring an official score or dataset result.
 |---|---|---|
 | `single_event_diagnosis` | HTML | `text/html` |
 | `period_summary` | HTML | `text/html` |
+| `pcc_daily_compliance` | HTML | `text/html` |
 | `analysis_result_json` | JSON | `application/json` |
 | `validation_metrics` | JSON | `application/json` |
 | `quality_report` | HTML | `text/html` |
+| `review_audit_json` | JSON | `application/json` |
 | `submission_csv` | CSV | `text/csv` |
 
-The quality HTML artifact contains the dataset/run identity, quality status,
-row count, time range, checks, warnings or blocking reasons, provenance,
-limitations, and the human-confirmation disclaimer. HTML is rendered through
-Jinja autoescaping; imported filenames and report values are never inserted as
-trusted markup. The JSON validation artifact contains the run ID, quality
-payload, and provenance. Submission output remains the frozen 16-column CSV.
+Judge-visible HTML is Simplified Chinese, declares `lang="zh-CN"`, uses only
+bounded local styles, and is rendered through Jinja autoescaping. Imported
+filenames, event prose, actor labels, and review notes are never inserted as
+trusted markup. `validation_metrics` fails with `report.metrics_unavailable`
+until labels, split identity, matching rules, and versioned configuration are
+available; quality data is not misrepresented as validation metrics.
+Submission output remains the frozen 16-column CSV.
 
 ## Route map
 
@@ -50,6 +53,13 @@ payload, and provenance. Submission output remains the frozen 16-column CSV.
 `GET /api/v1/h2-sentinel/routes`, and an API test compares both forms to the
 actual FastAPI route table. FastAPI documentation and OpenAPI routes are
 disabled; no unlisted framework route is exposed.
+
+Review history is available at
+`GET /api/v1/h2-sentinel/runs/{runId}/events/{eventId}/review`; append-only
+mutations use
+`POST /api/v1/h2-sentinel/runs/{runId}/events/{eventId}:review`. Mutations are
+serialized in process, enforce `expectedRevision`, and deduplicate exact
+`requestId` replay without changing detector or submission fields.
 
 Browser traffic is expected to use the H6 same-origin proxy. The sidecar does
 not add permissive CORS behavior; Host and Origin checks remain limited to

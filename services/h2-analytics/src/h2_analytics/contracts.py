@@ -25,7 +25,20 @@ PRIMARY_IMPACT_METRIC_BY_CODE = {
     "C06": "extra_energy_consumption_kwh",
     "C07": "bess_regulation_reserve_shortfall_kwh",
 }
-ASSISTANT_QUESTION_IDS = tuple(f"H2Q{index:02d}" for index in range(1, 11))
+ASSISTANT_QUESTIONS = (
+    ("Q01", "PCC正值和负值分别代表什么？"),
+    ("Q02", "如何区分PCC功率越限与电量配额异常？"),
+    ("Q03", "储能方向异常如何影响PCC功率？"),
+    ("Q04", "如何判断SOC调节备用是否不足？"),
+    ("Q05", "设备降额但EMS未同步如何定位？"),
+    ("Q06", "如何区分云团变化和控制指令振荡？"),
+    ("Q07", "如何评价多台电解槽负荷分配？"),
+    ("Q08", "哪些建议必须人工确认？"),
+    ("Q09", "生成测试集异常诊断报告。"),
+    ("Q10", "PCC合规日报包含哪些内容？"),
+)
+ASSISTANT_QUESTION_IDS = tuple(question_id for question_id, _ in ASSISTANT_QUESTIONS)
+ASSISTANT_PROMPTS = dict(ASSISTANT_QUESTIONS)
 SUBMISSION_COLUMNS = (
     "pred_event_id",
     "start_time",

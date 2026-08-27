@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/review-audit-export.schema.json",
+  "title": "H2ReviewAuditExport",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "exportKind",
+    "runId",
+    "datasetFingerprint",
+    "generatedAt",
+    "actorIdentityNotice",
+    "events",
+    "provenance"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "exportKind": { "const": "event_review_audit" },
+    "runId": { "type": "string", "minLength": 1 },
+    "datasetFingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "generatedAt": { "type": "string", "minLength": 1 },
+    "actorIdentityNotice": { "const": "local_operator_labels_are_unverified" },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event", "review"],
+        "properties": {
+          "event": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["eventId", "code", "subtype", "startTime", "endTime"],
+            "properties": {
+              "eventId": { "type": "string", "minLength": 1 },
+              "code": { "enum": ["C01", "C02", "C03", "C04", "C05", "C06", "C07"] },
+              "subtype": { "type": "string", "minLength": 1 },
+              "startTime": { "type": "string", "minLength": 1 },
+              "endTime": { "type": "string", "minLength": 1 }
+            }
+          },
+          "review": { "type": "object" }
+        }
+      }
+    },
+    "provenance": { "type": "object" }
+  }
+}

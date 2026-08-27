@@ -11,6 +11,8 @@
     { "operationId": "getOverview", "method": "POST", "path": "/api/v1/h2-sentinel/runs/overview" },
     { "operationId": "listEvents", "method": "POST", "path": "/api/v1/h2-sentinel/runs/events" },
     { "operationId": "getEvent", "method": "POST", "path": "/api/v1/h2-sentinel/runs/event" },
+    { "operationId": "getEventReview", "method": "GET", "path": "/api/v1/h2-sentinel/runs/{runId}/events/{eventId}/review" },
+    { "operationId": "reviewEvent", "method": "POST", "path": "/api/v1/h2-sentinel/runs/{runId}/events/{eventId}:review" },
     { "operationId": "getSeries", "method": "POST", "path": "/api/v1/h2-sentinel/runs/series" },
     { "operationId": "ask", "method": "POST", "path": "/api/v1/h2-sentinel/assistant:ask" },
     { "operationId": "exportReport", "method": "POST", "path": "/api/v1/h2-sentinel/reports:export" },

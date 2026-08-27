@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Literal
 
-from h2_analytics.contracts import ASSISTANT_QUESTION_IDS
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StrictRequest(BaseModel):
@@ -61,14 +61,6 @@ class AssistantRequest(StrictRequest):
     event_id: str | None = Field(default=None, alias="eventId")
     allow_llm_rendering: bool = Field(alias="allowLlmRendering")
 
-    @field_validator("question_id")
-    @classmethod
-    def known_question(cls, value: str) -> str:
-        if value not in ASSISTANT_QUESTION_IDS:
-            raise ValueError("unsupported assistant question")
-        return value
-
-
 class TimeRange(StrictRequest):
     start_time: str = Field(alias="startTime", min_length=1)
     end_time: str = Field(alias="endTime", min_length=1)
@@ -79,3 +71,19 @@ class ReportRequest(StrictRequest):
     kind: str
     event_id: str | None = Field(default=None, alias="eventId")
     time_range: TimeRange | None = Field(default=None, alias="timeRange")
+
+
+class LocalReviewActor(StrictRequest):
+    kind: Literal["local_operator"]
+    display_name: str = Field(alias="displayName", min_length=1, max_length=64)
+
+
+class ReviewEventRequest(StrictRequest):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    request_id: str = Field(alias="requestId", min_length=1, max_length=128)
+    run_id: str = Field(alias="runId", min_length=1)
+    event_id: str = Field(alias="eventId", min_length=1)
+    action: Literal["confirm", "reject", "resolve", "reopen", "add_note"]
+    expected_revision: int = Field(alias="expectedRevision", ge=0)
+    actor: LocalReviewActor
+    note: str | None = Field(default=None, max_length=2000)

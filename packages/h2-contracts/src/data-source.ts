@@ -5,6 +5,11 @@ import type { H2DatasetManifest, H2DatasetMode } from './dataset.ts'
 import type { H2TimeRange } from './provenance.ts'
 import type { H2DataQualityReport } from './quality.ts'
 import type { H2ReportArtifact, H2ReportKind } from './report.ts'
+import type {
+  H2EventReview,
+  H2ReviewEventRequest,
+  H2ReviewMutationReceipt,
+} from './review.ts'
 
 export interface H2EventFilter {
   readonly codes?: readonly H2AnomalyCode[]
@@ -64,6 +69,10 @@ export interface H2SentinelDataSource {
     filter?: H2EventFilter,
   ): Promise<readonly H2AnomalyEvent[]>
   getEvent(runId: string, eventId: string): Promise<H2AnomalyEvent>
+  getEventReview(runId: string, eventId: string): Promise<H2EventReview>
+  reviewEvent(
+    request: H2ReviewEventRequest,
+  ): Promise<H2ReviewMutationReceipt>
   getSeries(request: H2SeriesRequest): Promise<H2SeriesResponse>
   ask(request: H2AssistantRequest): Promise<H2AssistantAnswer>
   exportReport(request: H2ReportRequest): Promise<H2ReportArtifact>
