@@ -189,17 +189,28 @@ const fixtureSeries = [
   ['2026-01-05T10:41:00Z', 766, 230, 590, 500, 106, 59.2, 500, 450, -240],
 ] as const
 
-const fixtureSeriesVariables = [
-  'pv_actual_kw',
-  'bess_power_kw',
-  'pcc_power_kw',
-  'total_electrolyzer_power_kw',
-  'auxiliary_load_kw',
-  'bess_soc_percent',
-  'pcc_export_limit_kw',
-  'pcc_import_limit_kw',
-  'bess_dispatch_command_kw',
-] as const
+const fixtureSeriesVariableSources = {
+  pv_forecast_kw: 'pv_forecast_kw',
+  pv_actual_kw: 'pv_actual_kw',
+  bess_power_actual_kw: 'bess_power_kw',
+  bess_power_kw: 'bess_power_kw',
+  pcc_power_actual_kw: 'pcc_power_kw',
+  pcc_power_kw: 'pcc_power_kw',
+  total_electrolyzer_power_kw: 'total_electrolyzer_power_kw',
+  aux_load_kw: 'auxiliary_load_kw',
+  auxiliary_load_kw: 'auxiliary_load_kw',
+  soc_target_pct: 'soc_target_pct',
+  bess_soc_pct: 'bess_soc_percent',
+  bess_soc_percent: 'bess_soc_percent',
+  grid_export_power_limit_kw: 'pcc_export_limit_kw',
+  pcc_export_limit_kw: 'pcc_export_limit_kw',
+  grid_import_power_limit_kw: 'pcc_import_limit_kw',
+  pcc_import_limit_kw: 'pcc_import_limit_kw',
+  bess_power_cmd_kw: 'bess_dispatch_command_kw',
+  bess_dispatch_command_kw: 'bess_dispatch_command_kw',
+} as const
+
+type FixtureSeriesVariable = keyof typeof fixtureSeriesVariableSources
 
 const fixturePoints: readonly H2SeriesPoint[] = fixtureSeries.map(
   ([
@@ -216,11 +227,13 @@ const fixturePoints: readonly H2SeriesPoint[] = fixtureSeries.map(
   ]) => ({
     timestamp,
     values: {
+      pv_forecast_kw: 1900,
       pv_actual_kw: pvActual,
       bess_power_kw: bessPower,
       pcc_power_kw: pccPower,
       total_electrolyzer_power_kw: electrolyzerPower,
       auxiliary_load_kw: auxiliaryLoad,
+      soc_target_pct: 55,
       bess_soc_percent: bessSoc,
       pcc_export_limit_kw: exportLimit,
       pcc_import_limit_kw: importLimit,
@@ -793,7 +806,10 @@ function selectFixtureValues(
 ): Readonly<Record<string, number | null>> {
   const selected: Record<string, number | null> = {}
   for (const variable of variables) {
-    const value = values[variable]
+    if (!isFixtureSeriesVariable(variable)) {
+      throw new H2EmsAdapterError('invalid_fixture_request', false)
+    }
+    const value = values[fixtureSeriesVariableSources[variable]]
     if (value === undefined) {
       throw new H2EmsAdapterError('invalid_fixture_request', false)
     }
@@ -804,10 +820,8 @@ function selectFixtureValues(
 
 function isFixtureSeriesVariable(
   value: string,
-): value is (typeof fixtureSeriesVariables)[number] {
-  return fixtureSeriesVariables.includes(
-    value as (typeof fixtureSeriesVariables)[number],
-  )
+): value is FixtureSeriesVariable {
+  return Object.hasOwn(fixtureSeriesVariableSources, value)
 }
 
 function isFixtureTimeRange(startTime: string, endTime: string): boolean {
