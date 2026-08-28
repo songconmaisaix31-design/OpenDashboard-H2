@@ -528,7 +528,20 @@ async function testLocalCanonicalApiAndExports() {
     assertRedactedError(invalidOrigin, 403)
     assert.equal(invalidOrigin.body.error.code, 'boundary.invalid_origin')
 
-    const csv = `${await readFile(fixtureCsvPath, 'utf8')}\n`
+    const liveRows = parseCsv(await readFile(fixtureCsvPath, 'utf8'))
+    const header = liveRows[0]
+    const timestampIndex = header.indexOf('timestamp')
+    const commandIndex = header.indexOf('bess_power_cmd_kw')
+    const actualIndex = header.indexOf('bess_power_actual_kw')
+    const pccActualIndex = header.indexOf('pcc_power_actual_kw')
+    for (const row of liveRows.slice(1)) {
+      if (row[timestampIndex] >= '2026-01-05T10:32:00Z') continue
+      // LIVE C03 requires the official 400 kW signature to track in the commanded direction.
+      row[commandIndex] = '-400'
+      row[actualIndex] = '-400'
+      row[pccActualIndex] = '-400'
+    }
+    const csv = `${liveRows.map((row) => row.join(',')).join('\n')}\n`
     const imported = assertSuccess(await request(
       session.ready.analyticsUrl,
       '/api/v1/h2-sentinel/datasets:import',
@@ -551,7 +564,7 @@ async function testLocalCanonicalApiAndExports() {
     assert.equal(run.provenance.mode, 'LIVE_ANALYSIS')
     assert.notEqual(run.runId, 'run-fixture-h2-sentinel-golden')
     assert.deepEqual(run.events.map((event) => event.code), ['C03', 'C04'])
-    assert.equal(run.events[1].impact.value, 29.333333333333332)
+    assert.equal(run.events[1].impact.value, 120)
     const events = assertSuccess(await request(
       session.ready.analyticsUrl,
       '/api/v1/h2-sentinel/runs/events',
@@ -871,7 +884,7 @@ async function testLocalCanonicalApiAndExports() {
       assert.match(pccHtml, new RegExp(heading))
     }
     assert.match(pccHtml, /证据不足，未计算该项合规结论/)
-    assert.match(pccHtml, /29\.333333333333332/)
+    assert.match(pccHtml, /120/)
 
     const qualityHtml = reports.get('quality_report').content
     assert.match(qualityHtml, /氢哨数据质量报告/)
@@ -904,7 +917,7 @@ async function testLocalCanonicalApiAndExports() {
     ])
     assert.deepEqual(submissionRows.slice(1).map((row) => [row[0], row[3], row[13]]), [
       [events[0].eventId, 'C03', String(events[0].impact.value)],
-      [events[1].eventId, 'C04', String(events[1].impact.value)],
+      [events[1].eventId, 'C04', '120.0'],
     ])
     assertSafePublicText(submission.content)
     const dedicatedSubmission = assertSuccess(await request(
