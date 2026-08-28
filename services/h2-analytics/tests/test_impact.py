@@ -1,0 +1,179 @@
+"""Impact-calculator unit tests.
+
+These exercise `ImpactCalculator` directly against hand-built windows so the
+integration arithmetic is pinned independently of detection thresholds. A
+sampling interval of 60 minutes is used throughout, which makes the kW->kWh
+integration factor exactly 1.0 and keeps every expectation readable.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from datetime import UTC, datetime
+
+import pytest
+
+from h2_analytics.events import EventWindow
+from h2_analytics.impact import ImpactCalculator
+from h2_analytics.impact.calculators import DECLARED_IMPACT_METRICS
+from h2_analytics.models import DataRow
+
+_START = datetime(2026, 1, 5, 10, 20, tzinfo=UTC)
+_ONE_HOUR = 60.0
+
+
+def _row(index: int, **values: float | None) -> DataRow:
+    return DataRow(index, _START, "2026-01-05T10:20:00Z", dict(values))
+
+
+def _window(
+    code: str,
+    rows: Iterable[DataRow],
+    *,
+    subtype: str = "TEST_SUBTYPE",
+) -> EventWindow:
+    return EventWindow(
+        event_id=f"{code}-20260105-001",
+        code=code,
+        subtype=subtype,
+        rows=tuple(rows),
+        start_time=_START,
+        end_time=_START,
+        first_detection_time=_START,
+        confidence=0.9,
+        detector_version="test-detector-v1",
+    )
+
+
+def _calculate(window: EventWindow) -> object:
+    return ImpactCalculator().calculate(
+        window=window,
+        sampling_interval_minutes=_ONE_HOUR,
+    )
+
+
+def test_every_code_reports_its_declared_metric_and_unit() -> None:
+    """Each code must report the metric the vocabulary declares for it."""
+    windows = {
+        "C01": _window("C01", [_row(1, bess_power_actual_kw=0.0)]),
+        "C02": _window("C02", [_row(1, elz1_power_cmd_kw=0.0, elz1_power_actual_kw=0.0)]),
+        "C03": _window("C03", [_row(1, pcc_power_actual_kw=0.0)]),
+        "C04": _window("C04", [_row(1, pcc_export_power_violation_kw=0.0,
+                                    pcc_import_power_violation_kw=0.0)]),
+        "C05": _window("C05", [_row(1, grid_export_energy_quota_excess_kwh=0.0)]),
+        "C06": _window("C06", [_row(1)]),
+        "C07": _window("C07", [_row(1, bess_available_discharge_energy_kwh=0.0,
+                                    bess_regulation_reserve_target_kwh=0.0)]),
+    }
+    for code, window in windows.items():
+        calculation = _calculate(window)
+        expected_metric, expected_version = DECLARED_IMPACT_METRICS[code]
+        assert calculation.metric == expected_metric, code
+        assert calculation.formula_version == expected_version, code
+        assert calculation.unit == "kWh", code
+        assert calculation.assumptions, code
+
+
+def test_c01_integrates_absolute_deviation_from_the_median_baseline() -> None:
+    # Median of (100, 100, 100, 400) is 100, so only the last row deviates.
+    window = _window(
+        "C01",
+        [_row(index, bess_power_actual_kw=value)
+         for index, value in enumerate((100.0, 100.0, 100.0, 400.0), start=1)],
+    )
+
+    assert _calculate(window).value == pytest.approx(300.0)
+
+
+def test_c02_integrates_only_the_positive_command_gap() -> None:
+    window = _window(
+        "C02",
+        [
+            # Shortfall of 200 kW on unit 1 counts.
+            _row(1, elz1_power_cmd_kw=600.0, elz1_power_actual_kw=400.0),
+            # Overshoot must not net off against the shortfall above.
+            _row(2, elz1_power_cmd_kw=300.0, elz1_power_actual_kw=500.0),
+        ],
+    )
+
+    assert _calculate(window).value == pytest.approx(200.0)
+
+
+def test_c04_sums_export_and_import_violations_when_both_are_reported() -> None:
+    window = _window(
+        "C04",
+        [_row(1, pcc_export_power_violation_kw=120.0, pcc_import_power_violation_kw=30.0)],
+    )
+
+    assert _calculate(window).value == pytest.approx(150.0)
+
+
+def test_c04_falls_back_to_limits_when_violation_columns_are_absent() -> None:
+    """Export is positive PCC over the export limit; import is negative PCC past it."""
+    exporting = _window(
+        "C04",
+        [_row(1, pcc_power_actual_kw=700.0, grid_export_power_limit_kw=500.0,
+              grid_import_power_limit_kw=450.0)],
+    )
+    importing = _window(
+        "C04",
+        [_row(1, pcc_power_actual_kw=-600.0, grid_export_power_limit_kw=500.0,
+              grid_import_power_limit_kw=450.0)],
+    )
+    compliant = _window(
+        "C04",
+        [_row(1, pcc_power_actual_kw=400.0, grid_export_power_limit_kw=500.0,
+              grid_import_power_limit_kw=450.0)],
+    )
+
+    assert _calculate(exporting).value == pytest.approx(200.0)
+    assert _calculate(importing).value == pytest.approx(150.0)
+    assert _calculate(compliant).value == pytest.approx(0.0)
+
+
+def test_c05_and_c07_report_the_peak_not_the_integral() -> None:
+    """Quota excess and reserve shortfall are energy already, so they must not integrate."""
+    quota = _window(
+        "C05",
+        [
+            _row(1, grid_export_energy_quota_excess_kwh=15.0),
+            _row(2, grid_export_energy_quota_excess_kwh=40.0),
+            _row(3, grid_export_energy_quota_excess_kwh=25.0),
+        ],
+    )
+    reserve = _window(
+        "C07",
+        [
+            _row(1, bess_available_discharge_energy_kwh=100.0,
+                 bess_regulation_reserve_target_kwh=150.0),
+            _row(2, bess_available_discharge_energy_kwh=40.0,
+                 bess_regulation_reserve_target_kwh=150.0),
+        ],
+        subtype="DISCHARGE_RESERVE_SHORTFALL",
+    )
+
+    assert _calculate(quota).value == pytest.approx(40.0)
+    assert _calculate(reserve).value == pytest.approx(110.0)
+
+
+def test_c07_charge_subtype_reads_the_charge_headroom_field() -> None:
+    rows = [
+        _row(
+            1,
+            bess_available_charge_energy_kwh=60.0,
+            bess_available_discharge_energy_kwh=900.0,
+            bess_regulation_reserve_target_kwh=150.0,
+        )
+    ]
+    charge = _window("C07", rows, subtype="CHARGE_HEADROOM_SHORTFALL")
+    discharge = _window("C07", rows, subtype="DISCHARGE_RESERVE_SHORTFALL")
+
+    assert _calculate(charge).value == pytest.approx(90.0)
+    assert _calculate(discharge).value == pytest.approx(0.0)
+
+
+def test_missing_inputs_yield_zero_rather_than_raising() -> None:
+    """A blind test set will contain gaps; impact must degrade, not crash."""
+    for code in DECLARED_IMPACT_METRICS:
+        calculation = _calculate(_window(code, [_row(1)]))
+        assert calculation.value == pytest.approx(0.0), code

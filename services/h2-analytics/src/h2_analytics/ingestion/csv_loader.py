@@ -8,8 +8,8 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
+from h2_analytics import vocabulary
 from h2_analytics.contracts import (
-    FIELD_DEFINITIONS,
     FIXTURE_FINGERPRINT,
     FIXTURE_GENERATED_AT,
     NUMERIC_FIELDS,
@@ -19,6 +19,30 @@ from h2_analytics.contracts import (
 from h2_analytics.models import DataRow, ImportedDataset, ParseDiagnostics
 from h2_analytics.quality.checker import QualityChecker
 from h2_analytics.settings import MAX_CSV_BYTES, MAX_CSV_ROWS
+
+_ELZ_POWER_FIELDS = (
+    "elz1_power_actual_kw",
+    "elz2_power_actual_kw",
+    "elz3_power_actual_kw",
+)
+
+# Public label files are evaluation artifacts, never detector inputs. Reject
+# their identifying columns before any row is parsed into the runtime model.
+FORBIDDEN_LABEL_FIELDS = frozenset(
+    {
+        "is_anomaly",
+        "event_id",
+        "anomaly_code",
+        "anomaly_subtype",
+        "severity",
+        "start_time",
+        "end_time",
+        "primary_control_object",
+        "affected_equipment",
+        "root_cause",
+        "recommended_action",
+    }
+)
 
 
 class CsvImportError(ValueError):
@@ -48,13 +72,13 @@ class DatasetLoader:
         mode = "FIXTURE" if fingerprint == FIXTURE_FINGERPRINT else "LIVE_ANALYSIS"
         reader = csv.reader(io.StringIO(text, newline=""), strict=True)
         try:
-            rows = list(reader)
+            header_cells = next(reader)
+        except StopIteration:
+            raise CsvImportError("import.empty", "CSV must include a header row.")
         except csv.Error as error:
             raise CsvImportError("import.malformed_csv", "CSV syntax is malformed.") from error
-        if not rows:
-            raise CsvImportError("import.empty", "CSV must include a header row.")
 
-        headers = tuple(cell.strip() for cell in rows[0])
+        headers = tuple(cell.strip() for cell in header_cells)
         if not headers or any(not header for header in headers):
             raise CsvImportError("import.invalid_header", "CSV header names must be non-empty.")
         duplicates = sorted(name for name, count in Counter(headers).items() if count > 1)
@@ -65,15 +89,24 @@ class DatasetLoader:
                 tuple(duplicates),
             )
 
-        body = [row for row in rows[1:] if any(cell.strip() for cell in row)]
-        if len(body) > MAX_CSV_ROWS:
+        forbidden_fields = tuple(sorted(FORBIDDEN_LABEL_FIELDS.intersection(headers)))
+        if forbidden_fields:
+            raise CsvImportError(
+                "import.label_columns_forbidden",
+                "Public label columns cannot be imported into the detector.",
+                forbidden_fields,
+            )
+
+        missing_fields = tuple(name for name in REQUIRED_FIELDS if name not in headers)
+        try:
+            parsed_rows, parse_counts = _parse_rows(headers, reader)
+        except csv.Error as error:
+            raise CsvImportError("import.malformed_csv", "CSV syntax is malformed.") from error
+        if len(parsed_rows) > MAX_CSV_ROWS:
             raise CsvImportError(
                 "import.too_many_rows",
                 f"CSV exceeds the {MAX_CSV_ROWS}-row in-memory import limit.",
             )
-
-        missing_fields = tuple(name for name in REQUIRED_FIELDS if name not in headers)
-        parsed_rows, parse_counts = _parse_rows(headers, body)
         timestamps = [row.timestamp for row in parsed_rows if row.timestamp is not None]
         interval_minutes = _sampling_interval_minutes(timestamps)
         start_time, end_time = _time_range(timestamps)
@@ -102,7 +135,7 @@ class DatasetLoader:
             "rowCount": len(parsed_rows),
             "timeRange": {"startTime": start_time, "endTime": end_time},
             "samplingIntervalMinutes": interval_minutes,
-            "fields": [_field_descriptor(name) for name in headers],
+            "fields": [vocabulary.field_descriptor(name) for name in headers],
             "provenance": provenance,
         }
         diagnostics = _build_diagnostics(
@@ -140,7 +173,7 @@ def _validate_filename(filename: str) -> str:
 
 def _parse_rows(
     headers: tuple[str, ...],
-    body: list[list[str]],
+    body: Any,
 ) -> tuple[list[DataRow], dict[str, Any]]:
     parsed: list[DataRow] = []
     missing_values: Counter[str] = Counter()
@@ -148,6 +181,8 @@ def _parse_rows(
     invalid_timestamps = 0
     malformed_rows = 0
     for index, cells in enumerate(body, start=1):
+        if not any(cell.strip() for cell in cells):
+            continue
         if len(cells) != len(headers):
             malformed_rows += 1
         record = {
@@ -195,7 +230,7 @@ def _parse_timestamp(value: str) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        return None
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
 
 
@@ -217,18 +252,6 @@ def _sampling_interval_minutes(timestamps: list[datetime]) -> float:
         if current > previous
     ]
     return float(statistics.median(intervals)) if intervals else 1.0
-
-
-def _field_descriptor(name: str) -> dict[str, Any]:
-    definition = FIELD_DEFINITIONS.get(name)
-    if definition is None:
-        return {
-            "name": name,
-            "displayNameZh": name,
-            "role": "metadata",
-            "required": False,
-        }
-    return {"name": name, **definition}
 
 
 def _build_diagnostics(
@@ -253,28 +276,16 @@ def _build_diagnostics(
     invalid_ranges: Counter[str] = Counter()
     residuals: list[float] = []
     for row in rows:
-        soc = row.value("bess_soc_percent")
+        soc = row.value("bess_soc_pct")
         if soc is not None and not 0 <= soc <= 100:
-            invalid_ranges["bess_soc_percent"] += 1
-        for field in ("pcc_export_limit_kw", "pcc_import_limit_kw"):
+            invalid_ranges["bess_soc_pct"] += 1
+        for field in ("grid_export_power_limit_kw", "grid_import_power_limit_kw"):
             value = row.value(field)
             if value is not None and value < 0:
                 invalid_ranges[field] += 1
-        balance_values = [
-            row.value("pv_actual_kw"),
-            row.value("bess_power_kw"),
-            row.value("pcc_power_kw"),
-            row.value("total_electrolyzer_power_kw"),
-            row.value("auxiliary_load_kw"),
-        ]
-        if all(value is not None for value in balance_values):
-            pv, bess, pcc, electrolyzer, auxiliary = balance_values
-            assert pv is not None
-            assert bess is not None
-            assert pcc is not None
-            assert electrolyzer is not None
-            assert auxiliary is not None
-            residuals.append(abs(pv + bess - pcc - electrolyzer - auxiliary))
+        residual = _power_balance_residual_kw(row)
+        if residual is not None:
+            residuals.append(residual)
     invalid_timestamps = int(parse_counts["invalid_timestamps"])
     if parse_counts["malformed_rows"]:
         invalid_timestamps += int(parse_counts["malformed_rows"])
@@ -289,3 +300,19 @@ def _build_diagnostics(
         invalid_ranges=dict(invalid_ranges),
         maximum_power_balance_residual_kw=max(residuals) if residuals else None,
     )
+
+
+def _power_balance_residual_kw(row: DataRow) -> float | None:
+    pv = row.value("pv_actual_kw")
+    bess = row.value("bess_power_actual_kw")
+    pcc = row.value("pcc_power_actual_kw")
+    aux = row.value("aux_load_kw")
+    elz_values = [row.value(field) for field in _ELZ_POWER_FIELDS]
+    if any(value is None for value in (pv, bess, pcc, aux, *elz_values)):
+        return None
+    elz_total = sum(value for value in elz_values if value is not None)
+    assert pv is not None
+    assert bess is not None
+    assert pcc is not None
+    assert aux is not None
+    return abs(pv + bess - pcc - elz_total - aux)

@@ -55,6 +55,28 @@ export type {
 } from './assistant.ts'
 export { H2_ASSISTANT_QUESTIONS } from './assistant.ts'
 export type {
+  H2AnomalyTaxonomyEntry,
+  H2AssistantQuestionZh,
+  H2DeprecatedFieldMapping,
+  H2EquipmentEntry,
+  H2FieldDefinition,
+  H2OfficialSeverity,
+} from './vocabulary.ts'
+export {
+  H2_ANOMALY_TAXONOMY,
+  H2_ASSISTANT_QUESTIONS_ZH,
+  H2_DEPRECATED_FIELD_MAPPINGS,
+  H2_EQUIPMENT,
+  H2_OFFICIAL_FIELDS,
+  anomalyTaxonomyByCode,
+  deprecatedFieldName,
+  equipmentById,
+  equipmentNameForRef,
+  fieldByName,
+  submissionEquipmentTokensByCode,
+  toH2DatasetField,
+} from './vocabulary.ts'
+export type {
   H2DatasetField,
   H2DatasetFieldRole,
   H2DatasetManifest,

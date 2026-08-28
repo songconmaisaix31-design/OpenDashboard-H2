@@ -5,6 +5,7 @@ import json
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 
+from h2_analytics import vocabulary
 from h2_analytics.api import create_app
 from h2_analytics.reports import submission_rows
 from h2_analytics.service import AnalyticsService
@@ -38,7 +39,7 @@ def test_pipeline_outputs_validate_against_frozen_contract_schemas(
     Draft202012Validator(_schema(repository_root, "analysis-run.schema.json")).validate(run)
     for event in run["events"]:
         Draft202012Validator(event_schema).validate(event)
-    assert run["events"][1]["impact"]["value"] == 29.333333333333332
+    assert run["events"][1]["impact"]["value"] == 120.0
 
     answer = service.ask(
         run_id=run["runId"],
@@ -87,6 +88,14 @@ def test_pipeline_outputs_validate_against_frozen_contract_schemas(
     for row in submission_rows(run["events"]):
         Draft202012Validator(_schema(repository_root, "submission-row.schema.json")).validate(
             row
+        )
+        code = row["anomaly_code"]
+        assert row["severity"] == vocabulary.severity_by_code()[code]
+        assert row["primary_control_object"] == (
+            vocabulary.primary_control_object_by_code()[code]
+        )
+        assert row["affected_equipment"] == ",".join(
+            vocabulary.affected_equipment_tokens_by_code()[code]
         )
 
 

@@ -1,0 +1,74 @@
+[
+  {
+    "equipment_id": "ELZ01",
+    "load_ratio": "0.3",
+    "power_kw": "300.0",
+    "specific_energy_kwh_per_kg": "56.8"
+  },
+  {
+    "equipment_id": "ELZ01",
+    "load_ratio": "0.5",
+    "power_kw": "500.0",
+    "specific_energy_kwh_per_kg": "52.9"
+  },
+  {
+    "equipment_id": "ELZ01",
+    "load_ratio": "0.7",
+    "power_kw": "700.0",
+    "specific_energy_kwh_per_kg": "50.9"
+  },
+  {
+    "equipment_id": "ELZ01",
+    "load_ratio": "1.0",
+    "power_kw": "1000.0",
+    "specific_energy_kwh_per_kg": "52.0"
+  },
+  {
+    "equipment_id": "ELZ02",
+    "load_ratio": "0.3",
+    "power_kw": "300.0",
+    "specific_energy_kwh_per_kg": "57.8"
+  },
+  {
+    "equipment_id": "ELZ02",
+    "load_ratio": "0.5",
+    "power_kw": "500.0",
+    "specific_energy_kwh_per_kg": "53.8"
+  },
+  {
+    "equipment_id": "ELZ02",
+    "load_ratio": "0.7",
+    "power_kw": "700.0",
+    "specific_energy_kwh_per_kg": "51.6"
+  },
+  {
+    "equipment_id": "ELZ02",
+    "load_ratio": "1.0",
+    "power_kw": "1000.0",
+    "specific_energy_kwh_per_kg": "52.7"
+  },
+  {
+    "equipment_id": "ELZ03",
+    "load_ratio": "0.3",
+    "power_kw": "300.0",
+    "specific_energy_kwh_per_kg": "59.0"
+  },
+  {
+    "equipment_id": "ELZ03",
+    "load_ratio": "0.5",
+    "power_kw": "500.0",
+    "specific_energy_kwh_per_kg": "55.0"
+  },
+  {
+    "equipment_id": "ELZ03",
+    "load_ratio": "0.7",
+    "power_kw": "700.0",
+    "specific_energy_kwh_per_kg": "53.0"
+  },
+  {
+    "equipment_id": "ELZ03",
+    "load_ratio": "1.0",
+    "power_kw": "1000.0",
+    "specific_energy_kwh_per_kg": "54.2"
+  }
+]

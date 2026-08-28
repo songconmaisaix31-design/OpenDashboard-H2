@@ -4,8 +4,12 @@ import type {
   H2AnomalyEventForCode,
   H2AnomalySubtypeForCode,
   H2PrimaryImpactMetricForCode,
-  H2Severity,
 } from './anomaly.ts'
+import {
+  anomalyTaxonomyByCode,
+  submissionEquipmentTokensByCode,
+  type H2OfficialSeverity,
+} from './vocabulary.ts'
 
 export const H2_SUBMISSION_COLUMNS = [
   'pred_event_id',
@@ -34,7 +38,7 @@ export interface H2SubmissionRowForCode<TCode extends H2AnomalyCode> {
   readonly end_time: string
   readonly anomaly_code: TCode
   readonly anomaly_subtype: H2AnomalySubtypeForCode<TCode>
-  readonly severity: H2Severity
+  readonly severity: H2OfficialSeverity
   readonly primary_control_object: string
   readonly affected_equipment: string
   readonly confidence: number
@@ -61,17 +65,19 @@ type H2SubmissionCell = string | number | boolean
 export function toH2SubmissionRow<TEvent extends H2AnomalyEvent>(
   event: TEvent,
 ): H2SubmissionRowForEvent<TEvent> {
+  const taxonomy = anomalyTaxonomyByCode(event.code)
+  if (taxonomy === undefined) {
+    throw new Error(`Missing official taxonomy for ${event.code}`)
+  }
   return {
     pred_event_id: event.eventId,
     start_time: event.startTime,
     end_time: event.endTime,
     anomaly_code: event.code,
     anomaly_subtype: event.subtype,
-    severity: event.severity,
-    primary_control_object: event.primaryControlObject.type,
-    affected_equipment: event.affectedEquipment
-      .map(({ id, kind }) => `${kind}:${id}`)
-      .join(';'),
+    severity: taxonomy.severity,
+    primary_control_object: taxonomy.primaryControlObject,
+    affected_equipment: submissionEquipmentTokensByCode(event.code).join(','),
     confidence: event.confidence,
     evidence_json: JSON.stringify(
       event.evidence.map((item) => ({

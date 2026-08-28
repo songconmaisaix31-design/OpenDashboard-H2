@@ -68,11 +68,19 @@ not add permissive CORS behavior; Host and Origin checks remain limited to
 ## Deterministic detector boundary
 
 `RuleRowDetector` is the always-available fallback and implements the frozen
-C03 and C04 field mappings. Its C04 confirmation margin is externalized in
-`H2Constraints`; impact still integrates only the eight corrected inclusive
-violation rows. `LightGbmRowDetector` accepts an already-loaded, approved
-booster and never a user-supplied model path. Remaining class impact identities
-are declared, but this gate does not guess unfrozen official field mappings.
+C01-C07 mappings against the canonical 69-field vocabulary. Detection and
+aggregation thresholds are versioned in
+`packages/h2-vocabulary/data/detection-thresholds.json`; public label columns
+are rejected before parsing and are never passed to a detector. Evidence,
+impact formulas, safety constraints, and human-confirmation recommendations
+are emitted for every class. `LightGbmRowDetector` remains an injection seam
+for an already-loaded, approved booster and never accepts a user-supplied model
+path; the default and no-LLM paths remain deterministic.
+
+In-memory imports are bounded at 300 MiB and 600,000 rows, which covers the
+reported official train, validation, and test sizes with an explicit margin.
+The limits are enforced before analysis; this is a local-runtime capability,
+not an organizer-score or production-performance claim.
 
 ## Reuse decisions
 

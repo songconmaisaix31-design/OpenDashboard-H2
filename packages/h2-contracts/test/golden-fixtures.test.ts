@@ -43,7 +43,7 @@ describe('H2 golden fixtures', () => {
 
   it('derives the C04 violation energy from every inclusive event sample', () => {
     const rows = parseCsv(csvFixture('tiny-valid-timeseries.csv')).rows
-    const expectedImpact = 29.333333333333332
+    const expectedImpact = 120
     const intervalRows = rows.filter(
       (row) => {
         const timestamp = row.timestamp
@@ -57,14 +57,14 @@ describe('H2 golden fixtures', () => {
     const violationPowerMinutes = intervalRows.reduce(
       (total, row) =>
         total +
-        Math.max(Number(row.pcc_power_kw) - Number(row.pcc_export_limit_kw), 0),
+        Math.max(Number(row.pcc_power_actual_kw) - Number(row.grid_export_power_limit_kw), 0),
       0,
     )
     const calculatedImpact = violationPowerMinutes / 60
 
     assert.equal(intervalRows.length, 8)
-    assert(intervalRows.every((row) => Number(row.pcc_power_kw) === 720))
-    assert(intervalRows.every((row) => Number(row.pcc_export_limit_kw) === 500))
+    assert(intervalRows.every((row) => Number(row.pcc_power_actual_kw) === 1400))
+    assert(intervalRows.every((row) => Number(row.grid_export_power_limit_kw) === 500))
     assert.equal(calculatedImpact, expectedImpact)
     assert.equal(H2_GOLDEN_C04_EVENT.impact.value, calculatedImpact)
 
@@ -121,7 +121,7 @@ describe('H2 golden fixtures', () => {
       H2_FIXTURE_DATASET.timeRange.endTime,
     )
     assertContinuousOneMinuteSamples(validRows.rows)
-    assert(validRows.rows.every((row) => row.pcc_power_kw !== ''))
+    assert(validRows.rows.every((row) => row.pcc_power_actual_kw !== ''))
     assertGoldenEventEvidenceIsCovered(validRows.rows, H2_GOLDEN_C03_EVENT)
     assertGoldenEventEvidenceIsCovered(validRows.rows, H2_GOLDEN_C04_EVENT)
     assertGoldenEvidenceMatchesCsv(validRows.rows, H2_GOLDEN_C03_EVENT)
@@ -132,8 +132,8 @@ describe('H2 golden fixtures', () => {
       new Set(invalidRows.rows.map((row) => row.timestamp)).size,
       invalidRows.rows.length,
     )
-    assert(invalidRows.rows.some((row) => row.pcc_power_kw === ''))
-    assert(invalidRows.rows.some((row) => Number(row.bess_soc_percent) > 90))
+    assert(invalidRows.rows.some((row) => row.aux_load_kw === ''))
+    assert(invalidRows.rows.some((row) => Number(row.bess_soc_pct) > 90))
   })
 
   it('uses the real CSV byte digest in dataset and JSON fixture provenance', () => {

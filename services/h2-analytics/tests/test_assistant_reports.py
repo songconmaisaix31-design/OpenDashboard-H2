@@ -217,7 +217,7 @@ def test_report_kind_format_parity_and_content_addressing(
         assert "http://" not in artifact["content"].lower()
         assert "https://" not in artifact["content"].lower()
         if kind == "single_event_diagnosis":
-            assert "29.333333333333332" in artifact["content"]
+            assert "120.0" in artifact["content"]
         if kind == "pcc_daily_compliance":
             assert "证据不足，未计算该项合规结论" in artifact["content"]
             assert "8.0 min" in artifact["content"]

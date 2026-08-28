@@ -80,7 +80,6 @@ class AnalyticsService:
         events = [
             self._diagnosis.build(window=window, manifest=imported.manifest)
             for window in windows
-            if window.code in {"C03", "C04"}
         ]
         generated_at = imported.manifest["provenance"]["generatedAt"]
         completed_at = _plus_one_second(generated_at)

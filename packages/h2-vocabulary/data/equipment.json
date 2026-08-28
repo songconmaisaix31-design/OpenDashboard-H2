@@ -1,0 +1,66 @@
+[
+  {
+    "equipment_id": "PV01",
+    "equipment_name": "光伏发电单元",
+    "rated_capacity": "4000 kW",
+    "control_relationship": "EMS读取预测/可用/实际功率并可下发限发",
+    "related_tags": "pv_*",
+    "constraint_note": "实际功率不高于可用功率"
+  },
+  {
+    "equipment_id": "BESS01",
+    "equipment_name": "储能系统",
+    "rated_capacity": "500 kW / 1000 kWh",
+    "control_relationship": "EMS通过储能EMS下发功率；正值放电、负值充电",
+    "related_tags": "bess_*",
+    "constraint_note": "SOC正常范围20%~90%"
+  },
+  {
+    "equipment_id": "PCC01",
+    "equipment_name": "并网点",
+    "rated_capacity": "弱并网",
+    "control_relationship": "受动态上下网功率限值及日电量配额约束",
+    "related_tags": "pcc_*,grid_*",
+    "constraint_note": "PCC正值上网、负值下网"
+  },
+  {
+    "equipment_id": "EMS01",
+    "equipment_name": "能量管理系统",
+    "rated_capacity": "1套",
+    "control_relationship": "协调光伏、储能、电解槽和PCC",
+    "related_tags": "ems_*",
+    "constraint_note": "AI仅监督和辅助，不直接闭环"
+  },
+  {
+    "equipment_id": "ELZ01",
+    "equipment_name": "碱性电解槽1",
+    "rated_capacity": "1000 kW",
+    "control_relationship": "效率较优",
+    "related_tags": "elz1_*",
+    "constraint_note": "最小稳定负荷300 kW"
+  },
+  {
+    "equipment_id": "ELZ02",
+    "equipment_name": "碱性电解槽2",
+    "rated_capacity": "1000 kW",
+    "control_relationship": "效率中等",
+    "related_tags": "elz2_*",
+    "constraint_note": "最小稳定负荷300 kW"
+  },
+  {
+    "equipment_id": "ELZ03",
+    "equipment_name": "碱性电解槽3",
+    "rated_capacity": "1000 kW",
+    "control_relationship": "效率相对较低",
+    "related_tags": "elz3_*",
+    "constraint_note": "最小稳定负荷300 kW"
+  },
+  {
+    "equipment_id": "AUX01",
+    "equipment_name": "制氢辅助负荷",
+    "rated_capacity": "约150 kW",
+    "control_relationship": "冷却、水处理、仪表和控制等关键负荷",
+    "related_tags": "aux_load_kw",
+    "constraint_note": "关键不可中断负荷"
+  }
+]

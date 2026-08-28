@@ -5,6 +5,7 @@ import io
 import json
 from typing import Any
 
+from h2_analytics import vocabulary
 from h2_analytics.contracts import SUBMISSION_COLUMNS
 
 
@@ -42,10 +43,10 @@ def _submission_row(event: dict[str, Any]) -> dict[str, Any]:
         "end_time": event["endTime"],
         "anomaly_code": event["code"],
         "anomaly_subtype": event["subtype"],
-        "severity": event["severity"],
-        "primary_control_object": event["primaryControlObject"]["type"],
-        "affected_equipment": ";".join(
-            f"{item['kind']}:{item['id']}" for item in event["affectedEquipment"]
+        "severity": vocabulary.severity_by_code()[event["code"]],
+        "primary_control_object": event["primaryControlObject"]["displayName"],
+        "affected_equipment": ",".join(
+            vocabulary.affected_equipment_tokens_by_code()[event["code"]]
         ),
         "confidence": event["confidence"],
         "evidence_json": json.dumps(evidence, ensure_ascii=False, separators=(",", ":")),

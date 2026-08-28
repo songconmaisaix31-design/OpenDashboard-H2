@@ -1,0 +1,86 @@
+[
+  {
+    "object_id": "PCC01",
+    "parameter": "pcc_sign_convention",
+    "value": "正值上网，负值下网",
+    "unit": "",
+    "description": "统一符号"
+  },
+  {
+    "object_id": "BESS01",
+    "parameter": "bess_sign_convention",
+    "value": "正值放电，负值充电",
+    "unit": "",
+    "description": "统一符号"
+  },
+  {
+    "object_id": "BESS01",
+    "parameter": "soc_min",
+    "value": "20",
+    "unit": "%",
+    "description": "AI不得建议突破"
+  },
+  {
+    "object_id": "BESS01",
+    "parameter": "soc_max",
+    "value": "90",
+    "unit": "%",
+    "description": "正常运行上限"
+  },
+  {
+    "object_id": "BESS01",
+    "parameter": "power_charge_max",
+    "value": "500",
+    "unit": "kW",
+    "description": "负值方向"
+  },
+  {
+    "object_id": "BESS01",
+    "parameter": "power_discharge_max",
+    "value": "500",
+    "unit": "kW",
+    "description": "正值方向"
+  },
+  {
+    "object_id": "BESS01",
+    "parameter": "energy_capacity",
+    "value": "1000",
+    "unit": "kWh",
+    "description": "模拟可用容量"
+  },
+  {
+    "object_id": "ELZ_ALL",
+    "parameter": "power_min_stable",
+    "value": "300",
+    "unit": "kW",
+    "description": "单台运行下限"
+  },
+  {
+    "object_id": "ELZ_ALL",
+    "parameter": "power_max",
+    "value": "1000",
+    "unit": "kW",
+    "description": "单台额定上限"
+  },
+  {
+    "object_id": "ELZ_ALL",
+    "parameter": "ramp_rate_max",
+    "value": "120",
+    "unit": "kW/min",
+    "description": "分钟级参考"
+  },
+  {
+    "object_id": "WEB_APP",
+    "parameter": "deployment_mode",
+    "value": "local_web",
+    "unit": "",
+    "description": "浏览器访问，本地离线部署"
+  },
+  {
+    "object_id": "PCC01",
+    "parameter": "grid_constraint_type",
+    "value": "动态功率+日电量配额",
+    "unit": "",
+    "description": "每分钟提供当前有效约束"
+  }
+]
