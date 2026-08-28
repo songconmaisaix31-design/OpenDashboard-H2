@@ -120,7 +120,7 @@ export async function requestH2Series(
 
   const start = Date.parse(request.startTime)
   const end = Date.parse(request.endTime)
-  let previousTimestamp = start
+  let previousTimestamp: number | null = null
   for (const point of response.points) {
     const timestamp = Date.parse(point.timestamp)
     const keys = Object.keys(point.values)
@@ -128,7 +128,7 @@ export async function requestH2Series(
       !Number.isFinite(timestamp) ||
       timestamp < start ||
       timestamp > end ||
-      timestamp < previousTimestamp ||
+      (previousTimestamp !== null && timestamp <= previousTimestamp) ||
       keys.length !== request.variables.length ||
       !request.variables.every((variable) => Object.hasOwn(point.values, variable))
     ) {

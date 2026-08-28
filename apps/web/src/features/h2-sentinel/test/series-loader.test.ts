@@ -160,6 +160,27 @@ describe('H2 R15 view-scoped series loading', () => {
     assert.deepEqual(await resolution, { status: 'stale' })
   })
 
+  it('rejects adjacent duplicate timestamps after accepting a point at the request start', async () => {
+    const variable = 'analysis_variable_kw'
+    const run = createRun([createField(variable)])
+    const query = createH2AnalysisSeriesQuery(run, variable)
+    assert.ok(query)
+    const timestamp = query.request.startTime
+    const response: H2SeriesResponse = {
+      runId: run.runId,
+      variables: query.request.variables,
+      points: [
+        { timestamp, values: { [variable]: 1 } },
+        { timestamp, values: { [variable]: 2 } },
+      ],
+    }
+
+    await assert.rejects(
+      requestH2Series(withSeriesResponse(Promise.resolve(response)), query.request),
+      /does not match the requested range and variables/u,
+    )
+  })
+
   it('returns a representative 129600-row response without duplicating its arrays', async () => {
     const rowCount = 129_600
     const start = Date.parse('2026-01-01T00:00:00.000Z')
