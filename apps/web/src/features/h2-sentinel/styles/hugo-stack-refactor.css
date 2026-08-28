@@ -6,7 +6,8 @@
  * It does not copy Hugo templates or theme source code.
  */
 
-.h2-app {
+.h2-app,
+.h2-view-state {
   --h2-bg: #171315;
   --h2-bg-deep: #0d0a0b;
   --h2-surface: #211b1e;
@@ -29,6 +30,9 @@
   --h2-purple: #a78ac1;
   --h2-shadow: 0 22px 65px rgb(0 0 0 / 28%);
   --h2-card-shadow: 0 16px 44px rgb(5 2 3 / 22%);
+}
+
+.h2-app {
   position: relative;
   isolation: isolate;
   min-height: 100vh;
@@ -1193,6 +1197,10 @@
 
 .h2-view-state {
   color: var(--h2-text);
+}
+
+.h2-view-state .h2-file-picker > span {
+  color: inherit;
 }
 
 .h2-view-state::before {
