@@ -51,6 +51,53 @@ function safeErrorMessage(error) {
     : message || 'Offline smoke failed.'
 }
 
+export function createAnalysisStep({ durationMs, run, analysisIdentity }) {
+  const { status: lifecycleStatus, ...identity } = analysisIdentity
+  return {
+    step: 'analysis',
+    durationMs,
+    eventCount: run.events.length,
+    byCode: run.eventCountsByCode,
+    ...identity,
+    lifecycleStatus,
+    status: 'passed',
+  }
+}
+
+export function createOfflineDeploySmokeReport({
+  candidate,
+  sourceIdentity,
+  submittedFingerprint,
+  steps,
+  generatedAt = new Date().toISOString(),
+}) {
+  return {
+    schemaVersion: 2,
+    reportKind: 'h2_offline_testset_smoke',
+    contractVersion: 'offline-testset-smoke-v4',
+    candidateCommit: candidate.commit,
+    trackedTreeClean: true,
+    verdict: steps.every(({ status }) => status === 'passed') ? 'passed' : 'blocked',
+    dataset: {
+      source: sourceIdentity,
+      submittedImportFingerprint: submittedFingerprint,
+      officialFieldCount: OFFICIAL_FIELDS.length,
+      publicLabelsUsedAsDetectorInput: false,
+    },
+    steps,
+    provenance: {
+      generatedAt,
+      tool: 'validation/offline-deploy-smoke.mjs',
+      scope: 'local loopback import, analysis, and exact-format submission export',
+      limitations: [
+        'This smoke does not use public labels and does not produce an organizer score.',
+        'A passing local smoke is not deployment, production, hidden-test, or network-isolation proof.',
+        'Artifact and source references contain verified filenames and hashes, never workstation paths.',
+      ],
+    },
+  }
+}
+
 export async function runOfflineDeploySmoke(options) {
   const candidate = currentCandidate()
   if (!candidate.trackedTreeClean) {
@@ -102,14 +149,11 @@ export async function runOfflineDeploySmoke(options) {
       { timeoutMs: 180_000 },
     )
     const analysisIdentity = assertAnalysisRun(run, imported)
-    steps.push({
-      step: 'analysis',
+    steps.push(createAnalysisStep({
       durationMs: Math.max(1, Math.round(performance.now() - analyzeStartedAt)),
-      eventCount: run.events.length,
-      byCode: run.eventCountsByCode,
-      status: 'passed',
-      ...analysisIdentity,
-    })
+      run,
+      analysisIdentity,
+    }))
 
     const exportStartedAt = performance.now()
     const submission = await requestEnvelope(
@@ -136,31 +180,12 @@ export async function runOfflineDeploySmoke(options) {
     if (completedCandidate.commit !== candidate.commit || !completedCandidate.trackedTreeClean) {
       throw new Error('Candidate state changed during the offline test-set smoke.')
     }
-    report = {
-      schemaVersion: 2,
-      reportKind: 'h2_offline_testset_smoke',
-      contractVersion: 'offline-testset-smoke-v3',
-      candidateCommit: candidate.commit,
-      trackedTreeClean: true,
-      verdict: steps.every(({ status }) => status === 'passed') ? 'passed' : 'blocked',
-      dataset: {
-        source: sourceIdentity,
-        submittedImportFingerprint: submittedFingerprint,
-        officialFieldCount: OFFICIAL_FIELDS.length,
-        publicLabelsUsedAsDetectorInput: false,
-      },
+    report = createOfflineDeploySmokeReport({
+      candidate,
+      sourceIdentity,
+      submittedFingerprint,
       steps,
-      provenance: {
-        generatedAt: new Date().toISOString(),
-        tool: 'validation/offline-deploy-smoke.mjs',
-        scope: 'local loopback import, analysis, and exact-format submission export',
-        limitations: [
-          'This smoke does not use public labels and does not produce an organizer score.',
-          'A passing local smoke is not deployment, production, hidden-test, or network-isolation proof.',
-          'Artifact and source references contain verified filenames and hashes, never workstation paths.',
-        ],
-      },
-    }
+    })
     writeFileAtomic(
       resolve(outputDirectory, 'offline-deploy-smoke.json'),
       `${JSON.stringify(report, null, 2)}\n`,
