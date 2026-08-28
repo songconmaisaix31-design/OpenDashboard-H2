@@ -4,7 +4,7 @@
 
 - Owned paths: `validation/**`, `tests/h2-sentinel/**`, and
   `submission/h2-sentinel/**`.
-- Read-only reuse candidate: `C:/Users/DW/orca/workspaces/OpenDashboard/h2-e1-web-csv`.
+- Read-only reuse candidate: the prior isolated Web/CSV remediation lane.
 - No official package, product code, root configuration, dependency, or nested
   worktree was modified.
 - Generated official inputs and evidence remain ignored and untracked.

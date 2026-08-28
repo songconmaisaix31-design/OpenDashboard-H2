@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "description": "Official C01-C07 submission vocabulary with corrected integrated C03/C04 impact values; zero impacts in the remaining checker-only cases are neutral schema placeholders.",
+  "cases": [
+    {
+      "code": "C01",
+      "subtype": "SETPOINT_OSCILLATION",
+      "severity": "中",
+      "primaryControlObject": "EMS电解槽群控与功率分配模块",
+      "affectedEquipment": "ELZ1,ELZ2,BESS,PCC",
+      "primaryImpactMetric": "bess_extra_regulation_energy_kwh",
+      "estimatedImpactValue": 0
+    },
+    {
+      "code": "C02",
+      "subtype": "CAPACITY_NOT_SYNCHRONIZED",
+      "severity": "高",
+      "primaryControlObject": "EMS设备状态与容量同步模块",
+      "affectedEquipment": "ELZ1",
+      "primaryImpactMetric": "unserved_elz_energy_kwh",
+      "estimatedImpactValue": 0
+    },
+    {
+      "code": "C03",
+      "subtype": "BESS_DIRECTION_REVERSED",
+      "severity": "高",
+      "primaryControlObject": "EMS储能功率控制与接口映射模块",
+      "affectedEquipment": "BESS,PCC",
+      "primaryImpactMetric": "abnormal_grid_exchange_energy_kwh",
+      "estimatedImpactValue": 84.33333333333333
+    },
+    {
+      "code": "C04",
+      "subtype": "EXPORT_POWER_LIMIT_NOT_TRACKED",
+      "severity": "高",
+      "primaryControlObject": "EMS并网点功率边界控制模块",
+      "affectedEquipment": "PCC,BESS,ELZ,PV",
+      "primaryImpactMetric": "pcc_power_limit_violation_energy_kwh",
+      "estimatedImpactValue": 120
+    },
+    {
+      "code": "C05",
+      "subtype": "EXPORT_ENERGY_QUOTA_RISK",
+      "severity": "高",
+      "primaryControlObject": "EMS周期电量配额与日内能量计划模块",
+      "affectedEquipment": "PCC,BESS,ELZ",
+      "primaryImpactMetric": "grid_energy_quota_deviation_kwh",
+      "estimatedImpactValue": 0
+    },
+    {
+      "code": "C06",
+      "subtype": "INEFFICIENT_POWER_ALLOCATION",
+      "severity": "中",
+      "primaryControlObject": "EMS电解槽群控分配模块",
+      "affectedEquipment": "ELZ1,ELZ2,ELZ3",
+      "primaryImpactMetric": "extra_energy_consumption_kwh",
+      "estimatedImpactValue": 0
+    },
+    {
+      "code": "C07",
+      "subtype": "CHARGE_HEADROOM_SHORTFALL",
+      "severity": "高",
+      "primaryControlObject": "EMS储能SOC计划与调节备用管理模块",
+      "affectedEquipment": "BESS,PCC,PV,ELZ",
+      "primaryImpactMetric": "bess_regulation_reserve_shortfall_kwh",
+      "estimatedImpactValue": 0
+    }
+  ]
+}

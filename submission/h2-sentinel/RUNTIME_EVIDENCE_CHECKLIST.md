@@ -15,14 +15,14 @@
 | --- | --- | --- | --- |
 | R01 | Exact candidate SHA and changed-path audit | Not self-claimed | Coordinator records final SHA after integration and confirms allowed paths. |
 | R02 | Expected SHA-256 values for official source CSVs | Explicit inputs required | Obtain independently; never infer hashes or read credentials. |
-| R03 | Earliest-C04 manifest and 69-field detector CSV | Tool and fixtures implemented | Generate under ignored output; verify 30-minute padding, coverage, relative paths, and label removal. |
+| R03 | Earliest-C04 manifest and 69-field detector CSV | Tool and fixtures implemented | Generate under ignored output; stream-verify the full source, then verify 30-minute padding, coverage, relative paths, and label-column absence. |
 | R04 | Official Q01-Q10 deterministic answers | Integrated regression gate | Run both LLM-rendering flags, citation invariants, context errors, alias rejection, and Q09. |
 | R05 | Human review transitions and reliability | Integrated regression gate | Rerun all transitions, replay, conflict, note, and per-event isolation. |
 | R06 | Detector/submission immutability after review | Integrated regression gate | Compare event snapshots and exact submission bytes before and after review. |
 | R07 | Review-audit export | Integrated regression gate | Require all events, revision-zero entries, stable ordering, UTF-8 notes, and actor notice. |
 | R08 | Chinese report structure and safety | Integrated regression gate | Require zh-CN, script-free escaped HTML, provenance, safety, and hash metadata. |
 | R09 | Validation-slice provenance | Integrated regression gate; final official run pending | Require prepared-slice provenance in Web and reports on the official run. |
-| R10 | Official evaluation metrics | Tool and event-match-v1 fixtures implemented | Generate overall and C01-C07 results from the named split and exact final SHA. |
+| R10 | Official evaluation metrics | Tool and event-match-v2 fixtures implemented | Generate overall, C01-C07, first-detection-delay, and boundary-error results from the verified named split and exact final SHA. |
 | R11 | Overfit sentinel | Tool implemented | Compare official validation against the disjoint public train-last-90-day window. |
 | R12 | Full public test-set smoke and submission | Tool and checker fixtures implemented | Import the entire set and require the exact 16-column checker to pass. |
 | R13 | Two scripted executions below 180 seconds | Runner and validator implemented | Validate distinct execution IDs, ordered positive stages, relative artifacts, hashes, and exact SHA. |

@@ -1,13 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import {
-  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
   statSync,
-  writeFileSync,
 } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { cpus } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
@@ -21,12 +19,15 @@ import {
 } from './lib/official-contract.mjs'
 import { freeLoopbackPort, requestEnvelope, startLauncher } from './lib/launcher.mjs'
 import { toInstant } from './lib/metrics.mjs'
-import { ensureIgnoredOutputDirectory, repositoryRelativePath } from './lib/output.mjs'
+import { OFFICIAL_SOURCES, sha256 } from './lib/official-sources.mjs'
+import {
+  ensureIgnoredOutputDirectory,
+  ensureIgnoredOutputPath,
+  repositoryRelativePath,
+  writeFileAtomic,
+} from './lib/output.mjs'
+import { assertAnalysisRun, assertImportedDataset } from './lib/runtime-provenance.mjs'
 import { validateDemoReceipt } from '../tests/h2-sentinel/scripts/validate-demo-receipt.mjs'
-
-function sha256(value) {
-  return `sha256:${createHash('sha256').update(value).digest('hex')}`
-}
 
 function parseArguments(argv) {
   const known = new Set(['--manifest', '--output', '--candidate-commit'])
@@ -56,9 +57,16 @@ function printUsage() {
   console.log([
     'Usage:',
     '  node validation/run-demo.mjs --manifest <validation-slice-manifest.json>',
-    '    --output <ignored-artifact-directory>',
+    '    --output <new-generated-artifacts-root>',
     '    --candidate-commit <40-character-clean-HEAD-sha>',
   ].join('\n'))
+}
+
+function safeErrorMessage(error) {
+  const message = error instanceof Error ? error.message : ''
+  return /\b(?:ENOENT|EACCES|EPERM)\b|(?:[A-Za-z]:[\\/]|\/home\/|\/Users\/)/.test(message)
+    ? 'Measured demo could not access the required manifest, detector input, or generated artifact.'
+    : message || 'Measured demo failed.'
 }
 
 function safeManifestFile(manifestPath, filename) {
@@ -86,8 +94,18 @@ function safeManifestFile(manifestPath, filename) {
 }
 
 function loadSlice(manifestPath) {
-  const manifestBytes = readFileSync(manifestPath)
-  const manifest = JSON.parse(decodeUtf8Strict(manifestBytes, 'Slice manifest'))
+  let manifestBytes
+  try {
+    manifestBytes = readFileSync(manifestPath)
+  } catch {
+    throw new Error('Slice manifest could not be read.')
+  }
+  let manifest
+  try {
+    manifest = JSON.parse(decodeUtf8Strict(manifestBytes, 'Slice manifest'))
+  } catch {
+    throw new Error('Slice manifest must be valid UTF-8 JSON.')
+  }
   if (
     manifest.schemaVersion !== 1 ||
     manifest.manifestKind !== 'h2_public_validation_slice' ||
@@ -96,8 +114,42 @@ function loadSlice(manifestPath) {
   ) {
     throw new Error('Slice manifest identity is invalid.')
   }
+  const official = OFFICIAL_SOURCES.validation
+  const timeseriesSource = manifest.sources?.timeseries
+  const labelSource = manifest.sources?.labels
+  if (
+    timeseriesSource?.sha256 !== official.timeseries.sha256 ||
+    basename(timeseriesSource.relativePath ?? '') !== official.timeseries.filename ||
+    timeseriesSource.rowCount !== official.timeseries.rowCount ||
+    timeseriesSource.firstTimestamp !== official.timeseries.firstTimestamp ||
+    timeseriesSource.lastTimestamp !== official.timeseries.lastTimestamp ||
+    labelSource?.sha256 !== official.labels.sha256 ||
+    basename(labelSource.relativePath ?? '') !== official.labels.filename ||
+    labelSource.rowCount !== official.labels.rowCount ||
+    labelSource.eventCount !== official.labels.eventCount ||
+    labelSource.uniqueEventIdCount !== official.labels.eventCount ||
+    labelSource.firstStart !== official.labels.firstStart ||
+    labelSource.lastEnd !== official.labels.lastEnd ||
+    Object.entries(official.labels.byCode).some(
+      ([code, count]) => labelSource.byCode?.[code] !== count,
+    )
+  ) throw new Error('Slice manifest source identity is not the verified official validation source.')
+  const overlappingIdentities = manifest.overlappingLabels?.map(
+    ({ eventId, code, startTime, endTime }) => ({ eventId, code, startTime, endTime }),
+  )
+  if (
+    JSON.stringify(manifest.selectedEvent) !==
+      JSON.stringify(official.directedDemo.selectedEvent) ||
+    JSON.stringify(overlappingIdentities) !==
+      JSON.stringify(official.directedDemo.overlappingLabels)
+  ) throw new Error('Slice manifest directed event does not match the verified official labels.')
   const detectorPath = safeManifestFile(manifestPath, manifest.slice?.filename)
-  const detectorBytes = readFileSync(detectorPath)
+  let detectorBytes
+  try {
+    detectorBytes = readFileSync(detectorPath)
+  } catch {
+    throw new Error('Detector input validation-slice.csv could not be read.')
+  }
   if (sha256(detectorBytes) !== manifest.slice.sha256) {
     throw new Error('Detector input hash does not match the slice manifest.')
   }
@@ -107,7 +159,22 @@ function loadSlice(manifestPath) {
   if (detector.columns.some(isLabelColumn)) {
     throw new Error('Detector input contains a public label column.')
   }
-  return { manifest, manifestBytes, detectorBytes, detectorText }
+  const timestampIndex = detector.columns.indexOf('timestamp')
+  const firstTimestamp = detector.rows[0]?.[timestampIndex]
+  const lastTimestamp = detector.rows.at(-1)?.[timestampIndex]
+  if (
+    detector.rows.length !== manifest.slice.rowCount ||
+    toInstant(firstTimestamp) !== toInstant(manifest.slice.observedTimeRange?.startTime) ||
+    toInstant(lastTimestamp) !== toInstant(manifest.slice.observedTimeRange?.endTime)
+  ) throw new Error('Detector input row count or observed range does not match the slice manifest.')
+  return {
+    manifest,
+    manifestBytes,
+    detectorBytes,
+    detectorText,
+    detectorRowCount: detector.rows.length,
+    detectorFingerprint: sha256(detectorBytes),
+  }
 }
 
 function artifactRecord(relativePath, content) {
@@ -152,7 +219,7 @@ async function runOnce({ sequence, slice, outputDirectory }) {
   const stages = []
   const runDirectoryName = `run-${sequence}`
   const runDirectory = resolve(outputDirectory, runDirectoryName)
-  mkdirSync(runDirectory, { recursive: true })
+  mkdirSync(runDirectory, { recursive: false })
   const measuredStart = performance.now()
   const startedAt = new Date()
   let result
@@ -164,6 +231,11 @@ async function runOnce({ sequence, slice, outputDirectory }) {
         { filename: 'validation-slice.csv', text: slice.detectorText },
       ),
     )
+    const importedDataset = assertImportedDataset(imported, {
+      filename: 'validation-slice.csv',
+      rowCount: slice.detectorRowCount,
+      fingerprint: slice.detectorFingerprint,
+    })
     const analysis = await measuredStage(stages, 'analysis', () =>
       requestEnvelope(
         session.ready.analyticsUrl,
@@ -171,6 +243,7 @@ async function runOnce({ sequence, slice, outputDirectory }) {
         { datasetId: imported.dataset.datasetId },
       ),
     )
+    const analysisRun = assertAnalysisRun(analysis, imported)
     const candidate = analysis.events
       .filter((event) => overlapsSelectedEvent(event, slice.manifest.selectedEvent))
       .sort((left, right) => left.startTime.localeCompare(right.startTime))[0]
@@ -227,6 +300,16 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       throw new Error('Q09 did not return the deterministic selected-event answer.')
     }
     assertArtifactHash(answer.generatedReport, 'Q09 diagnosis report')
+    for (const requiredBinding of [
+      candidate.eventId,
+      importedDataset.sourceFilename,
+      analysisRun.fingerprint,
+      'LIVE_ANALYSIS · 验证集切片',
+    ]) {
+      if (!answer.generatedReport.content.includes(requiredBinding)) {
+        throw new Error('Q09 diagnosis report does not bind the selected event and actual service provenance.')
+      }
+    }
 
     const artifacts = await measuredStage(stages, 'artifact_export', async () => {
       const audit = await requestEnvelope(
@@ -248,9 +331,9 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       const diagnosisPath = `${runDirectoryName}/diagnosis.html`
       const auditPath = `${runDirectoryName}/review-audit.json`
       const submissionPath = `${runDirectoryName}/submission.csv`
-      writeFileSync(resolve(outputDirectory, diagnosisPath), answer.generatedReport.content, 'utf8')
-      writeFileSync(resolve(outputDirectory, auditPath), audit.content, 'utf8')
-      writeFileSync(resolve(outputDirectory, submissionPath), submission.content, 'utf8')
+      writeFileAtomic(resolve(outputDirectory, diagnosisPath), answer.generatedReport.content)
+      writeFileAtomic(resolve(outputDirectory, auditPath), audit.content)
+      writeFileAtomic(resolve(outputDirectory, submissionPath), submission.content)
       return {
         diagnosisReport: artifactRecord(diagnosisPath, answer.generatedReport.content),
         reviewAudit: artifactRecord(auditPath, audit.content),
@@ -272,7 +355,8 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       completedAt: new Date(startedAt.getTime() + totalDurationMs).toISOString(),
       totalDurationMs,
       stageDurations: stages,
-      provenanceMode: analysis.provenance?.mode,
+      importedDataset,
+      analysisRun,
       publicLabelsUsedAsDetectorInput: false,
       artifacts,
     }
@@ -283,20 +367,29 @@ async function runOnce({ sequence, slice, outputDirectory }) {
   return result
 }
 
+function pathContains(parent, candidate) {
+  const value = relative(parent, candidate)
+  return value === '' || (!isAbsolute(value) && value !== '..' && !value.startsWith(`..${sep}`))
+}
+
 export async function runMeasuredDemo(options) {
   assertExactCleanCandidate(options.candidateCommit)
   const slice = loadSlice(options.manifest)
-  if (existsSync(options.output)) {
-    throw new Error('Demo output directory must not already exist.')
-  }
-  const outputDirectory = ensureIgnoredOutputDirectory(options.output)
+  const outputCandidate = ensureIgnoredOutputPath(options.output)
+  const manifestDirectory = realpathSync(dirname(options.manifest))
+  if (
+    pathContains(manifestDirectory, outputCandidate) ||
+    pathContains(outputCandidate, manifestDirectory)
+  ) throw new Error('Demo artifacts root must be fresh and separate from the slice manifest directory.')
+  const outputDirectory = ensureIgnoredOutputDirectory(outputCandidate)
   const runs = []
   for (const sequence of [1, 2]) {
     runs.push(await runOnce({ sequence, slice, outputDirectory }))
+    assertExactCleanCandidate(options.candidateCommit)
   }
   const candidate = assertExactCleanCandidate(options.candidateCommit)
   const receipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     receiptKind: 'h2_validation_slice_demo',
     recordedAt: new Date().toISOString(),
     candidateCommit: candidate.commit,
@@ -308,10 +401,12 @@ export async function runMeasuredDemo(options) {
     },
     servicesStartedBeforeTimer: true,
     timedScopeExcludes: ['installation', 'launcher_startup'],
-    provenance: {
-      mode: 'LIVE_ANALYSIS',
+    verifiedManifestScope: {
       scope: 'VALIDATION_SLICE',
       displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+      publicLabelsMaySelectDirectedDemoBeforeAnalysis: true,
+      publicLabelsUsedAsDetectorInput: false,
+      sourceIdentity: slice.manifest.sources,
     },
     sourceHashes: {
       timeseries: slice.manifest.sources.timeseries.sha256,
@@ -331,13 +426,14 @@ export async function runMeasuredDemo(options) {
     },
   }
   const receiptPath = resolve(outputDirectory, 'demo-receipt.json')
-  writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8')
+  writeFileAtomic(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`)
   const validation = await validateDemoReceipt({
     receiptPath,
     manifestPath: options.manifest,
     artifactsRoot: outputDirectory,
     expectedCommit: candidate.commit,
   })
+  assertExactCleanCandidate(candidate.commit)
   return {
     receipt,
     validation,
@@ -365,7 +461,7 @@ if (invokedPath.toLowerCase() === fileURLToPath(import.meta.url).toLowerCase()) 
       }))
     }
   } catch (error) {
-    console.error(`ERROR ${error instanceof Error ? error.message : 'Measured demo failed.'}`)
+    console.error(`ERROR ${safeErrorMessage(error)}`)
     process.exitCode = 1
   }
 }

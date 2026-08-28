@@ -2,10 +2,51 @@ import { ANOMALY_CODES } from './official-contract.mjs'
 
 export function toInstant(value) {
   if (typeof value !== 'string' || value.trim() === '') return Number.NaN
-  const isoLike = value.trim().replace(' ', 'T')
-  return Date.parse(
-    /(?:Z|[+-]\d{2}:\d{2})$/i.test(isoLike) ? isoLike : `${isoLike}Z`,
+  const match = value.trim().match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?(?:(Z)|([+-])(\d{2}):(\d{2}))?$/,
   )
+  if (match === null) return Number.NaN
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText,
+    millisecondText = '000', _utc, offsetSign, offsetHourText = '00',
+    offsetMinuteText = '00'] = match
+  const components = [
+    yearText,
+    monthText,
+    dayText,
+    hourText,
+    minuteText,
+    secondText,
+    millisecondText,
+    offsetHourText,
+    offsetMinuteText,
+  ].map(Number)
+  const [year, month, day, hour, minute, second, millisecond, offsetHour,
+    offsetMinute] = components
+  if (
+    month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 ||
+    minute > 59 || second > 59 || millisecond > 999 || offsetHour > 23 ||
+    offsetMinute > 59
+  ) return Number.NaN
+  const calendar = new Date(0)
+  calendar.setUTCFullYear(year, month - 1, day)
+  calendar.setUTCHours(hour, minute, second, millisecond)
+  if (
+    calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 ||
+    calendar.getUTCDate() !== day || calendar.getUTCHours() !== hour ||
+    calendar.getUTCMinutes() !== minute || calendar.getUTCSeconds() !== second ||
+    calendar.getUTCMilliseconds() !== millisecond
+  ) return Number.NaN
+  const offsetMinutes = (offsetHour * 60) + offsetMinute
+  const signedOffset = offsetSign === '+' ? offsetMinutes : offsetSign === '-' ? -offsetMinutes : 0
+  return calendar.getTime() - signedOffset * 60_000
+}
+
+export function toCanonicalUtcInstant(value) {
+  if (
+    typeof value !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(value)
+  ) return Number.NaN
+  return toInstant(value)
 }
 
 export function computeMetrics({ tp, fp, fn }) {
@@ -29,7 +70,22 @@ function normalizedEvent(event, label) {
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
     throw new Error(`${label} event has an invalid interval: ${event.id}`)
   }
-  return { ...event, start, end }
+  const firstDetection = event.firstDetectionTime === undefined
+    ? undefined
+    : toInstant(event.firstDetectionTime)
+  if (firstDetection !== undefined && !Number.isFinite(firstDetection)) {
+    throw new Error(`${label} event has an invalid first-detection time: ${event.id}`)
+  }
+  return { ...event, start, end, firstDetection }
+}
+
+function summarizeTiming(values) {
+  if (values.length === 0) return { count: 0, meanMinutes: null, meanAbsoluteMinutes: null }
+  return {
+    count: values.length,
+    meanMinutes: values.reduce((total, value) => total + value, 0) / values.length,
+    meanAbsoluteMinutes: values.reduce((total, value) => total + Math.abs(value), 0) / values.length,
+  }
 }
 
 function greedyMatches({ groundTruth, predictions, graceMinutes, sameCode }) {
@@ -68,17 +124,36 @@ export function matchEvents({ groundTruth, predictions, graceMinutes = 10 }) {
     fp: predicted.length - matches.length,
     fn: truth.length - matches.length,
   })
+  const detailedMatches = matches.map(({ expected, predicted: actual }) => ({
+    groundTruthId: expected.id,
+    predictionId: actual.id,
+    code: expected.code,
+    groundTruthStart: expected.startTime,
+    groundTruthEnd: expected.endTime,
+    predictionStart: actual.startTime,
+    predictionEnd: actual.endTime,
+    firstDetectionTime: actual.firstDetectionTime ?? null,
+    firstDetectionDelayMinutes: actual.firstDetection === undefined
+      ? null
+      : (actual.firstDetection - expected.start) / 60_000,
+    startBoundaryErrorMinutes: (actual.start - expected.start) / 60_000,
+    endBoundaryErrorMinutes: (actual.end - expected.end) / 60_000,
+  }))
   return {
     ...overall,
-    matches: matches.map(({ expected, predicted: actual }) => ({
-      groundTruthId: expected.id,
-      predictionId: actual.id,
-      code: expected.code,
-      groundTruthStart: expected.startTime,
-      groundTruthEnd: expected.endTime,
-      predictionStart: actual.startTime,
-      predictionEnd: actual.endTime,
-    })),
+    matches: detailedMatches,
+    timing: {
+      firstDetectionDelay: summarizeTiming(
+        detailedMatches.map(({ firstDetectionDelayMinutes }) => firstDetectionDelayMinutes)
+          .filter(Number.isFinite),
+      ),
+      startBoundaryError: summarizeTiming(
+        detailedMatches.map(({ startBoundaryErrorMinutes }) => startBoundaryErrorMinutes),
+      ),
+      endBoundaryError: summarizeTiming(
+        detailedMatches.map(({ endBoundaryErrorMinutes }) => endBoundaryErrorMinutes),
+      ),
+    },
     unmatchedGroundTruth: truth
       .filter((event) => !matches.some(({ expected }) => expected.id === event.id))
       .map(({ id }) => id),
@@ -143,6 +218,13 @@ export function mergePredictions(predictions, { gapMinutes = 2 } = {}) {
         if (event.end > current.end) {
           current.end = event.end
           current.endTime = event.endTime
+        }
+        if (
+          event.firstDetection !== undefined &&
+          (current.firstDetection === undefined || event.firstDetection < current.firstDetection)
+        ) {
+          current.firstDetection = event.firstDetection
+          current.firstDetectionTime = event.firstDetectionTime
         }
         current.ids.push(event.id)
       } else {

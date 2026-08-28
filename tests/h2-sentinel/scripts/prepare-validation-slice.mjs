@@ -1,12 +1,8 @@
-import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
-  access,
-  mkdir,
   readFile,
   realpath,
   stat,
-  writeFile,
 } from 'node:fs/promises'
 import {
   basename,
@@ -19,12 +15,19 @@ import {
 import { fileURLToPath } from 'node:url'
 import {
   OFFICIAL_FIELDS,
-  assertOfficialTimeseriesColumns,
   isLabelColumn as isOfficialLabelColumn,
   normalizeUtcTimestamp,
 } from '../../../validation/lib/official-contract.mjs'
+import { OFFICIAL_SOURCES } from '../../../validation/lib/official-sources.mjs'
+import { streamOfficialTimeseriesWindow } from '../../../validation/lib/official-timeseries.mjs'
+import { toInstant } from '../../../validation/lib/metrics.mjs'
+import {
+  ensureIgnoredOutputDirectory,
+  ensureIgnoredOutputPath,
+  writeFileAtomic,
+} from '../../../validation/lib/output.mjs'
 
-const SCRIPT_VERSION = 'p1-validation-slice-v2'
+const SCRIPT_VERSION = 'p1-validation-slice-v3'
 const SLICE_FILENAME = 'validation-slice.csv'
 const MANIFEST_FILENAME = 'validation-slice-manifest.json'
 const PADDING_MS = 30 * 60 * 1000
@@ -65,7 +68,6 @@ const LABEL_COLUMN_ALIASES = {
 }
 
 const directory = dirname(fileURLToPath(import.meta.url))
-const repositoryRoot = resolve(directory, '../../..')
 
 function fail(message) {
   throw new Error(message)
@@ -114,7 +116,7 @@ function printUsage() {
     '    --labels <package-relative-validation-event-labels.csv> \\',
     '    --timeseries-sha256 <expected-sha256> \\',
     '    --labels-sha256 <expected-sha256> \\',
-    '    --output <new-git-ignored-output-directory>',
+    '    --output <new-canonical-generated-directory>',
   ].join('\n'))
 }
 
@@ -138,33 +140,6 @@ function isWithin(parent, candidate) {
     !pathFromParent.startsWith(`..${sep}`) &&
     !isAbsolute(pathFromParent)
   )
-}
-
-async function exists(path) {
-  try {
-    await access(path)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function futureRealPath(path) {
-  const missingParts = []
-  let cursor = path
-  while (!(await exists(cursor))) {
-    const parent = dirname(cursor)
-    if (parent === cursor) fail('Output directory has no existing ancestor.')
-    missingParts.unshift(basename(cursor))
-    cursor = parent
-  }
-  let canonical
-  try {
-    canonical = await realpath(cursor)
-  } catch {
-    fail('Output directory ancestor could not be resolved.')
-  }
-  return resolve(canonical, ...missingParts)
 }
 
 function normalizeRelativePath(value, label) {
@@ -204,18 +179,8 @@ async function officialFile(packageRoot, relativePath, label) {
   }
 }
 
-async function ignoredOutputDirectory(outputPath, packageRoot) {
-  const candidate = resolve(outputPath)
-  if (await exists(candidate)) {
-    fail('Output directory already exists; choose a new directory for this slice.')
-  }
-  const [canonicalRepositoryRoot, canonicalCandidate] = await Promise.all([
-    realpath(repositoryRoot),
-    futureRealPath(candidate),
-  ])
-  if (!isWithin(canonicalRepositoryRoot, canonicalCandidate)) {
-    fail('Output directory must be inside this repository.')
-  }
+function generatedOutputDirectory(outputPath, packageRoot) {
+  const canonicalCandidate = ensureIgnoredOutputPath(resolve(outputPath))
   if (
     isWithin(packageRoot, canonicalCandidate) ||
     isWithin(canonicalCandidate, packageRoot) ||
@@ -223,23 +188,7 @@ async function ignoredOutputDirectory(outputPath, packageRoot) {
   ) {
     fail('Output directory must be separate from the official package directory.')
   }
-  const gitRelativePath = relative(canonicalRepositoryRoot, canonicalCandidate)
-    .split(sep)
-    .join('/')
-  const ignored = spawnSync(
-    'git',
-    ['check-ignore', '--quiet', '--no-index', '--', gitRelativePath],
-    {
-      cwd: canonicalRepositoryRoot,
-      shell: false,
-      stdio: 'ignore',
-      windowsHide: true,
-    },
-  )
-  if (ignored.error || ignored.status !== 0) {
-    fail('Output directory must be covered by the repository Git ignore rules.')
-  }
-  return canonicalCandidate
+  return ensureIgnoredOutputDirectory(canonicalCandidate)
 }
 
 export function parseCsv(text, label) {
@@ -346,7 +295,7 @@ function parseTimestamp(value, label) {
   if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(candidate)) {
     fail(`${label} must use ISO-8601 or official UTC-naive timestamp syntax.`)
   }
-  const milliseconds = Date.parse(candidate)
+  const milliseconds = toInstant(candidate)
   if (!Number.isFinite(milliseconds)) fail(`${label} contains an invalid timestamp.`)
   return { milliseconds, iso: new Date(milliseconds).toISOString() }
 }
@@ -393,63 +342,6 @@ function validateLabels(csv) {
 
 export const isLabelColumn = isOfficialLabelColumn
 
-function validateTimeseries(csv, sliceStart, sliceEnd) {
-  const timestampIndex = csv.headers.indexOf('timestamp')
-  if (timestampIndex === -1) {
-    fail('Validation timeseries must contain the canonical timestamp column.')
-  }
-  const removedLabelColumns = csv.headers.filter(isLabelColumn)
-  const detectorIndexes = csv.headers
-    .map((header, index) => ({ header, index }))
-    .filter(({ header }) => !isLabelColumn(header))
-  const detectorHeaders = detectorIndexes.map(({ header }) => header)
-  try {
-    assertOfficialTimeseriesColumns(detectorHeaders)
-  } catch (error) {
-    fail(error instanceof Error ? error.message : 'Official field validation failed.')
-  }
-  const numericColumns = REQUIRED_TIMESERIES_COLUMNS.filter((column) => column !== 'timestamp')
-    .map((column) => ({ column, index: csv.headers.indexOf(column) }))
-
-  let previousTimestamp = -Infinity
-  const parsedRows = csv.rows.map((cells) => {
-    const timestamp = parseTimestamp(cells[timestampIndex], 'Validation timeseries timestamp')
-    if (timestamp.milliseconds <= previousTimestamp) {
-      fail('Validation timeseries timestamps must be strictly increasing and unique.')
-    }
-    for (const { column, index } of numericColumns) {
-      const value = cells[index].trim()
-      if (value === '' || !Number.isFinite(Number(value))) {
-        fail(`Validation timeseries ${column} values must be finite numbers.`)
-      }
-    }
-    previousTimestamp = timestamp.milliseconds
-    return { cells, timestamp }
-  })
-  if (
-    parsedRows[0].timestamp.milliseconds > sliceStart ||
-    parsedRows.at(-1).timestamp.milliseconds < sliceEnd
-  ) {
-    fail('Validation timeseries does not cover the full padded event interval.')
-  }
-  const selectedRows = parsedRows.filter(
-    ({ timestamp }) =>
-      timestamp.milliseconds >= sliceStart && timestamp.milliseconds <= sliceEnd,
-  )
-  if (selectedRows.length < 2) {
-    fail('Validation timeseries slice must contain at least two rows.')
-  }
-  return {
-    detectorHeaders,
-    detectorRows: selectedRows.map(({ cells }) =>
-      detectorIndexes.map(({ index }) => cells[index]),
-    ),
-    removedLabelColumns,
-    firstTimestamp: selectedRows[0].timestamp.iso,
-    lastTimestamp: selectedRows.at(-1).timestamp.iso,
-  }
-}
-
 function serializeCsv(headers, rows) {
   const encode = (value) => {
     const text = String(value)
@@ -466,25 +358,33 @@ async function readOfficialBytes(path, label) {
   }
 }
 
-async function writeOutputs(outputDirectory, csvContent, manifestContent) {
+function writeOutputs(outputDirectory, csvContent, manifestContent) {
   try {
-    await mkdir(outputDirectory, { recursive: true })
-    await Promise.all([
-      writeFile(resolve(outputDirectory, SLICE_FILENAME), csvContent, {
-        encoding: 'utf8',
-        flag: 'wx',
-      }),
-      writeFile(resolve(outputDirectory, MANIFEST_FILENAME), manifestContent, {
-        encoding: 'utf8',
-        flag: 'wx',
-      }),
-    ])
+    writeFileAtomic(resolve(outputDirectory, SLICE_FILENAME), csvContent)
+    writeFileAtomic(resolve(outputDirectory, MANIFEST_FILENAME), manifestContent)
   } catch {
     fail('Validation slice outputs could not be written to the new directory.')
   }
 }
 
-export async function prepareValidationSlice(options) {
+export async function prepareValidationSlice(
+  options,
+  sourceContract = OFFICIAL_SOURCES.validation,
+) {
+  const verifiedScope = sourceContract.verifiedScope ?? (
+    sourceContract.timeseries.sha256 === OFFICIAL_SOURCES.validation.timeseries.sha256 &&
+    sourceContract.labels.sha256 === OFFICIAL_SOURCES.validation.labels.sha256
+      ? {
+          mode: 'LIVE_ANALYSIS',
+          scope: 'VALIDATION_SLICE',
+          displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+        }
+      : null
+  )
+  if (
+    verifiedScope === null ||
+    !['VALIDATION_SLICE', 'self_consistent_fixture_contract'].includes(verifiedScope.scope)
+  ) fail('A non-official source contract requires an explicit fixture-only scope.')
   let packageRoot
   try {
     packageRoot = await realpath(resolve(options.packagePath))
@@ -506,34 +406,76 @@ export async function prepareValidationSlice(options) {
   if (timeseries.absolutePath === labels.absolutePath) {
     fail('Validation timeseries and labels must be separate files.')
   }
-  const outputDirectory = await ignoredOutputDirectory(options.outputPath, packageRoot)
-  const [timeseriesBytes, labelsBytes] = await Promise.all([
-    readOfficialBytes(timeseries.absolutePath, 'Validation timeseries'),
-    readOfficialBytes(labels.absolutePath, 'Validation labels'),
-  ])
-  const actualTimeseriesHash = sha256(timeseriesBytes)
+  const labelsBytes = await readOfficialBytes(labels.absolutePath, 'Validation labels')
   const actualLabelsHash = sha256(labelsBytes)
   if (
-    actualTimeseriesHash !== normalizeExpectedHash(options.timeseriesHash, 'Timeseries hash')
+    basename(timeseries.relativePath) !== sourceContract.timeseries.filename ||
+    basename(labels.relativePath) !== sourceContract.labels.filename
+  ) fail('Validation source filenames do not match the verified source contract.')
+  if (
+    normalizeExpectedHash(options.timeseriesHash, 'Timeseries hash') !==
+      sourceContract.timeseries.sha256
   ) {
     fail('Validation timeseries SHA-256 does not match the expected value.')
   }
-  if (actualLabelsHash !== normalizeExpectedHash(options.labelsHash, 'Labels hash')) {
+  if (
+    actualLabelsHash !== normalizeExpectedHash(options.labelsHash, 'Labels hash') ||
+    actualLabelsHash !== sourceContract.labels.sha256
+  ) {
     fail('Validation labels SHA-256 does not match the expected value.')
   }
 
   const labelsCsv = parseCsv(decodeUtf8(labelsBytes, 'Validation labels'), 'Validation labels')
   const events = validateLabels(labelsCsv)
+  if (
+    labelsCsv.rows.length !== sourceContract.labels.rowCount ||
+    events.length !== sourceContract.labels.eventCount ||
+    new Set(events.map(({ eventId }) => eventId)).size !== sourceContract.labels.eventCount
+  ) fail('Validation label row and unique event counts do not match the verified source contract.')
+  const firstLabelStart = new Date(Math.min(...events.map(({ startMilliseconds }) => startMilliseconds)))
+    .toISOString().replace('.000Z', 'Z')
+  const lastLabelEnd = new Date(Math.max(...events.map(({ endMilliseconds }) => endMilliseconds)))
+    .toISOString().replace('.000Z', 'Z')
+  const labelCountsByCode = Object.fromEntries(
+    [...new Set(events.map(({ code }) => code))].map((code) => [
+      code,
+      events.filter((event) => event.code === code).length,
+    ]),
+  )
+  if (
+    firstLabelStart !== sourceContract.labels.firstStart ||
+    lastLabelEnd !== sourceContract.labels.lastEnd ||
+    Object.entries(sourceContract.labels.byCode).some(
+      ([code, count]) => labelCountsByCode[code] !== count,
+    )
+  ) fail('Validation label range or anomaly counts do not match the verified source contract.')
   const selectedEvent = events.find(({ code }) => code === 'C04')
   if (!selectedEvent) fail('Validation labels do not contain a public C04 event.')
   const sliceStart = selectedEvent.startMilliseconds - PADDING_MS
   const sliceEnd = selectedEvent.endMilliseconds + PADDING_MS
 
-  const timeseriesCsv = parseCsv(
-    decodeUtf8(timeseriesBytes, 'Validation timeseries'),
-    'Validation timeseries',
-  )
-  const slice = validateTimeseries(timeseriesCsv, sliceStart, sliceEnd)
+  const selectedRows = []
+  const streamedTimeseries = await streamOfficialTimeseriesWindow({
+    path: timeseries.absolutePath,
+    contract: sourceContract.timeseries,
+    interval: { startMilliseconds: sliceStart, endMilliseconds: sliceEnd },
+    onSelectedRow: ({ row }) => selectedRows.push(row),
+  })
+  const { identity: timeseriesIdentity, selectedWindow } = streamedTimeseries
+  if (
+    toInstant(timeseriesIdentity.firstTimestamp) > sliceStart ||
+    toInstant(timeseriesIdentity.lastTimestamp) < sliceEnd
+  ) fail('Validation timeseries does not cover the full padded event interval.')
+  if (selectedRows.length < 2 || selectedRows.length !== selectedWindow.rowCount) {
+    fail('Validation timeseries slice must contain at least two streamed rows.')
+  }
+  const slice = {
+    detectorHeaders: OFFICIAL_FIELDS,
+    detectorRows: selectedRows,
+    removedLabelColumns: [],
+    firstTimestamp: selectedWindow.firstTimestamp,
+    lastTimestamp: selectedWindow.lastTimestamp,
+  }
   const sliceContent = serializeCsv(slice.detectorHeaders, slice.detectorRows)
   const sliceBytes = Buffer.from(sliceContent, 'utf8')
   const overlappingLabels = events
@@ -542,6 +484,32 @@ export async function prepareValidationSlice(options) {
         startMilliseconds <= sliceEnd && endMilliseconds >= sliceStart,
     )
     .map(({ startMilliseconds, endMilliseconds, ...event }) => event)
+  const selectedIdentity = {
+    eventId: selectedEvent.eventId,
+    code: selectedEvent.code,
+    startTime: selectedEvent.startTime,
+    endTime: selectedEvent.endTime,
+  }
+  const overlappingIdentities = overlappingLabels.map(
+    ({ eventId, code, startTime, endTime }) => ({ eventId, code, startTime, endTime }),
+  )
+  if (
+    JSON.stringify(selectedIdentity) !==
+      JSON.stringify(sourceContract.directedDemo?.selectedEvent) ||
+    JSON.stringify(overlappingIdentities) !==
+      JSON.stringify(sourceContract.directedDemo?.overlappingLabels)
+  ) fail('Directed demo selection does not match the independently verified label contract.')
+  const limitations = verifiedScope.scope === 'VALIDATION_SLICE'
+    ? [
+        'Public validation labels may select this directed QA demo before analysis and remain only in the manifest.',
+        'The detector input contains no public label columns.',
+        'This slice is not full validation, a hidden-test result, or an organizer score.',
+      ]
+    : [
+        'This self-consistent fixture contract is test-only and is not an official validation source.',
+        'Fixture labels remain outside detector input.',
+        'This fixture cannot support validation-slice, hidden-test, or organizer claims.',
+      ]
 
   const manifest = {
     schemaVersion: 1,
@@ -549,31 +517,31 @@ export async function prepareValidationSlice(options) {
     scriptVersion: SCRIPT_VERSION,
     generatedAt: new Date().toISOString(),
     provenance: {
-      mode: 'LIVE_ANALYSIS',
-      scope: 'VALIDATION_SLICE',
-      displayLabel: 'LIVE_ANALYSIS · 验证集切片',
-      limitations: [
-        'Public validation labels are retained only in this QA manifest.',
-        'The detector input contains no public label columns.',
-        'This slice is not full validation, a hidden-test result, or an organizer score.',
-      ],
+      mode: verifiedScope.mode,
+      scope: verifiedScope.scope,
+      displayLabel: verifiedScope.displayLabel,
+      limitations,
     },
     sources: {
       timeseries: {
         relativePath: timeseries.relativePath,
-        sha256: actualTimeseriesHash,
+        sha256: timeseriesIdentity.sha256,
+        rowCount: timeseriesIdentity.rowCount,
+        firstTimestamp: timeseriesIdentity.firstTimestamp,
+        lastTimestamp: timeseriesIdentity.lastTimestamp,
       },
       labels: {
         relativePath: labels.relativePath,
         sha256: actualLabelsHash,
+        rowCount: labelsCsv.rows.length,
+        eventCount: events.length,
+        uniqueEventIdCount: new Set(events.map(({ eventId }) => eventId)).size,
+        firstStart: firstLabelStart,
+        lastEnd: lastLabelEnd,
+        byCode: labelCountsByCode,
       },
     },
-    selectedEvent: {
-      eventId: selectedEvent.eventId,
-      code: selectedEvent.code,
-      startTime: selectedEvent.startTime,
-      endTime: selectedEvent.endTime,
-    },
+    selectedEvent: selectedIdentity,
     slice: {
       filename: SLICE_FILENAME,
       requestedTimeRange: {
@@ -592,7 +560,8 @@ export async function prepareValidationSlice(options) {
     overlappingLabels,
   }
   const manifestContent = `${JSON.stringify(manifest, null, 2)}\n`
-  await writeOutputs(outputDirectory, sliceContent, manifestContent)
+  const outputDirectory = generatedOutputDirectory(options.outputPath, packageRoot)
+  writeOutputs(outputDirectory, sliceContent, manifestContent)
   return {
     status: 'prepared',
     scriptVersion: SCRIPT_VERSION,
@@ -601,7 +570,7 @@ export async function prepareValidationSlice(options) {
     rowCount: slice.detectorRows.length,
     sliceSha256: manifest.slice.sha256,
     sourceHashes: {
-      timeseries: actualTimeseriesHash,
+      timeseries: timeseriesIdentity.sha256,
       labels: actualLabelsHash,
     },
     outputs: [SLICE_FILENAME, MANIFEST_FILENAME],

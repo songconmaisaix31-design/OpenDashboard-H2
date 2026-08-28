@@ -69,6 +69,15 @@ export const PRIMARY_IMPACT_METRIC_BY_CODE = new Map([
 ])
 
 export const OFFICIAL_SEVERITIES = Object.freeze(['高', '中'])
+export const SEVERITY_BY_CODE = new Map([
+  ['C01', '中'],
+  ['C02', '高'],
+  ['C03', '高'],
+  ['C04', '高'],
+  ['C05', '高'],
+  ['C06', '中'],
+  ['C07', '高'],
+])
 export const OFFICIAL_EQUIPMENT_TOKENS = new Set([
   'BESS',
   'PCC',
@@ -79,12 +88,12 @@ export const OFFICIAL_EQUIPMENT_TOKENS = new Set([
   'ELZ3',
 ])
 
-const EXACT_EQUIPMENT_SETS = new Map([
-  ['C03', new Set(['BESS', 'PCC'])],
-  ['C04', new Set(['PCC', 'BESS', 'ELZ', 'PV'])],
-  ['C05', new Set(['PCC', 'BESS', 'ELZ'])],
-  ['C06', new Set(['ELZ1', 'ELZ2', 'ELZ3'])],
-  ['C07', new Set(['BESS', 'PCC', 'PV', 'ELZ'])],
+export const EQUIPMENT_TOKENS_BY_CODE = new Map([
+  ['C03', Object.freeze(['BESS', 'PCC'])],
+  ['C04', Object.freeze(['PCC', 'BESS', 'ELZ', 'PV'])],
+  ['C05', Object.freeze(['PCC', 'BESS', 'ELZ'])],
+  ['C06', Object.freeze(['ELZ1', 'ELZ2', 'ELZ3'])],
+  ['C07', Object.freeze(['BESS', 'PCC', 'PV', 'ELZ'])],
 ])
 
 const LABEL_COLUMNS = new Set([
@@ -187,11 +196,11 @@ export function validateEquipmentTokenSet(code, tokens) {
     return 'contains a duplicate, empty, or non-official token'
   }
   if (code === 'C01') {
-    const tanks = tokens.filter((token) => /^ELZ[1-3]$/.test(token))
+    const electrolyzers = tokens.filter((token) => /^ELZ[1-3]$/.test(token))
     return tokens.length === 4 &&
       tokens.includes('BESS') &&
       tokens.includes('PCC') &&
-      tanks.length === 2
+      electrolyzers.length === 2
       ? null
       : 'must be BESS,PCC plus two distinct ELZ1/ELZ2/ELZ3 tokens'
   }
@@ -200,8 +209,9 @@ export function validateEquipmentTokenSet(code, tokens) {
       ? null
       : 'must be exactly one of ELZ1, ELZ2, or ELZ3'
   }
-  const expected = EXACT_EQUIPMENT_SETS.get(code)
-  if (expected === undefined) return null
+  const configured = EQUIPMENT_TOKENS_BY_CODE.get(code)
+  if (configured === undefined) return null
+  const expected = new Set(configured)
   const actual = new Set(tokens)
   return actual.size === expected.size && [...expected].every((token) => actual.has(token))
     ? null

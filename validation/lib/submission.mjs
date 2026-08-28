@@ -20,7 +20,9 @@ export const SUBMISSION_COLUMNS = Object.freeze([
 ])
 
 export function parseSubmission(text) {
-  const { columns, rows } = parseCsvText(text, 'Submission CSV')
+  const { columns, rows } = parseCsvText(text, 'Submission CSV', {
+    normalizeHeaders: false,
+  })
   return {
     columns,
     rows: rows.map((row) =>

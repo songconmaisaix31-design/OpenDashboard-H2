@@ -20,22 +20,32 @@ export.
 2. Run `prepare-validation-slice.mjs` with the explicit read-only package,
    package-relative files, both expected hashes, and a new ignored output
    directory.
-3. Inspect the manifest: it must select the earliest C04, add 30 minutes on
-   both sides, contain only relative paths, and keep public labels separate.
-4. Confirm `validation-slice.csv` has the exact official 69 detector fields and
+3. Require the exact official validation identities before slicing: 129,600
+   timeseries rows with SHA-256
+   `182728b3a4c5326503a90a04325adcf97fddc290c59ed1e319fa7e8be97d9666`,
+   and 70 unique label events with SHA-256
+   `47989467020fad5499168179716ce93da4585e8204dad80b71cfd803231d0cf4`.
+   The preparation tool verifies the complete timeseries as a stream before it
+   retains only the directed interval; it does not materialize the full matrix.
+4. Inspect the manifest: it must select the independently frozen directed C04
+   event, add 30 minutes on both sides, contain only relative paths, and keep
+   public labels separate.
+5. Confirm `validation-slice.csv` has the exact official 69 detector fields and
    no label column.
-5. Confirm the final candidate is clean and provide its exact SHA to the demo
-   runner. Never overwrite output from an earlier execution.
+6. Confirm the final candidate is clean and provide its exact SHA to the demo
+   runner. Use fresh, different directories for the slice manifest and demo
+   artifacts root; never overwrite output from an earlier execution.
 
-The public labels stay in the ignored QA manifest. Only the detector CSV is
-sent to analytics.
+Public label data may select the directed demonstration before analysis, but
+it stays in the ignored QA manifest and is never sent to the detector. Only
+the 69-field detector CSV is sent to analytics.
 
 ## Scripted path — target below 180 seconds
 
 | Stage | Scripted action | Evidence boundary |
 | --- | --- | --- |
-| import | Import the prepared detector CSV. | Require LIVE_ANALYSIS and validation-slice provenance, fingerprint, range, row count, and quality. |
-| analysis | Run deterministic analysis and select an overlapping C04 candidate. | Public labels are read only after analysis for comparison. |
+| import | Import the prepared detector CSV. | Require the actual LIVE_ANALYSIS source, source filename, fingerprint, range, row count, and quality. |
+| analysis | Run deterministic analysis and select an overlapping C04 candidate. | Bind actual run provenance to the verified import; labels are absent from the request. |
 | evidence_review | Read the event evidence from the public loopback API. | Require timing, evidence, impact, safety, and provenance. |
 | human_review | Confirm the event with revision 0 and a unique request ID. | Require revision 1; local actor attribution remains unverified. |
 | q09_report | Request official Q09 and its deterministic Chinese diagnosis HTML. | Require matching event/report citations and human-confirmation wording. |
@@ -53,14 +63,20 @@ values, exact candidate SHA, and explicit false claim flags.
 Run the validator after both executions:
 
     node tests/h2-sentinel/scripts/validate-demo-receipt.mjs \
-      --receipt tests/h2-sentinel/reports/generated/final/demo-receipt.json \
-      --manifest tests/h2-sentinel/reports/generated/final/validation-slice-manifest.json \
-      --artifacts-root tests/h2-sentinel/reports/generated/final/artifacts \
+      --receipt tests/h2-sentinel/reports/generated/<candidate-demo-run>/demo-receipt.json \
+      --manifest tests/h2-sentinel/reports/generated/<fresh-slice-run>/validation-slice-manifest.json \
+      --artifacts-root tests/h2-sentinel/reports/generated/<candidate-demo-run> \
       --expected-commit <40-character-final-integrated-sha>
 
 Only a passing final-candidate receipt permits the sub-180-second wording. It
 does not permit organizer-score, full-validation, hidden-test, deployment, or
 production claims.
+
+The runner rechecks the exact candidate SHA after each execution and again
+before issuing the receipt. The manifest scope is a verified QA selection;
+each run separately records actual import and analysis provenance. A
+self-consistent synthetic test fixture uses
+`self_consistent_fixture_contract`, never `VALIDATION_SLICE`.
 
 ## Fixture fallback
 

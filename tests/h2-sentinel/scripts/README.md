@@ -12,32 +12,38 @@ directory explicitly:
 ```powershell
 node tests/h2-sentinel/scripts/prepare-validation-slice.mjs `
   --package C:\path\to\official-package `
-  --timeseries 'data/public-validation-timeseries.csv' `
-  --labels 'data/public-validation-event-labels.csv' `
+  --timeseries '02_validation_timeseries.csv' `
+  --labels '05_validation_event_labels.csv' `
   --timeseries-sha256 'sha256:<64-lowercase-hex>' `
   --labels-sha256 'sha256:<64-lowercase-hex>' `
   --output 'tests/h2-sentinel/reports/generated/validation-run-01'
 ```
 
-The output directory must not exist and must be inside the repository under a
-Git-ignored rule. The script verifies both exact source hashes, UTF-8 CSV
-syntax, the exact official 69-field detector vocabulary, label
-identity/code/time fields, unique and ordered timestamps, and complete padded
-coverage before writing anything. Official UTC-naive timestamps are
-interpreted as UTC; timestamps with an explicit offset are normalized to UTC.
+The output directory must not exist and must be below the canonical generated
+prefix. The script streams the complete timeseries to verify the independently
+frozen full-source hash, all 129,600 rows, source range, UTF-8 CSV syntax, exact
+official 69-field header, and unique ordered timestamps before selecting any
+rows. It retains only rows inside the padded interval, rather than the complete
+cell matrix. It separately verifies 70 unique label events and their frozen
+hash, identity, code, and time fields before writing anything. Official
+UTC-naive timestamps are interpreted as UTC; timestamps with an explicit
+offset are normalized to UTC.
 
 It selects the earliest C04 label by start time, then event end and ID; creates
 an inclusive slice from 30 minutes before the label start through 30 minutes
 after its end; and writes only:
 
-- `validation-slice.csv`: detector input with recognized public-label columns
-  removed;
+- `validation-slice.csv`: detector input containing exactly the 69 official
+  fields; a source with any embedded public-label column is rejected;
 - `validation-slice-manifest.json`: source hashes, selected C04 identity,
-  requested/observed time ranges, detector-input hash, removed columns, and all
-  overlapping public labels for QA comparison.
+  requested/observed time ranges, detector-input hash, label-column absence,
+  and all overlapping public labels for QA comparison.
 
-The manifest is QA-only. Never import it into analytics, and never commit the
-official package, slice, manifest, labels, or generated receipts.
+Public labels may select this directed QA demo before analysis, but are never
+sent to the detector. The manifest is QA-only. Never import it into analytics,
+and never commit the official package, slice, manifest, labels, or generated
+receipts. Synthetic contract tests use `self_consistent_fixture_contract` and
+must never claim `VALIDATION_SLICE`.
 
 ## Validate a measured demo receipt
 
@@ -48,9 +54,9 @@ exported artifacts with:
 
 ```powershell
 node tests/h2-sentinel/scripts/validate-demo-receipt.mjs `
-  --receipt 'tests/h2-sentinel/reports/generated/final/demo-receipt.json' `
-  --manifest 'tests/h2-sentinel/reports/generated/final/validation-slice-manifest.json' `
-  --artifacts-root 'tests/h2-sentinel/reports/generated/final/artifacts' `
+  --receipt 'tests/h2-sentinel/reports/generated/<candidate-demo-run>/demo-receipt.json' `
+  --manifest 'tests/h2-sentinel/reports/generated/<fresh-slice-run>/validation-slice-manifest.json' `
+  --artifacts-root 'tests/h2-sentinel/reports/generated/<candidate-demo-run>' `
   --expected-commit '<40-character-final-integrated-sha>'
 ```
 
@@ -62,14 +68,18 @@ service processes. Each measured duration must be strictly less than 180,000
 ms and must include positive durations in this order: `import`, `analysis`,
 `evidence_review`, `human_review`, `q09_report`, and `artifact_export`.
 
-The validator recomputes the detector-input SHA-256 and verifies its columns,
+The manifest directory and artifacts root must be fresh and different. The
+validator recomputes the detector-input SHA-256 and verifies its columns,
 row count, monotonic timestamps, observed interval, and absence of label
 columns. For each run it also recomputes the SHA-256 of a Chinese diagnosis HTML
 report, a review-audit JSON export, and the exact 16-column `submission.csv`.
 The audit must retain the analyzed event at confirmed revision 1, and the
-submission must pass the official vocabulary/equipment checker. It requires
-Live validation-slice provenance,
-`publicLabelsUsedAsDetectorInput: false`, pre-started service disclosure, and
+submission must pass the official vocabulary/equipment checker. The diagnosis
+HTML must name the selected event, source filename, detector fingerprint, and
+rendered provenance scope.
+The validator distinguishes verified manifest scope from actual LIVE_ANALYSIS
+import/run provenance and requires `publicLabelsUsedAsDetectorInput: false`,
+pre-started service disclosure, and
 explicit false values for organizer score, full validation, hidden test,
 deployment, production proof, and Fixture substitution claims.
 

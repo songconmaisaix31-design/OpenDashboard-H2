@@ -31,6 +31,18 @@ const metrics = {
   C06: 'extra_energy_consumption_kwh',
   C07: 'bess_regulation_reserve_shortfall_kwh',
 }
+const severities = {
+  C01: '中', C02: '高', C03: '高', C04: '高', C05: '高', C06: '中', C07: '高',
+}
+const equipment = {
+  C01: 'ELZ1,ELZ2,BESS,PCC',
+  C02: 'ELZ1',
+  C03: 'BESS,PCC',
+  C04: 'PCC,BESS,ELZ,PV',
+  C05: 'PCC,BESS,ELZ',
+  C06: 'ELZ1,ELZ2,ELZ3',
+  C07: 'BESS,PCC,PV,ELZ',
+}
 
 function row(overrides = {}) {
   const code = overrides.anomaly_code ?? 'C03'
@@ -40,9 +52,9 @@ function row(overrides = {}) {
     end_time: '2026-01-05T10:30:00Z',
     anomaly_code: code,
     anomaly_subtype: subtypes[code],
-    severity: '高',
+    severity: severities[code],
     primary_control_object: controls[code],
-    affected_equipment: 'BESS,PCC',
+    affected_equipment: equipment[code],
     confidence: '0.94',
     evidence_json: '[{"evidence_id":"EV-001","kind":"measurement"}]',
     root_cause: 'Bounded evidence-grounded cause.',
@@ -57,16 +69,7 @@ function row(overrides = {}) {
 
 describe('H2 Sentinel official submission checker', () => {
   it('accepts all seven official affected-equipment token shapes', () => {
-    const cases = {
-      C01: 'ELZ2,ELZ3,BESS,PCC',
-      C02: 'ELZ1',
-      C03: 'BESS,PCC',
-      C04: 'PCC,BESS,ELZ,PV',
-      C05: 'PCC,BESS,ELZ',
-      C06: 'ELZ1,ELZ2,ELZ3',
-      C07: 'BESS,PCC,PV,ELZ',
-    }
-    for (const [code, affected_equipment] of Object.entries(cases)) {
+    for (const [code, affected_equipment] of Object.entries(equipment)) {
       const result = validateSubmissionText(
         serializeSubmission([row({ anomaly_code: code, affected_equipment })]),
       )
@@ -74,11 +77,112 @@ describe('H2 Sentinel official submission checker', () => {
     }
   })
 
+  it('accepts dynamic official C01 pairs and C02 instances without accepting duplicates or extras', () => {
+    for (const affected_equipment of [
+      'ELZ1,ELZ3,BESS,PCC',
+      'ELZ2,ELZ3,BESS,PCC',
+    ]) {
+      const result = validateSubmissionText(serializeSubmission([row({
+        anomaly_code: 'C01',
+        affected_equipment,
+      })]))
+      assert.equal(result.valid, true, result.issues.join(' | '))
+    }
+    for (const affected_equipment of ['ELZ2', 'ELZ3']) {
+      const result = validateSubmissionText(serializeSubmission([row({
+        anomaly_code: 'C02',
+        affected_equipment,
+      })]))
+      assert.equal(result.valid, true, result.issues.join(' | '))
+    }
+    for (const [code, affected_equipment] of [
+      ['C01', 'ELZ1,ELZ1,BESS,PCC'],
+      ['C01', 'ELZ1,ELZ2,ELZ3,BESS,PCC'],
+      ['C02', 'ELZ1,ELZ2'],
+      ['C02', 'ELZ'],
+    ]) {
+      assert.equal(validateSubmissionText(serializeSubmission([row({
+        anomaly_code: code,
+        affected_equipment,
+      })])).valid, false)
+    }
+  })
+
+  it('accepts a legitimate early warning and rejects late or invalid chronology', () => {
+    const early = validateSubmissionText(serializeSubmission([row({
+      anomaly_code: 'C05',
+      first_detection_time: '2026-01-05T09:55:00Z',
+    })]))
+    assert.equal(early.valid, true, early.issues.join(' | '))
+
+    assert.equal(validateSubmissionText(serializeSubmission([row({
+      anomaly_code: 'C03',
+      first_detection_time: '2026-01-05T09:55:00Z',
+    })])).valid, false)
+
+    for (const overrides of [
+      { first_detection_time: '2026-01-05T10:30:01Z' },
+      { start_time: '2026-01-05T10:31:00Z', end_time: '2026-01-05T10:30:00Z' },
+      { start_time: '2026-02-30T10:00:00Z' },
+      { end_time: '2026-01-05T10:30:00+00:00' },
+      { first_detection_time: '2026-01-05 10:25:00' },
+    ]) {
+      assert.equal(
+        validateSubmissionText(serializeSubmission([row(overrides)])).valid,
+        false,
+        JSON.stringify(overrides),
+      )
+    }
+  })
+
+  it('accepts only finite decimal numbers and non-negative impact', () => {
+    for (const overrides of [
+      { confidence: '0x1' },
+      { confidence: ' 0.9' },
+      { confidence: 'Infinity' },
+      { estimated_impact_value: '-0.1' },
+      { estimated_impact_value: '0x10' },
+      { estimated_impact_value: 'NaN' },
+    ]) {
+      assert.equal(validateSubmissionText(serializeSubmission([row(overrides)])).valid, false)
+    }
+    assert.equal(
+      validateSubmissionText(serializeSubmission([row({
+        confidence: '9e-1',
+        estimated_impact_value: '0',
+      })])).valid,
+      true,
+    )
+  })
+
+  it('requires minimally valid evidence objects', () => {
+    for (const evidence_json of ['[null]', '[{}]', '[["EV-001"]]', '[{"evidence_id":""}]']) {
+      assert.equal(
+        validateSubmissionText(serializeSubmission([row({ evidence_json })])).valid,
+        false,
+        evidence_json,
+      )
+    }
+    assert.equal(
+      validateSubmissionText(serializeSubmission([row({
+        evidence_json: '[{"evidence_id":"EV-001"}]',
+      })])).valid,
+      true,
+    )
+  })
+
+  it('rejects trimmed or BOM-prefixed header lookalikes', () => {
+    const valid = serializeSubmission([row()])
+    assert.equal(validateSubmissionText(valid.replace('pred_event_id', ' pred_event_id')).valid, false)
+    assert.equal(validateSubmissionText(`\uFEFF${valid}`).valid, false)
+  })
+
   it('rejects equipment-master IDs, id:name values, spaces, and wrong token sets', () => {
     for (const affected_equipment of [
       'BESS01,PCC',
       'BESS01:储能系统;PCC01:并网点',
       'BESS, PCC',
+      ' BESS,PCC',
       'BESS,PCC,PV',
     ]) {
       const result = validateSubmissionText(
@@ -106,15 +210,17 @@ describe('H2 Sentinel official submission checker', () => {
   })
 
   it('rejects recommendations that do not require human confirmation', () => {
-    const result = validateSubmissionText(
-      serializeSubmission([row({ requires_human_confirmation: 'false' })]),
-    )
-    assert.equal(result.valid, false)
-    assert.ok(
-      result.issues.some((issue) =>
-        issue.includes('requires_human_confirmation must be true for every recommendation'),
-      ),
-    )
+    for (const requires_human_confirmation of ['false', ' true', 'true ']) {
+      const result = validateSubmissionText(
+        serializeSubmission([row({ requires_human_confirmation })]),
+      )
+      assert.equal(result.valid, false)
+      assert.ok(
+        result.issues.some((issue) =>
+          issue.includes('requires_human_confirmation must be true for every recommendation'),
+        ),
+      )
+    }
   })
 
   it('freezes the exact 16-column order', () => {
