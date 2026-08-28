@@ -24,8 +24,10 @@ export interface AnalysisPageProps {
 
 export function AnalysisPage({ importError, importNotice, importPending, onImport, workspace }: AnalysisPageProps) {
   const chartableFields = useMemo(
-    () => workspace.run.dataset.fields.filter((field) => field.role === 'measurement' || field.role === 'constraint'),
-    [workspace.run.dataset.fields],
+    () => workspace.run.dataset.fields.filter((field) =>
+      workspace.series?.variables.includes(field.name) ?? false,
+    ),
+    [workspace.run.dataset.fields, workspace.series],
   )
   const [selectedVariable, setSelectedVariable] = useState(chartableFields[0]?.name ?? '')
   const selectedField = chartableFields.find(({ name }) => name === selectedVariable) ?? chartableFields[0]
