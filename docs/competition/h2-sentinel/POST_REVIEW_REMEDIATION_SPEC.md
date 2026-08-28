@@ -419,11 +419,13 @@ for every official row is accumulated and then copied during merge.
 
 ### R17 - Auditable calibration and fail-closed equipment identity
 
-- C05/C06 thresholds and impact rates derived from public train record the
-  exact public-source hashes, event/sample counts, derivation procedure, and
-  versioned results. A small dependency-free replay tool or equivalent
-  executable contract must reproduce the frozen calibration without importing
-  validation labels.
+- C03/C05/C06 thresholds and impact formulas derived from public train record
+  the exact public-source hashes, event/sample counts, derivation procedure,
+  error and rounding statistics, and versioned results. A small dependency-free
+  replay tool or equivalent executable contract must reproduce the frozen
+  calibration without importing validation labels. C03 impact must reproduce
+  the public-train reference values instead of integrating raw BESS magnitude
+  under an unrelated formula.
 - Validation is run only after thresholds are frozen and is reported as
   held-out acceptance, not calibration evidence or an organizer score.
 - C01, C02, and C06 require valid implicated equipment from the triggering
