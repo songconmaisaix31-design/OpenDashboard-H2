@@ -73,16 +73,66 @@ export interface H2ImpactFormulaConfig {
   readonly formulaVersion: 'impact-c06-v3'
   readonly source: {
     readonly calibrationSplit: 'public_train'
+    readonly competitionPackageVersion: 'public-v4.0'
     readonly derivation: string
+    readonly sourceFiles: Readonly<
+      Record<'timeseries' | 'eventLabels', {
+        readonly sha256: string
+        readonly byteCount: number
+        readonly dataRowCount: number
+      }>
+    >
+    readonly derivationProcedure: readonly string[]
     readonly heldOutPolicy: string
   }
   readonly classes: {
+    readonly C03: {
+      readonly formulaVersion: 'impact-c03-v2'
+      readonly formula: string
+      readonly socTrackingGainKwPerPct: number
+      readonly derivationProcedure: readonly string[]
+      readonly calibrationStatistics: {
+        readonly eventCount: number
+        readonly inclusiveSampleCount: number
+        readonly actualPowerMagnitudeKwMinutes: string
+        readonly signedSocDeviationPctMinutes: string
+        readonly referenceImpactKwh: string
+        readonly aggregateDerivedSocTrackingGainKwPerPct: string
+        readonly calibratedSocTrackingGainKwPerPct: string
+        readonly calculatedImpactKwh: string
+        readonly roundedReferenceMatchCount: number
+        readonly maximumAbsoluteRoundedResidualKwh: string
+        readonly meanAbsoluteRoundedResidualKwh: string
+      }
+      readonly roundingPolicy: string
+      readonly rationale: string
+      readonly limitation: string
+      readonly heldOutPolicy: string
+    }
     readonly C06: {
       readonly targetField: 'ems_total_elz_target_kw'
       readonly formula: string
       readonly subtypeRates: Readonly<
         Record<H2AnomalySubtypeForCode<'C06'>, number>
       >
+      readonly calibrationStatistics: {
+        readonly eventCount: number
+        readonly subtypes: Readonly<
+          Record<H2AnomalySubtypeForCode<'C06'>, {
+            readonly eventCount: number
+            readonly inclusiveSampleCount: number
+            readonly targetKwMinutes: string
+            readonly targetEnergyKwh: string
+            readonly referenceImpactKwh: string
+            readonly aggregateDerivedRate: string
+            readonly calibratedRate: string
+            readonly perEventDerivedRateMinimum: string
+            readonly perEventDerivedRateMaximum: string
+            readonly roundedReferenceMatchCount: number
+            readonly maximumAbsoluteRoundedResidualKwh: string
+          }>
+        >
+      }
       readonly roundingPolicy: string
       readonly rationale: string
     }
@@ -178,13 +228,31 @@ export function submissionEquipmentTokensForEvent(
   code: H2AnomalyCode,
   affectedEquipment: readonly H2EquipmentRef[],
 ): readonly string[] {
+  const resolvedTokens = affectedEquipment.map(submissionEquipmentToken)
   const eventTokens = [
     ...new Set(
-      affectedEquipment
-        .map(submissionEquipmentToken)
-        .filter((token): token is string => token !== undefined),
+      resolvedTokens.filter((token): token is string => token !== undefined),
     ),
   ]
+  if (code === 'C01' || code === 'C02' || code === 'C06') {
+    if (resolvedTokens.some((token) => token === undefined)) {
+      throw new Error(`${code} equipment attribution is incomplete.`)
+    }
+    if (code === 'C06') {
+      if (
+        eventTokens.length < 2 ||
+        eventTokens.length > 3 ||
+        !eventTokens.every((token) => PER_EVENT_ELECTROLYZER_TOKENS.has(token))
+      ) {
+        throw new Error('C06 equipment attribution is invalid.')
+      }
+      return submissionEquipmentTokensByCode(code)
+    }
+    if (!validSubmissionEquipmentTokens(code, eventTokens)) {
+      throw new Error(`${code} equipment attribution is invalid.`)
+    }
+    return eventTokens
+  }
   return validSubmissionEquipmentTokens(code, eventTokens)
     ? eventTokens
     : submissionEquipmentTokensByCode(code)

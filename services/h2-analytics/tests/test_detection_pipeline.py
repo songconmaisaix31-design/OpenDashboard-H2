@@ -7,11 +7,12 @@ from datetime import timedelta
 import pytest
 
 from h2_analytics import vocabulary
-from h2_analytics.detection import LightGbmRowDetector, RuleRowDetector
+from h2_analytics.detection import DetectionCandidate, LightGbmRowDetector, RuleRowDetector
 from h2_analytics.events import EventAggregator
 from h2_analytics.impact import ImpactCalculator
 from h2_analytics.ingestion import DatasetLoader
 from h2_analytics.errors import AnalyticsError
+from h2_analytics.models import DataRow
 from h2_analytics.service import AnalyticsService
 
 
@@ -44,6 +45,7 @@ def test_rule_detector_and_aggregation_produce_golden_boundaries(valid_csv: str)
     # C03 integrates |BESS actual| (the anomalous BESS contribution) and C04
     # integrates the export excess, so the two metrics are numerically distinct.
     assert c03["impact"]["value"] == pytest.approx(84.33333333333333)
+    assert c03["impact"]["formulaVersion"] == "impact-c03-v1"
     assert c04["impact"]["value"] == pytest.approx(120.0)
     assert c04["evidence"][2]["actualValue"] == pytest.approx(120.0)
 
@@ -132,10 +134,26 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
         filename="tiny-valid-timeseries.csv", text=valid_csv
     )
     baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    baseline_timestamp = baseline.timestamp
     detector = RuleRowDetector()
 
-    def single(**changes: object) -> tuple:
+    def single(**changes: float | None) -> tuple[DataRow, ...]:
         return (replace(baseline, values={**baseline.values, **changes}),)
+
+    def consecutive(count: int, **changes: float | None) -> tuple[DataRow, ...]:
+        return tuple(
+            replace(
+                baseline,
+                index=baseline.index + index,
+                timestamp=baseline_timestamp + timedelta(minutes=index),
+                timestamp_text=(
+                    baseline_timestamp + timedelta(minutes=index)
+                ).isoformat(),
+                values={**baseline.values, **changes},
+            )
+            for index in range(count)
+        )
 
     c01_rows = tuple(
         replace(
@@ -157,15 +175,22 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
             elz2_power_cmd_kw=600.0,
             elz2_power_actual_kw=300.0,
         ),
-        # C03: BESS command at the 400 kW level, same sign as a strong PCC flow.
-        "C03": single(bess_power_cmd_kw=400.0, pcc_power_actual_kw=500.0),
+        # C03: the public marker follows the official sign while opposing SOC need.
+        "C03": consecutive(
+            5,
+            bess_power_cmd_kw=400.0,
+            bess_power_actual_kw=400.0,
+            pcc_power_actual_kw=500.0,
+            bess_soc_pct=40.0,
+            soc_target_pct=60.0,
+        ),
         # C04: BESS forced to the 450 kW level.
         "C04": single(bess_power_cmd_kw=450.0),
         # C05: low export quota and its causal positive BESS signature agree.
         "C05": (
             replace(
                 baseline,
-                timestamp=baseline.timestamp.replace(hour=7, minute=7),
+                timestamp=baseline_timestamp.replace(hour=7, minute=7),
                 values={
                     **baseline.values,
                     "grid_export_energy_quota_kwh_day": 2200.0,
@@ -238,7 +263,7 @@ def test_c05_causal_signature_bounds_window_and_peak_impact(
     baseline = imported.rows[0]
     assert baseline.timestamp is not None
     first_signature = baseline.timestamp.replace(hour=6, minute=1)
-    excess_values = (900.0, 0.0, 3.0, 8.0, 13.0, 21.0, 999.0)
+    excess_values = (900.0, 0.0, 0.0, 0.0, 0.0, 21.0, 999.0)
     rows = tuple(
         replace(
             baseline,
@@ -286,6 +311,7 @@ def test_c05_causal_signature_bounds_window_and_peak_impact(
     assert window.start_time == rows[1].timestamp
     assert window.end_time == rows[5].timestamp
     assert window.first_detection_time == rows[4].timestamp
+    assert window.first_detection_time < rows[5].timestamp
     assert window.subtype == subtype
     assert impact.value == pytest.approx(21.0)
 
@@ -332,6 +358,28 @@ def test_c05_requires_four_sustained_signature_samples(valid_csv: str) -> None:
     assert window.start_time == rows[0].timestamp
     assert window.first_detection_time == rows[3].timestamp
 
+    subminute_rows = tuple(
+        replace(
+            row,
+            index=100 + index,
+            timestamp=baseline.timestamp + timedelta(seconds=15 * index),
+            timestamp_text=(
+                baseline.timestamp + timedelta(seconds=15 * index)
+            ).isoformat(),
+        )
+        for index, row in enumerate(rows)
+    )
+    subminute_candidates = tuple(
+        item
+        for item in detector.detect(subminute_rows)
+        if item.code == "C05"
+    )
+    assert aggregator.aggregate(
+        rows=subminute_rows,
+        candidates=subminute_candidates,
+        sampling_interval_minutes=0.25,
+    ) == ()
+
 
 def test_c05_thresholds_record_train_only_causal_evidence() -> None:
     config = vocabulary.detection_thresholds()["classes"]["C05"]
@@ -340,6 +388,8 @@ def test_c05_thresholds_record_train_only_causal_evidence() -> None:
 
     assert config["aggregation"]["minimumRows"] == 4
     assert config["aggregation"]["confirmationRow"] == 4
+    assert config["aggregation"]["requiresExactSamplingInterval"] is True
+    assert config["aggregation"]["exactSamplingIntervalMinutes"] == 1
     assert config["bessSignatureTargetMagnitudeKw"] == 300.0
     assert config["bessSignatureToleranceKw"] == 1.0
     assert calibration["split"] == "public_train"
@@ -359,10 +409,87 @@ def test_c05_thresholds_record_train_only_causal_evidence() -> None:
     assert minimum_rows["maximumShortNonLabelSegmentMinutes"] == 3
     assert minimum_rows["minimumNoFalsePositiveRows"] == 4
     assert "minimum public-TRAIN confirmation" in minimum_rows["conclusion"]
+    assert "before the first positive hard quota-excess" in calibration[
+        "earlyWarningDefinition"
+    ]
+    assert "not required to precede event start" in calibration[
+        "earlyWarningDefinition"
+    ]
     assert "empirical rule" in calibration["limitation"]
     assert "not a universally established physical law" in calibration["limitation"]
     assert "acceptance-only" in calibration["heldOutPolicy"]
     assert "does not set C05 detection thresholds" in calibration["heldOutPolicy"]
+
+
+def test_c06_persistent_start_stop_signature_wins_and_preserves_boundaries(
+    valid_csv: str,
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    start = baseline.timestamp.replace(hour=8, minute=0)
+
+    def row(index: int, power: float, state: float) -> DataRow:
+        timestamp = start + timedelta(minutes=index)
+        return replace(
+            baseline,
+            index=index,
+            timestamp=timestamp,
+            timestamp_text=timestamp.isoformat(),
+            values={
+                **baseline.values,
+                "elz1_power_actual_kw": power,
+                "elz2_power_actual_kw": power,
+                "elz3_power_actual_kw": power,
+                "elz1_run_state": state,
+                "elz2_run_state": state,
+                "elz3_run_state": state,
+                "elz1_specific_energy_kwh_per_kg": 60.0,
+                "elz2_specific_energy_kwh_per_kg": 60.0,
+                "elz3_specific_energy_kwh_per_kg": 60.0,
+            },
+        )
+
+    rows = (
+        row(0, 380.0, 1.0),
+        *(row(index, 400.0, 2.0) for index in range(1, 36)),
+        row(36, 420.0, 1.0),
+    )
+    candidates = tuple(
+        item for item in RuleRowDetector().detect(rows) if item.code == "C06"
+    )
+    window = EventAggregator().aggregate(
+        rows=rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
+    )[0]
+
+    assert {item.subtype for item in candidates} == {"AVOIDABLE_START_STOP"}
+    assert [item.timestamp for item in candidates] == [
+        item.timestamp for item in rows[1:-1]
+    ]
+    assert window.start_time == rows[1].timestamp
+    assert window.end_time == rows[-2].timestamp
+    assert window.implicated_equipment_ids == ("ELZ01", "ELZ02", "ELZ03")
+
+
+def test_c03_and_c06_thresholds_freeze_train_only_findings() -> None:
+    classes = vocabulary.detection_thresholds()["classes"]
+    c03 = classes["C03"]
+    c06 = classes["C06"]
+
+    assert c03["bessSignatureTargetMagnitudeKw"] == 400.0
+    assert c03["actualTrackingToleranceKw"] == 1.0
+    assert c03["calibration"]["eventCount"] == 40
+    assert c03["calibration"]["qualifiedSignatureRunCount"] == 40
+    assert c03["calibration"]["shortNonLabelRunCount"] == 3
+    assert "acceptance-only" in c03["calibration"]["heldOutPolicy"]
+    start_stop = c06["calibration"]["avoidableStartStop"]
+    assert start_stop["eventCount"] == 20
+    assert start_stop["signatureRunCount"] == 20
+    assert start_stop["extraSignatureRunCount"] == 0
+    assert "evaluated before" in start_stop["precedence"]
+    assert "acceptance-only" in c06["calibration"]["heldOutPolicy"]
 
 
 def test_c07_continues_while_charge_reserve_is_short_after_soc_recovers(
@@ -427,3 +554,38 @@ def test_lightgbm_seam_accepts_only_a_preloaded_booster(valid_csv: str) -> None:
     assert len(candidates) == 2
     assert all(candidate.detector_version == "test-booster-v1" for candidate in candidates)
     assert not hasattr(detector, "model_path")
+
+
+@pytest.mark.parametrize("code", ["C01", "C02", "C06"])
+def test_lightgbm_seam_rejects_classes_without_equipment_attribution(
+    code: str,
+) -> None:
+    with pytest.raises(ValueError, match="cannot attribute equipment"):
+        LightGbmRowDetector(
+            booster=FakeBooster(),
+            feature_names=("pcc_power_actual_kw",),
+            class_map={1: (code, vocabulary.subtypes_by_code()[code][0])},
+            version="test-booster-v1",
+        )
+
+
+def test_aggregator_rejects_missing_dynamic_equipment_attribution(
+    valid_csv: str,
+) -> None:
+    row = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv).rows[0]
+    assert row.timestamp is not None
+    candidate = DetectionCandidate(
+        row_index=row.index,
+        timestamp=row.timestamp,
+        code="C02",
+        subtype="CAPACITY_NOT_SYNCHRONIZED",
+        confidence=0.9,
+        detector_version="test-detector-v1",
+    )
+
+    with pytest.raises(vocabulary.VocabularyError, match="lacks valid"):
+        EventAggregator().aggregate(
+            rows=(row,),
+            candidates=(candidate,),
+            sampling_interval_minutes=1.0,
+        )

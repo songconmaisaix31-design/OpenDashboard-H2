@@ -135,17 +135,35 @@ def test_train_sized_iterator_stops_before_over_limit_rows_are_materialized(
 
     monkeypatch.setattr(csv_loader, "_parse_timestamp", recording_parse_timestamp)
     monkeypatch.setattr(csv_loader, "DataRow", lightweight_row)
-    train_rows = repeat(
-        ("2026-01-05T10:20:00Z",),
-        OFFICIAL_DATASET_ROW_COUNTS["train"],
+    accepted_rows, _counts = csv_loader._parse_rows(
+        ("timestamp",),
+        repeat(("2026-01-05T10:20:00Z",), MAX_CSV_ROWS),
     )
+    assert len(accepted_rows) == MAX_CSV_ROWS
+    assert parsed_timestamps == MAX_CSV_ROWS
+    assert retained_rows == MAX_CSV_ROWS
+
+    parsed_timestamps = 0
+    retained_rows = 0
 
     with pytest.raises(CsvImportError) as error:
-        csv_loader._parse_rows(("timestamp",), train_rows)
+        csv_loader._parse_rows(
+            ("timestamp",),
+            repeat(("2026-01-05T10:20:00Z",), MAX_CSV_ROWS + 1),
+        )
 
     assert error.value.code == "import.too_many_rows"
     assert parsed_timestamps == MAX_CSV_ROWS
     assert retained_rows == MAX_CSV_ROWS
+
+
+def test_csv_byte_limit_accepts_exact_boundary_and_rejects_one_more() -> None:
+    csv_loader._enforce_csv_byte_limit(MAX_CSV_BYTES)
+
+    with pytest.raises(CsvImportError) as error:
+        csv_loader._enforce_csv_byte_limit(MAX_CSV_BYTES + 1)
+
+    assert error.value.code == "import.too_large"
 
 
 @pytest.mark.parametrize(

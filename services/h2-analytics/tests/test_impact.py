@@ -8,12 +8,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 
 from h2_analytics import vocabulary
 from h2_analytics.events import EventWindow
-from h2_analytics.impact import ImpactCalculator
+from h2_analytics.impact import ImpactCalculation, ImpactCalculator
 from h2_analytics.impact.calculators import DECLARED_IMPACT_METRICS
 from h2_analytics.models import DataRow
 
@@ -44,7 +45,7 @@ def _window(
     )
 
 
-def _calculate(window: EventWindow) -> object:
+def _calculate(window: EventWindow) -> ImpactCalculation:
     return ImpactCalculator().calculate(
         window=window,
         sampling_interval_minutes=_ONE_HOUR,
@@ -96,6 +97,26 @@ def test_c02_integrates_only_the_positive_command_gap() -> None:
     )
 
     assert _calculate(window).value == pytest.approx(200.0)
+
+
+def test_c03_integrates_deviation_from_train_calibrated_soc_response() -> None:
+    window = _window(
+        "C03",
+        [
+            _row(
+                1,
+                bess_power_actual_kw=400.0,
+                bess_soc_pct=40.0,
+                soc_target_pct=60.0,
+            )
+        ],
+    )
+
+    calculation = _calculate(window)
+
+    assert calculation.value == pytest.approx(757.84)
+    assert calculation.formula_version == "impact-c03-v2"
+    assert any("public-TRAIN" in item for item in calculation.assumptions)
 
 
 def test_c04_sums_export_and_import_violations_when_both_are_reported() -> None:
@@ -231,13 +252,39 @@ def test_c06_missing_target_contributes_zero_without_rounding_other_rows() -> No
     assert any("missing EMS target" in item for item in calculation.assumptions)
 
 
-def test_c06_formula_config_declares_train_calibration_and_held_out_policy() -> None:
+def test_impact_formula_config_declares_train_calibration_and_held_out_policy() -> None:
     config = vocabulary.impact_formulas()
 
     assert config["formulaVersion"] == "impact-c06-v3"
     assert config["source"]["calibrationSplit"] == "public_train"
+    assert config["source"]["competitionPackageVersion"] == "public-v4.0"
+    assert len(config["source"]["sourceFiles"]["timeseries"]["sha256"]) == 64
+    assert len(config["source"]["sourceFiles"]["eventLabels"]["sha256"]) == 64
     assert "acceptance-only" in config["source"]["heldOutPolicy"]
+    c03 = config["classes"]["C03"]
+    c03_statistics = c03["calibrationStatistics"]
+    assert c03["formulaVersion"] == "impact-c03-v2"
+    assert Decimal(
+        c03_statistics["aggregateDerivedSocTrackingGainKwPerPct"]
+    ).quantize(Decimal("0.001")) == Decimal(str(c03["socTrackingGainKwPerPct"]))
+    assert abs(
+        Decimal(c03_statistics["calculatedImpactKwh"])
+        - Decimal(c03_statistics["referenceImpactKwh"])
+    ) < Decimal("0.001")
+    assert "acceptance-only" in c03["heldOutPolicy"]
     assert "not physical" in config["classes"]["C06"]["rationale"]
+    statistics = config["classes"]["C06"]["calibrationStatistics"]
+    assert statistics["eventCount"] == 40
+    for subtype, rate in config["classes"]["C06"]["subtypeRates"].items():
+        subtype_statistics = statistics["subtypes"][subtype]
+        derived_rate = Decimal(subtype_statistics["referenceImpactKwh"]) / Decimal(
+            subtype_statistics["targetEnergyKwh"]
+        )
+        assert derived_rate == pytest.approx(Decimal(str(rate)), abs=Decimal("2e-10"))
+        assert subtype_statistics["calibratedRate"] == str(rate)
+        assert subtype_statistics["roundedReferenceMatchCount"] == (
+            subtype_statistics["eventCount"]
+        )
 
 
 def test_missing_inputs_yield_zero_rather_than_raising() -> None:

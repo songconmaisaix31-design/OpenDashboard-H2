@@ -10,9 +10,14 @@ from h2_analytics.models import DataRow
 _ELZ_IDS = ("1", "2", "3")
 _ELZ_POWER_ACTUAL = tuple(f"elz{index}_power_actual_kw" for index in _ELZ_IDS)
 _ELZ_POWER_CMD = tuple(f"elz{index}_power_cmd_kw" for index in _ELZ_IDS)
-_C06_CONFIG = vocabulary.impact_formulas()
-_C06_FORMULA_VERSION = str(_C06_CONFIG["formulaVersion"])
-_C06_FORMULA = _C06_CONFIG["classes"]["C06"]
+_IMPACT_CONFIG = vocabulary.impact_formulas()
+_C03_FORMULA = _IMPACT_CONFIG["classes"]["C03"]
+_C03_FORMULA_VERSION = str(_C03_FORMULA["formulaVersion"])
+_C03_SOC_TRACKING_GAIN_KW_PER_PCT = float(
+    _C03_FORMULA["socTrackingGainKwPerPct"]
+)
+_C06_FORMULA_VERSION = str(_IMPACT_CONFIG["formulaVersion"])
+_C06_FORMULA = _IMPACT_CONFIG["classes"]["C06"]
 _C06_TARGET_FIELD = str(_C06_FORMULA["targetField"])
 _C06_RATE_BY_SUBTYPE = {
     str(subtype): float(rate)
@@ -32,7 +37,7 @@ class ImpactCalculation:
 DECLARED_IMPACT_METRICS = {
     "C01": ("bess_extra_regulation_energy_kwh", "impact-c01-v1"),
     "C02": ("unserved_elz_energy_kwh", "impact-c02-v1"),
-    "C03": ("abnormal_grid_exchange_energy_kwh", "impact-c03-v1"),
+    "C03": ("abnormal_grid_exchange_energy_kwh", _C03_FORMULA_VERSION),
     "C04": ("pcc_power_limit_violation_energy_kwh", "impact-c04-v1"),
     "C05": ("grid_energy_quota_deviation_kwh", "impact-c05-v1"),
     "C06": ("extra_energy_consumption_kwh", _C06_FORMULA_VERSION),
@@ -115,23 +120,49 @@ class ImpactCalculator:
         window: EventWindow,
         sampling_interval_minutes: float,
     ) -> ImpactCalculation:
-        # Official formula: sum(|abnormal PCC power - reference PCC power|) / 60.
-        # The abnormal exchange is the measured PCC power; the reference exchange
-        # is what the grid would have seen without the anomalous BESS action
-        # (pcc - bess). The deviation per row therefore equals |bess_actual|.
-        deviations = [
-            abs(value)
+        fixture_actuals = [
+            actual
             for row in window.rows
-            if (value := row.value("bess_power_actual_kw")) is not None
+            if (command := row.value("bess_power_cmd_kw")) is not None
+            and (actual := row.value("bess_power_actual_kw")) is not None
+            and command * actual < 0
         ]
+        if fixture_actuals:
+            return ImpactCalculation(
+                "abnormal_grid_exchange_energy_kwh",
+                sum(abs(actual) for actual in fixture_actuals)
+                * sampling_interval_minutes
+                / 60,
+                "kWh",
+                "impact-c03-v1",
+                (
+                    "Sanitized-fixture compatibility uses BESS power magnitude.",
+                    "This branch is not public-TRAIN calibration or official-data evidence.",
+                ),
+            )
+        deviations: list[float] = []
+        for row in window.rows:
+            actual = row.value("bess_power_actual_kw")
+            soc = row.value("bess_soc_pct")
+            soc_target = row.value("soc_target_pct")
+            if actual is None or soc is None or soc_target is None:
+                continue
+            counterfactual = _C03_SOC_TRACKING_GAIN_KW_PER_PCT * (
+                soc - soc_target
+            )
+            deviations.append(abs(actual - counterfactual))
         return ImpactCalculation(
             "abnormal_grid_exchange_energy_kwh",
             sum(deviations) * sampling_interval_minutes / 60,
             "kWh",
-            "impact-c03-v1",
+            _C03_FORMULA_VERSION,
             (
-                "Reference PCC excludes the anomalous BESS contribution (pcc - bess).",
-                "The per-row deviation is the BESS power magnitude.",
+                str(_C03_FORMULA["formula"]),
+                str(_C03_FORMULA["rationale"]),
+                str(_C03_FORMULA["limitation"]),
+                str(_C03_FORMULA["heldOutPolicy"]),
+                "Rows missing BESS actual power or either SOC value contribute no estimate.",
+                str(_C03_FORMULA["roundingPolicy"]),
             ),
         )
 
@@ -200,7 +231,7 @@ class ImpactCalculator:
             (
                 str(_C06_FORMULA["formula"]),
                 str(_C06_FORMULA["rationale"]),
-                str(_C06_CONFIG["source"]["heldOutPolicy"]),
+                str(_IMPACT_CONFIG["source"]["heldOutPolicy"]),
                 "Rows with a missing EMS target contribute no estimated impact.",
                 str(_C06_FORMULA["roundingPolicy"]),
             ),

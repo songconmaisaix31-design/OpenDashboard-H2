@@ -7,6 +7,8 @@ columns are rejected at the ingestion boundary.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from h2_analytics import vocabulary
 from h2_analytics.models import DataRow
 from h2_analytics.settings import (
@@ -53,9 +55,15 @@ _C01_BESS_RANGE_KW = _threshold("C01", "bessRangeKw")
 _RATED_CAPACITY_KW = _threshold("C02", "ratedCapacityKw")
 _CAPACITY_SKEW_KW = _threshold("C02", "capacitySkewKw")
 _COMMAND_EXECUTION_GAP_KW = _threshold("C02", "commandExecutionGapKw")
-_BESS_DIRECTION_MIN_KW = _threshold("C03", "bessDirectionMinimumKw")
-_BESS_DIRECTION_MAX_KW = _threshold("C03", "bessDirectionMaximumKw")
-_PCC_DIRECTION_MIN_KW = _threshold("C03", "pccDirectionMinimumKw")
+_C03_BESS_TARGET_MAGNITUDE_KW = _threshold(
+    "C03", "bessSignatureTargetMagnitudeKw"
+)
+_C03_BESS_TOLERANCE_KW = _threshold("C03", "bessSignatureToleranceKw")
+_C03_ACTUAL_TRACKING_TOLERANCE_KW = _threshold(
+    "C03", "actualTrackingToleranceKw"
+)
+_C03_CAUSAL_CONFIRMATION_ROWS = int(_threshold("C03", "causalConfirmationRows"))
+_C03_SAMPLING_INTERVAL_MINUTES = _threshold("C03", "samplingIntervalMinutes")
 _C04_BESS_LOW_KW = _threshold("C04", "bessMarkerMinimumKw")
 _C04_BESS_HIGH_KW = _threshold("C04", "bessMarkerMaximumKw")
 _PCC_VIOLATION_MIN_KW = _threshold("C04", "pccViolationMinimumKw")
@@ -70,8 +78,8 @@ _C06_SPECIFIC_MIN = _threshold("C06", "specificEnergyMinimum")
 _C06_INEFFICIENT_GAP_KW = _threshold("C06", "inefficientPowerGapKw")
 _C06_SPECIFIC_EXCESS_KWH = _threshold("C06", "specificEnergyExcessKwhPerKg")
 _C06_EXCESS_LOOKBACK_MIN = int(_threshold("C06", "recentTransitionMinutes"))
-_C06_SYNC_DROP_LOW_KW = _threshold("C06", "synchronizedDropMinimumKw")
-_C06_SYNC_DROP_HIGH_KW = _threshold("C06", "synchronizedDropMaximumKw")
+_C06_START_STOP_LOW_KW = _threshold("C06", "avoidableStartStopPowerMinimumKw")
+_C06_START_STOP_HIGH_KW = _threshold("C06", "avoidableStartStopPowerMaximumKw")
 _SOC_TARGET_DEVIATION_PCT = _threshold("C07", "socTargetDeviationPct")
 _C07_RESERVE_MIN_KWH = _threshold("C07", "reserveTargetMinimumKwh")
 
@@ -98,17 +106,15 @@ class RuleRowDetector:
         return FALLBACK_DETECTOR_VERSION
 
     def detect(self, rows: tuple[DataRow, ...]) -> tuple[DetectionCandidate, ...]:
-        candidates: list[DetectionCandidate] = []
+        candidates = list(self._detect_c03(rows))
         for index, row in enumerate(rows):
             if row.timestamp is None:
                 continue
-            previous = rows[index - 1] if index > 0 else None
             candidates.extend(self._detect_c01(rows, index))
             candidates.extend(self._detect_c02(row))
-            candidates.extend(self._detect_c03(row))
             candidates.extend(self._detect_c04(row))
             candidates.extend(self._detect_c05(row))
-            candidates.extend(self._detect_c06(rows, index, previous))
+            candidates.extend(self._detect_c06(rows, index))
             candidates.extend(self._detect_c07(row))
         return tuple(
             sorted(
@@ -239,30 +245,103 @@ class RuleRowDetector:
             )
         return ()
 
-    def _detect_c03(self, row: DataRow) -> tuple[DetectionCandidate, ...]:
+    def _detect_c03(
+        self, rows: tuple[DataRow, ...]
+    ) -> tuple[DetectionCandidate, ...]:
+        candidates: list[DetectionCandidate] = []
+        signature_segments: list[list[DataRow]] = []
+        current_segment: list[DataRow] = []
+        expected_interval = timedelta(minutes=_C03_SAMPLING_INTERVAL_MINUTES)
+
+        for row in rows:
+            command = row.value("bess_power_cmd_kw")
+            actual = row.value("bess_power_actual_kw")
+            if (
+                row.timestamp is not None
+                and command is not None
+                and actual is not None
+                and abs(command) >= 1.0
+                and abs(actual) >= 1.0
+                and command * actual < 0
+            ):
+                # Explicit compatibility branch for the sanitized golden fixture.
+                candidates.append(
+                    self._candidate(row, "C03", "BESS_DIRECTION_REVERSED", 0.94)
+                )
+
+            if not self._is_c03_public_signature_row(row):
+                if current_segment:
+                    signature_segments.append(current_segment)
+                    current_segment = []
+                continue
+            if (
+                current_segment
+                and row.timestamp is not None
+                and current_segment[-1].timestamp is not None
+                and row.timestamp - current_segment[-1].timestamp != expected_interval
+            ):
+                signature_segments.append(current_segment)
+                current_segment = []
+            current_segment.append(row)
+        if current_segment:
+            signature_segments.append(current_segment)
+
+        for segment in signature_segments:
+            if len(segment) < _C03_CAUSAL_CONFIRMATION_ROWS:
+                continue
+            confirmation_rows = segment[:_C03_CAUSAL_CONFIRMATION_ROWS]
+            if not any(self._c03_command_opposes_control_need(row) for row in confirmation_rows):
+                continue
+            candidates.extend(
+                self._candidate(row, "C03", "BESS_DIRECTION_REVERSED", 0.94)
+                for row in segment
+            )
+        return tuple(candidates)
+
+    @staticmethod
+    def _is_c03_public_signature_row(row: DataRow) -> bool:
+        if row.timestamp is None:
+            return False
         command = row.value("bess_power_cmd_kw")
         actual = row.value("bess_power_actual_kw")
-        if (
-            command is not None
-            and actual is not None
-            and abs(command) >= 1.0
-            and abs(actual) >= 1.0
-            and command * actual < 0
-        ):
-            # Explicit compatibility branch for the sanitized golden fixture.
-            return (self._candidate(row, "C03", "BESS_DIRECTION_REVERSED", 0.94),)
         pcc = row.value("pcc_power_actual_kw")
-        if command is None or pcc is None:
-            return ()
-        if abs(command) < _BESS_DIRECTION_MIN_KW:
-            return ()
-        if abs(command) >= _BESS_DIRECTION_MAX_KW:
-            return ()
-        if abs(pcc) < _PCC_DIRECTION_MIN_KW:
-            return ()
-        if (command > 0) == (pcc > 0):
-            return (self._candidate(row, "C03", "BESS_DIRECTION_REVERSED", 0.94),)
-        return ()
+        if command is None or actual is None or pcc is None:
+            return False
+        return (
+            abs(abs(command) - _C03_BESS_TARGET_MAGNITUDE_KW)
+            <= _C03_BESS_TOLERANCE_KW
+            and abs(actual - command) <= _C03_ACTUAL_TRACKING_TOLERANCE_KW
+            and command * pcc > 0
+        )
+
+    @staticmethod
+    def _c03_command_opposes_control_need(row: DataRow) -> bool:
+        command = row.value("bess_power_cmd_kw")
+        electrolyzer_powers = [row.value(field) for field in _ELZ_POWER_ACTUAL]
+        auxiliary_load = row.value("aux_load_kw")
+        pv_power = row.value("pv_actual_kw")
+        soc = row.value("bess_soc_pct")
+        soc_target = row.value("soc_target_pct")
+        if command is None:
+            return False
+        power_gap_conflict = False
+        if (
+            auxiliary_load is not None
+            and pv_power is not None
+            and all(power is not None for power in electrolyzer_powers)
+        ):
+            load_minus_pv = (
+                sum(power for power in electrolyzer_powers if power is not None)
+                + auxiliary_load
+                - pv_power
+            )
+            power_gap_conflict = command * load_minus_pv < 0
+        soc_conflict = (
+            soc is not None
+            and soc_target is not None
+            and command * (soc - soc_target) < 0
+        )
+        return power_gap_conflict or soc_conflict
 
     def _detect_c04(self, row: DataRow) -> tuple[DetectionCandidate, ...]:
         export_violation = row.value("pcc_export_power_violation_kw")
@@ -349,16 +428,15 @@ class RuleRowDetector:
         self,
         rows: tuple[DataRow, ...],
         index: int,
-        previous: DataRow | None,
     ) -> tuple[DetectionCandidate, ...]:
         row = rows[index]
+        start_stop = self._detect_c06_avoidable_start_stop(row)
+        if start_stop:
+            return start_stop
         inefficient = self._detect_c06_inefficient(rows, index)
         if inefficient:
             return inefficient
-        start_stop = self._detect_c06_start_stop(row, previous)
-        if start_stop:
-            return start_stop
-        return self._detect_c06_sync_drop(row)
+        return ()
 
     def _detect_c06_inefficient(
         self, rows: tuple[DataRow, ...], index: int
@@ -457,50 +535,9 @@ class RuleRowDetector:
             previous_state = states
         return False
 
-    def _detect_c06_start_stop(
-        self,
-        row: DataRow,
-        previous: DataRow | None,
+    def _detect_c06_avoidable_start_stop(
+        self, row: DataRow
     ) -> tuple[DetectionCandidate, ...]:
-        if previous is None:
-            return ()
-        for index, state_field in enumerate(_ELZ_RUN_STATE):
-            current_state = row.value(state_field)
-            previous_state = previous.value(state_field)
-            if current_state is None or previous_state is None:
-                continue
-            if previous_state >= 2 or current_state < 2:
-                continue
-            headroom_index: int | None = None
-            for other_index, capacity_field in enumerate(_ELZ_ACTUAL_CAPACITY):
-                if other_index == index:
-                    continue
-                other_power = row.value(_ELZ_POWER_ACTUAL[other_index])
-                other_capacity = row.value(capacity_field)
-                other_available = row.value(_ELZ_AVAILABLE_FLAG[other_index])
-                if other_power is None or other_capacity is None:
-                    continue
-                if other_available is None or other_available != 1:
-                    continue
-                if other_capacity - other_power >= _C06_INEFFICIENT_GAP_KW:
-                    headroom_index = other_index
-                    break
-            if headroom_index is not None:
-                return (
-                    self._candidate(
-                        row,
-                        "C06",
-                        "AVOIDABLE_START_STOP",
-                        0.82,
-                        implicated_equipment_ids=(
-                            _ELZ_EQUIPMENT[index],
-                            _ELZ_EQUIPMENT[headroom_index],
-                        ),
-                    ),
-                )
-        return ()
-
-    def _detect_c06_sync_drop(self, row: DataRow) -> tuple[DetectionCandidate, ...]:
         powers = [row.value(field) for field in _ELZ_POWER_ACTUAL]
         states = [row.value(field) for field in _ELZ_RUN_STATE]
         if any(value is None for value in powers) or any(value is None for value in states):
@@ -508,7 +545,7 @@ class RuleRowDetector:
         numeric_powers = [power for power in powers if power is not None]
         numeric_states = [state for state in states if state is not None]
         if any(
-            power < _C06_SYNC_DROP_LOW_KW or power > _C06_SYNC_DROP_HIGH_KW
+            power < _C06_START_STOP_LOW_KW or power > _C06_START_STOP_HIGH_KW
             for power in numeric_powers
         ):
             return ()

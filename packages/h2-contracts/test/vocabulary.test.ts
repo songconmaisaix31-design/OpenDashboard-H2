@@ -12,6 +12,7 @@ import {
   H2_OFFICIAL_FIELDS,
   deprecatedFieldName,
   submissionEquipmentTokensByCode,
+  submissionEquipmentTokensForEvent,
 } from '../src/index.ts'
 
 describe('official H2 vocabulary', () => {
@@ -77,11 +78,51 @@ describe('official H2 vocabulary', () => {
   it('versions C06 public-train calibration separately from physical constraints', () => {
     assert.equal(H2_IMPACT_FORMULAS.formulaVersion, 'impact-c06-v3')
     assert.equal(H2_IMPACT_FORMULAS.source.calibrationSplit, 'public_train')
+    assert.equal(H2_IMPACT_FORMULAS.source.competitionPackageVersion, 'public-v4.0')
     assert.match(H2_IMPACT_FORMULAS.source.heldOutPolicy, /acceptance-only/)
-    assert.deepEqual(H2_IMPACT_FORMULAS.classes.C06.subtypeRates, {
-      AVOIDABLE_START_STOP: 0.018,
-      INEFFICIENT_POWER_ALLOCATION: 0.022,
-    })
+    assert.match(H2_IMPACT_FORMULAS.source.sourceFiles.timeseries.sha256, /^[a-f0-9]{64}$/)
+    const c03 = H2_IMPACT_FORMULAS.classes.C03
+    assert.equal(c03.formulaVersion, 'impact-c03-v2')
+    assert.equal(
+      Number(c03.calibrationStatistics.aggregateDerivedSocTrackingGainKwPerPct).toFixed(3),
+      c03.socTrackingGainKwPerPct.toFixed(3),
+    )
+    assert(
+      Math.abs(
+        Number(c03.calibrationStatistics.calculatedImpactKwh) -
+        Number(c03.calibrationStatistics.referenceImpactKwh),
+      ) < 0.001,
+    )
+    assert.match(c03.heldOutPolicy, /acceptance-only/)
+    const { calibrationStatistics, subtypeRates } = H2_IMPACT_FORMULAS.classes.C06
+    assert.equal(calibrationStatistics.eventCount, 40)
+    for (const subtype of Object.keys(subtypeRates) as (keyof typeof subtypeRates)[]) {
+      const statistics = calibrationStatistics.subtypes[subtype]
+      const derivedRate =
+        Number(statistics.referenceImpactKwh) / Number(statistics.targetEnergyKwh)
+      assert(Math.abs(derivedRate - subtypeRates[subtype]) < 2e-10)
+      assert.equal(Number(statistics.calibratedRate), subtypeRates[subtype])
+      assert.equal(statistics.roundedReferenceMatchCount, statistics.eventCount)
+    }
     assert.match(H2_IMPACT_FORMULAS.classes.C06.rationale, /not physical/)
+  })
+
+  it('fails closed when dynamic equipment attribution is missing or invalid', () => {
+    assert.throws(
+      () => submissionEquipmentTokensForEvent('C01', []),
+      /attribution is invalid/,
+    )
+    assert.throws(
+      () => submissionEquipmentTokensForEvent('C02', [
+        { kind: 'ELECTROLYZER', id: 'ELZ99', displayName: 'unknown' },
+      ]),
+      /attribution is incomplete/,
+    )
+    assert.throws(
+      () => submissionEquipmentTokensForEvent('C06', [
+        { kind: 'ELECTROLYZER', id: 'ELZ01', displayName: 'one unit only' },
+      ]),
+      /attribution is invalid/,
+    )
   })
 })

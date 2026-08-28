@@ -31,6 +31,14 @@ class LightGbmRowDetector:
     ) -> None:
         if not feature_names or not class_map or not version:
             raise ValueError("LightGBM adapter requires features, classes, and a version.")
+        unsupported_dynamic_codes = {
+            code for code, _subtype in class_map.values() if code in {"C01", "C02", "C06"}
+        }
+        if unsupported_dynamic_codes:
+            raise ValueError(
+                "LightGBM adapter cannot attribute equipment for dynamic classes: "
+                + ", ".join(sorted(unsupported_dynamic_codes))
+            )
         if not 0 <= minimum_confidence <= 1:
             raise ValueError("minimum_confidence must be between zero and one.")
         self._booster = booster

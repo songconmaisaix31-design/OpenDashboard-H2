@@ -20,15 +20,27 @@ class SevenCodeDetector:
         candidates: list[DetectionCandidate] = []
         for code in vocabulary.anomaly_codes():
             subtype = vocabulary.subtypes_by_code()[code][0]
-            for _ in range(POLICIES[code].minimum_rows):
+            implicated = {
+                "C01": ("ELZ01", "ELZ02"),
+                "C02": ("ELZ01",),
+                "C06": ("ELZ01", "ELZ02", "ELZ03"),
+            }.get(code, ())
+            candidate_rows = (
+                rows[: POLICIES[code].minimum_rows]
+                if code == "C05"
+                else (row,) * POLICIES[code].minimum_rows
+            )
+            for candidate_row in candidate_rows:
+                assert candidate_row.timestamp is not None
                 candidates.append(
                     DetectionCandidate(
-                        row_index=row.index,
-                        timestamp=row.timestamp,
+                        row_index=candidate_row.index,
+                        timestamp=candidate_row.timestamp,
                         code=code,
                         subtype=subtype,
                         confidence=0.9,
                         detector_version=self.version,
+                        implicated_equipment_ids=implicated,
                     )
                 )
         return tuple(candidates)
@@ -64,6 +76,6 @@ def test_service_keeps_all_seven_classes_with_versioned_outputs(
 def test_threshold_and_aggregation_versions_are_frozen() -> None:
     thresholds = vocabulary.detection_thresholds()
 
-    assert thresholds["detectorVersion"] == "deterministic-c01-c07-v2"
-    assert thresholds["aggregationPolicyVersion"] == "h2-events-v1"
+    assert thresholds["detectorVersion"] == "deterministic-c01-c07-v3"
+    assert thresholds["aggregationPolicyVersion"] == "h2-events-v2"
     assert set(thresholds["classes"]) == set(vocabulary.anomaly_codes())

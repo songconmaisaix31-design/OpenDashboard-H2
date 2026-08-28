@@ -260,6 +260,29 @@ def affected_equipment_tokens_for_event(
     C01 and C02 carry event-specific electrolyzer identities. Other classes
     require the exact official token set, including all three units for C06.
     """
+    if code in {"C01", "C02", "C06"}:
+        equipment_ids = tuple(
+            item.get("id")
+            for item in affected_equipment
+            if isinstance(item.get("id"), str)
+        )
+        if len(equipment_ids) != len(affected_equipment):
+            raise VocabularyError(f"{code} equipment attribution is incomplete.")
+        implicated_ids = tuple(
+            equipment_id
+            for equipment_id in equipment_ids
+            if equipment_id in {"ELZ01", "ELZ02", "ELZ03"}
+        )
+        expected_context_ids = {"BESS01", "PCC01"} if code == "C01" else set()
+        context_ids = set(equipment_ids) - set(implicated_ids)
+        if (
+            not valid_implicated_equipment_ids(code, implicated_ids)
+            or context_ids != expected_context_ids
+        ):
+            raise VocabularyError(f"{code} equipment attribution is invalid.")
+        if code == "C06":
+            return affected_equipment_tokens_by_code()[code]
+
     event_tokens = tuple(
         dict.fromkeys(
             token
@@ -269,7 +292,19 @@ def affected_equipment_tokens_for_event(
     )
     if valid_affected_equipment_tokens(code, event_tokens):
         return event_tokens
+    if code in {"C01", "C02", "C06"}:
+        raise VocabularyError(f"{code} submission equipment attribution is invalid.")
     return affected_equipment_tokens_by_code()[code]
+
+
+def valid_implicated_equipment_ids(code: str, equipment_ids: tuple[str, ...]) -> bool:
+    """Validate event-specific electrolyzer attribution for dynamic classes."""
+    if len(equipment_ids) != len(set(equipment_ids)):
+        return False
+    if not set(equipment_ids).issubset({"ELZ01", "ELZ02", "ELZ03"}):
+        return False
+    expected_counts = {"C01": {2}, "C02": {1}, "C06": {2, 3}}
+    return len(equipment_ids) in expected_counts.get(code, set())
 
 
 def valid_affected_equipment_tokens(code: str, tokens: tuple[str, ...]) -> bool:
@@ -361,9 +396,9 @@ def deprecated_field_map() -> dict[str, dict[str, Any]]:
 @lru_cache(maxsize=1)
 def detection_thresholds() -> dict[str, Any]:
     thresholds = load_detection_thresholds()
-    if thresholds.get("detectorVersion") != "deterministic-c01-c07-v2":
+    if thresholds.get("detectorVersion") != "deterministic-c01-c07-v3":
         raise VocabularyError("Detection threshold version does not match the detector.")
-    if thresholds.get("aggregationPolicyVersion") != "h2-events-v1":
+    if thresholds.get("aggregationPolicyVersion") != "h2-events-v2":
         raise VocabularyError("Aggregation policy version does not match the service.")
     return thresholds
 
@@ -375,6 +410,11 @@ def impact_formulas() -> dict[str, Any]:
         raise VocabularyError("Impact formula schema version is unsupported.")
     if formulas.get("formulaVersion") != "impact-c06-v3":
         raise VocabularyError("C06 impact formula version does not match the service.")
+    c03 = formulas.get("classes", {}).get("C03", {})
+    if c03.get("formulaVersion") != "impact-c03-v2":
+        raise VocabularyError("C03 impact formula version does not match the service.")
+    if not isinstance(c03.get("socTrackingGainKwPerPct"), (int, float)):
+        raise VocabularyError("C03 impact formula requires a numeric SOC-tracking gain.")
     c06 = formulas.get("classes", {}).get("C06", {})
     if c06.get("targetField") != "ems_total_elz_target_kw":
         raise VocabularyError("C06 impact formula must use the canonical target field.")

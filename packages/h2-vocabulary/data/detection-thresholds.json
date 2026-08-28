@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "detectorVersion": "deterministic-c01-c07-v2",
-  "aggregationPolicyVersion": "h2-events-v1",
+  "detectorVersion": "deterministic-c01-c07-v3",
+  "aggregationPolicyVersion": "h2-events-v2",
   "sourcePolicy": "Runtime detector inputs are restricted to canonical time-series measurements; public label files are excluded from import and runtime detection.",
   "classes": {
     "C01": {
@@ -22,9 +22,25 @@
     },
     "C03": {
       "aggregation": {"minimumRows": 5, "confirmationRow": 5, "maximumGapIntervals": 1, "daily": false},
-      "bessDirectionMinimumKw": 350.0,
-      "bessDirectionMaximumKw": 425.0,
-      "pccDirectionMinimumKw": 350.0
+      "bessSignatureTargetMagnitudeKw": 400.0,
+      "bessSignatureToleranceKw": 1.0,
+      "actualTrackingToleranceKw": 1.0,
+      "causalConfirmationRows": 5,
+      "samplingIntervalMinutes": 1,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "eventCount": 40,
+        "inclusiveEventSampleCount": 2717,
+        "eventLengthRows": {"minimum": 36, "maximum": 90},
+        "qualifiedSignatureRunCount": 40,
+        "shortNonLabelRunCount": 3,
+        "shortNonLabelRunLengthRows": 1,
+        "causalGate": "Within the first five signature samples, the BESS command opposes the load-minus-PV power gap or the SOC target need; BESS actual tracks the command and PCC exchange has the same official sign.",
+        "finding": "The frozen marker plus causal gate matched all 40 public TRAIN C03 intervals at their inclusive boundaries; five-row persistence excluded the three one-row non-label marker runs.",
+        "limitation": "This public-v4.0 competition signature is empirical TRAIN-only calibration, not a universal physical law or proof of a specific hardware fault.",
+        "heldOutPolicy": "Validation is acceptance-only and does not set C03 thresholds or causal logic."
+      }
     },
     "C04": {
       "aggregation": {"minimumRows": 5, "confirmationRow": 3, "maximumGapIntervals": 1, "daily": false},
@@ -34,7 +50,7 @@
       "fixtureCommandGapKw": 500.0
     },
     "C05": {
-      "aggregation": {"minimumRows": 4, "confirmationRow": 4, "maximumGapIntervals": 1, "daily": true},
+      "aggregation": {"minimumRows": 4, "confirmationRow": 4, "maximumGapIntervals": 1, "daily": true, "requiresExactSamplingInterval": true, "exactSamplingIntervalMinutes": 1},
       "exportQuotaMinimumKwh": 4500.0,
       "importQuotaMinimumKwh": 20000.0,
       "bessSignatureTargetMagnitudeKw": 300.0,
@@ -61,6 +77,7 @@
           "minimumNoFalsePositiveRows": 4,
           "conclusion": "Four sustained one-minute samples are the minimum public-TRAIN confirmation with no false-positive segments under the frozen signature."
         },
+        "earlyWarningDefinition": "Early warning means confirmation before the first positive hard quota-excess measurement; because the event is backdated to its first causal BESS sample, firstDetectionTime is not required to precede event start.",
         "limitation": "The public-v4.0 competition signature is an empirical rule calibrated on public TRAIN, not a universally established physical law.",
         "heldOutPolicy": "Validation is acceptance-only and does not set C05 detection thresholds."
       }
@@ -71,8 +88,23 @@
       "inefficientPowerGapKw": 50.0,
       "specificEnergyExcessKwhPerKg": 2.0,
       "recentTransitionMinutes": 60,
-      "synchronizedDropMinimumKw": 390.0,
-      "synchronizedDropMaximumKw": 410.0
+      "avoidableStartStopPowerMinimumKw": 390.0,
+      "avoidableStartStopPowerMaximumKw": 410.0,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "avoidableStartStop": {
+          "eventCount": 20,
+          "inclusiveEventSampleCount": 3332,
+          "eventLengthRows": {"minimum": 105, "maximum": 236},
+          "signatureRunCount": 20,
+          "extraSignatureRunCount": 0,
+          "finding": "All three electrolyzers were in run_state >= 2 with actual power inside the inclusive 390-410 kW band throughout every labeled interval; the immediately preceding and following samples left the signature.",
+          "precedence": "The persistent AVOIDABLE_START_STOP signature is evaluated before transition-sensitive efficiency allocation so a recent state change cannot reclassify the opening rows."
+        },
+        "limitation": "This public-v4.0 persistence signature is empirical TRAIN-only calibration, not a universal start-stop model.",
+        "heldOutPolicy": "Validation is acceptance-only and does not set C06 thresholds, persistence, or subtype precedence."
+      }
     },
     "C07": {
       "aggregation": {"minimumRows": 5, "confirmationRow": 1, "maximumGapIntervals": 1, "daily": false},
