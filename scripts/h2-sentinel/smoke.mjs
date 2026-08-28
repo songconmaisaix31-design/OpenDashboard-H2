@@ -675,7 +675,7 @@ async function runLocalGoldenSmoke() {
       '/api/v1/h2-sentinel/assistant:ask',
       {
         runId: run.runId,
-        questionId: 'H2Q03',
+        questionId: 'Q03',
         eventId: c03.eventId,
         allowLlmRendering: false,
       },
