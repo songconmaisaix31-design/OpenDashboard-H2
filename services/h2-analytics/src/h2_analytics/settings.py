@@ -10,16 +10,17 @@ FEATURE_VERSION = "h2-features-v1"
 AGGREGATION_VERSION = "h2-events-v1"
 CONFIGURATION_VERSION = "official-constraints-v1"
 FALLBACK_DETECTOR_VERSION = "deterministic-c01-c07-v2"
-MAX_CSV_BYTES = 300 * 1024 * 1024
-MAX_CSV_ROWS = 600_000
+MAX_CSV_BYTES = 96 * 1024 * 1024
+MAX_CSV_ROWS = 180_000
 OFFICIAL_DATASET_ROW_COUNTS = {
     "train": 525_600,
     "validation": 129_600,
     "test": 172_800,
 }
-# The largest supplied CSV is reported at approximately 226 MiB. This
-# conservative floor makes the 300 MiB enforcement margin explicit.
-OFFICIAL_DATASET_SAFE_BYTES = 250 * 1024 * 1024
+OFFICIAL_SINGLE_IMPORT_BYTES = {
+    "validation": 58_368_123,
+    "test": 77_865_257,
+}
 
 
 @dataclass(frozen=True, slots=True)

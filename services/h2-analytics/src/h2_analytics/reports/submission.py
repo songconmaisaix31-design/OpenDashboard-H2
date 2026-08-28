@@ -46,7 +46,9 @@ def _submission_row(event: dict[str, Any]) -> dict[str, Any]:
         "severity": vocabulary.severity_by_code()[event["code"]],
         "primary_control_object": event["primaryControlObject"]["displayName"],
         "affected_equipment": ",".join(
-            vocabulary.affected_equipment_tokens_by_code()[event["code"]]
+            vocabulary.affected_equipment_tokens_for_event(
+                event["code"], event["affectedEquipment"]
+            )
         ),
         "confidence": event["confidence"],
         "evidence_json": json.dumps(evidence, ensure_ascii=False, separators=(",", ":")),

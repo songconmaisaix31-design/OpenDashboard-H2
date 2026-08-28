@@ -10,8 +10,10 @@ commands, expressions, credentials, or equipment-control requests.
 
 - The official 69-field vocabulary is the runtime source of truth.
 - The import boundary rejects public label columns, duplicate headers, unsafe
-  filenames, malformed CSV, files above 300 MiB, and datasets above 600,000
-  rows before analysis.
+  filenames, malformed CSV, files above 96 MiB, and datasets above 180,000
+  rows before analysis. Validation and test fit this single-import boundary;
+  train evaluation stays in the coordinator-owned offline UTC-day chunk/overfit
+  path.
 - The default `RuleRowDetector` covers C01-C07 without a model or LLM.
   Detection and aggregation thresholds are frozen in the versioned vocabulary.
 - Every class emits deterministic aggregation, diagnosis, evidence, impact,

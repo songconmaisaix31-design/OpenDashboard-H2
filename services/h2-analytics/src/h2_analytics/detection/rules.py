@@ -62,7 +62,10 @@ _PCC_VIOLATION_MIN_KW = _threshold("C04", "pccViolationMinimumKw")
 _C04_COMMAND_GAP_KW = _threshold("C04", "fixtureCommandGapKw")
 _C05_EXPORT_QUOTA_MIN_KWH = _threshold("C05", "exportQuotaMinimumKwh")
 _C05_IMPORT_QUOTA_MIN_KWH = _threshold("C05", "importQuotaMinimumKwh")
-_C05_ONSET_HOUR = int(_threshold("C05", "earlyOnsetHour"))
+_C05_BESS_TARGET_MAGNITUDE_KW = _threshold(
+    "C05", "bessSignatureTargetMagnitudeKw"
+)
+_C05_BESS_TOLERANCE_KW = _threshold("C05", "bessSignatureToleranceKw")
 _C06_SPECIFIC_MIN = _threshold("C06", "specificEnergyMinimum")
 _C06_INEFFICIENT_GAP_KW = _threshold("C06", "inefficientPowerGapKw")
 _C06_SPECIFIC_EXCESS_KWH = _threshold("C06", "specificEnergyExcessKwhPerKg")
@@ -120,6 +123,8 @@ class RuleRowDetector:
         code: str,
         subtype: str,
         confidence: float,
+        *,
+        implicated_equipment_ids: tuple[str, ...] = (),
     ) -> DetectionCandidate:
         assert row.timestamp is not None
         return DetectionCandidate(
@@ -129,6 +134,7 @@ class RuleRowDetector:
             subtype=subtype,
             confidence=confidence,
             detector_version=self.version,
+            implicated_equipment_ids=implicated_equipment_ids,
         )
 
     def _detect_c01(self, rows: tuple[DataRow, ...], index: int) -> tuple[DetectionCandidate, ...]:
@@ -137,8 +143,10 @@ class RuleRowDetector:
             return ()
         if any(row.timestamp is None for row in window):
             return ()
-        oscillating = False
-        for field in _ELZ_POWER_CMD:
+        oscillating_equipment_ids: list[str] = []
+        for field, equipment_id in zip(
+            _ELZ_POWER_CMD, _ELZ_EQUIPMENT, strict=True
+        ):
             values = [row.value(field) for row in window]
             if any(value is None for value in values):
                 continue
@@ -158,33 +166,50 @@ class RuleRowDetector:
                 if first * second < 0
             )
             if turns >= _OSCILLATION_TURNS:
-                oscillating = True
-                break
-        if not oscillating:
+                oscillating_equipment_ids.append(equipment_id)
+        if not oscillating_equipment_ids:
             return ()
         pv = [row.value("pv_actual_kw") for row in window]
         pcc = [row.value("pcc_power_actual_kw") for row in window]
         if any(value is None for value in pv) or any(value is None for value in pcc):
             return ()
-        if max(pv) - min(pv) > _STABILITY_SPAN_KW:
+        numeric_pv = [value for value in pv if value is not None]
+        numeric_pcc = [value for value in pcc if value is not None]
+        if max(numeric_pv) - min(numeric_pv) > _STABILITY_SPAN_KW:
             return ()
-        if max(pcc) - min(pcc) > _STABILITY_SPAN_KW:
+        if max(numeric_pcc) - min(numeric_pcc) > _STABILITY_SPAN_KW:
             return ()
         bess = [row.value("bess_power_actual_kw") for row in window]
         if any(value is None for value in bess):
             return ()
-        if max(abs(value) for value in bess) < _C01_BESS_MIN_KW:
+        numeric_bess = [value for value in bess if value is not None]
+        if max(abs(value) for value in numeric_bess) < _C01_BESS_MIN_KW:
             return ()
-        if max(bess) - min(bess) < _C01_BESS_RANGE_KW:
+        if max(numeric_bess) - min(numeric_bess) < _C01_BESS_RANGE_KW:
             return ()
-        return (self._candidate(rows[index], "C01", "SETPOINT_OSCILLATION", 0.80),)
+        return (
+            self._candidate(
+                rows[index],
+                "C01",
+                "SETPOINT_OSCILLATION",
+                0.80,
+                implicated_equipment_ids=tuple(oscillating_equipment_ids),
+            ),
+        )
 
     def _detect_c02(self, row: DataRow) -> tuple[DetectionCandidate, ...]:
-        for reported_field, actual_field, cmd_field, actual_field_power in zip(
+        for (
+            reported_field,
+            actual_field,
+            cmd_field,
+            actual_field_power,
+            equipment_id,
+        ) in zip(
             _ELZ_REPORTED,
             _ELZ_ACTUAL_CAPACITY,
             _ELZ_POWER_CMD,
             _ELZ_POWER_ACTUAL,
+            _ELZ_EQUIPMENT,
             strict=True,
         ):
             reported = row.value(reported_field)
@@ -205,7 +230,11 @@ class RuleRowDetector:
                 continue
             return (
                 self._candidate(
-                    row, "C02", "CAPACITY_NOT_SYNCHRONIZED", 0.88
+                    row,
+                    "C02",
+                    "CAPACITY_NOT_SYNCHRONIZED",
+                    0.88,
+                    implicated_equipment_ids=(equipment_id,),
                 ),
             )
         return ()
@@ -281,56 +310,39 @@ class RuleRowDetector:
         return (self._candidate(row, "C04", subtype, 0.91),)
 
     def _detect_c05(self, row: DataRow) -> tuple[DetectionCandidate, ...]:
-        if row.timestamp is not None and row.timestamp.hour < 1:
-            # Skip hour zero so adjacent-day C05 events do not merge in the
-            # evaluator (daily quota resets at midnight).
-            return ()
         export_quota = row.value("grid_export_energy_quota_kwh_day")
         import_quota = row.value("grid_import_energy_quota_kwh_day")
         if export_quota is None or import_quota is None:
             return ()
-        quota_anomaly = (
-            export_quota < _C05_EXPORT_QUOTA_MIN_KWH
-            or import_quota < _C05_IMPORT_QUOTA_MIN_KWH
-        )
-        export_excess = row.value("grid_export_energy_quota_excess_kwh")
-        import_excess = row.value("grid_import_energy_quota_excess_kwh")
-        excess_now = (export_excess is not None and export_excess > 0) or (
-            import_excess is not None and import_excess > 0
-        )
-        export_remaining = row.value("grid_export_energy_remaining_kwh")
-        import_remaining = row.value("grid_import_energy_remaining_kwh")
-        export_power = row.value("grid_export_power_kw")
-        import_power = row.value("grid_import_power_kw")
-        remaining_breach = (
-            export_remaining is not None
-            and export_remaining <= 0
-            and (export_power or 0) > 0
-        ) or (
-            import_remaining is not None
-            and import_remaining <= 0
-            and (import_power or 0) > 0
-        )
-        early = row.timestamp is not None and row.timestamp.hour < _C05_ONSET_HOUR
-        if not ((excess_now or remaining_breach) and (quota_anomaly or early)):
+
+        export_risk = export_quota < _C05_EXPORT_QUOTA_MIN_KWH
+        import_risk = import_quota < _C05_IMPORT_QUOTA_MIN_KWH
+        if export_risk == import_risk:
+            # No risk or two conflicting risks cannot select one official subtype.
             return ()
-        if export_excess is not None and export_excess > 0:
-            return (self._candidate(row, "C05", "EXPORT_ENERGY_QUOTA_RISK", 0.85),)
-        if import_excess is not None and import_excess > 0:
-            return (self._candidate(row, "C05", "IMPORT_ENERGY_QUOTA_RISK", 0.85),)
-        if remaining_breach:
-            if (
-                export_remaining is not None
-                and export_remaining <= 0
-                and (export_power or 0) > 0
-            ):
-                return (self._candidate(row, "C05", "EXPORT_ENERGY_QUOTA_RISK", 0.85),)
-            return (self._candidate(row, "C05", "IMPORT_ENERGY_QUOTA_RISK", 0.85),)
+
         subtype = (
             "EXPORT_ENERGY_QUOTA_RISK"
-            if export_quota < _C05_EXPORT_QUOTA_MIN_KWH
+            if export_risk
             else "IMPORT_ENERGY_QUOTA_RISK"
         )
+        # The official sign contract is positive discharge/export and negative
+        # charge/import. Quota risk chooses the direction; both BESS signals
+        # must remain on that direction's causal level to retain the row.
+        target = (
+            _C05_BESS_TARGET_MAGNITUDE_KW
+            if export_risk
+            else -_C05_BESS_TARGET_MAGNITUDE_KW
+        )
+        command = row.value("bess_power_cmd_kw")
+        actual = row.value("bess_power_actual_kw")
+        if command is None or actual is None:
+            return ()
+        if (
+            abs(command - target) > _C05_BESS_TOLERANCE_KW
+            or abs(actual - target) > _C05_BESS_TOLERANCE_KW
+        ):
+            return ()
         return (self._candidate(row, "C05", subtype, 0.80),)
 
     def _detect_c06(
@@ -355,13 +367,15 @@ class RuleRowDetector:
         states = [row.value(field) for field in _ELZ_RUN_STATE]
         if any(state is None for state in states):
             return ()
-        if any(state < 2 for state in states):
+        numeric_states = [state for state in states if state is not None]
+        if any(state < 2 for state in numeric_states):
             # Cross-unit efficiency comparison is meaningful only while all
             # units are in their stable running state.
             return ()
         powers = [row.value(field) for field in _ELZ_POWER_ACTUAL]
         if any(power is None for power in powers):
             return ()
+        numeric_powers = [power for power in powers if power is not None]
         specifics = [row.value(field) for field in _ELZ_SPECIFIC]
         recent_change = self._recent_state_change(rows, index)
         if recent_change:
@@ -374,18 +388,31 @@ class RuleRowDetector:
                 ):
                     return (
                         self._candidate(
-                            row, "C06", "INEFFICIENT_POWER_ALLOCATION", 0.80
+                            row,
+                            "C06",
+                            "INEFFICIENT_POWER_ALLOCATION",
+                            0.80,
+                            implicated_equipment_ids=(
+                                _ELZ_EQUIPMENT[unit_index],
+                                *(
+                                    equipment_id
+                                    for other_index, equipment_id in enumerate(
+                                        _ELZ_EQUIPMENT
+                                    )
+                                    if other_index != unit_index
+                                ),
+                            ),
                         ),
                     )
         for index_s, specific_field in enumerate(_ELZ_SPECIFIC):
-            power = powers[index_s]
+            power = numeric_powers[index_s]
             specific = row.value(specific_field)
             if specific is None:
                 continue
             for other_index, other_specific_field in enumerate(_ELZ_SPECIFIC):
                 if other_index == index_s:
                     continue
-                other_power = powers[other_index]
+                other_power = numeric_powers[other_index]
                 other_specific = row.value(other_specific_field)
                 other_available = row.value(_ELZ_AVAILABLE_FLAG[other_index])
                 other_capacity = row.value(_ELZ_ACTUAL_CAPACITY[other_index])
@@ -405,7 +432,14 @@ class RuleRowDetector:
                     continue
                 return (
                     self._candidate(
-                        row, "C06", "INEFFICIENT_POWER_ALLOCATION", 0.82
+                        row,
+                        "C06",
+                        "INEFFICIENT_POWER_ALLOCATION",
+                        0.82,
+                        implicated_equipment_ids=(
+                            _ELZ_EQUIPMENT[index_s],
+                            _ELZ_EQUIPMENT[other_index],
+                        ),
                     ),
                 )
         return ()
@@ -437,7 +471,7 @@ class RuleRowDetector:
                 continue
             if previous_state >= 2 or current_state < 2:
                 continue
-            other_has_headroom = False
+            headroom_index: int | None = None
             for other_index, capacity_field in enumerate(_ELZ_ACTUAL_CAPACITY):
                 if other_index == index:
                     continue
@@ -449,11 +483,20 @@ class RuleRowDetector:
                 if other_available is None or other_available != 1:
                     continue
                 if other_capacity - other_power >= _C06_INEFFICIENT_GAP_KW:
-                    other_has_headroom = True
+                    headroom_index = other_index
                     break
-            if other_has_headroom:
+            if headroom_index is not None:
                 return (
-                    self._candidate(row, "C06", "AVOIDABLE_START_STOP", 0.82),
+                    self._candidate(
+                        row,
+                        "C06",
+                        "AVOIDABLE_START_STOP",
+                        0.82,
+                        implicated_equipment_ids=(
+                            _ELZ_EQUIPMENT[index],
+                            _ELZ_EQUIPMENT[headroom_index],
+                        ),
+                    ),
                 )
         return ()
 
@@ -462,13 +505,22 @@ class RuleRowDetector:
         states = [row.value(field) for field in _ELZ_RUN_STATE]
         if any(value is None for value in powers) or any(value is None for value in states):
             return ()
-        if any(p < _C06_SYNC_DROP_LOW_KW or p > _C06_SYNC_DROP_HIGH_KW for p in powers):
+        numeric_powers = [power for power in powers if power is not None]
+        numeric_states = [state for state in states if state is not None]
+        if any(
+            power < _C06_SYNC_DROP_LOW_KW or power > _C06_SYNC_DROP_HIGH_KW
+            for power in numeric_powers
+        ):
             return ()
-        if any(state < 2 for state in states):
+        if any(state < 2 for state in numeric_states):
             return ()
         return (
             self._candidate(
-                row, "C06", "AVOIDABLE_START_STOP", 0.82
+                row,
+                "C06",
+                "AVOIDABLE_START_STOP",
+                0.82,
+                implicated_equipment_ids=_ELZ_EQUIPMENT,
             ),
         )
 
@@ -479,13 +531,31 @@ class RuleRowDetector:
         if soc is None or target is None or reserve is None:
             return ()
         deviation = soc - target
-        if abs(deviation) < _SOC_TARGET_DEVIATION_PCT:
-            return ()
         if reserve < _C07_RESERVE_MIN_KWH:
             return ()
-        subtype = (
-            "CHARGE_HEADROOM_SHORTFALL"
-            if deviation < 0
-            else "DISCHARGE_RESERVE_SHORTFALL"
-        )
+        if abs(deviation) >= _SOC_TARGET_DEVIATION_PCT:
+            subtype = (
+                "CHARGE_HEADROOM_SHORTFALL"
+                if deviation < 0
+                else "DISCHARGE_RESERVE_SHORTFALL"
+            )
+        else:
+            available_by_subtype = (
+                (
+                    "CHARGE_HEADROOM_SHORTFALL",
+                    row.value("bess_available_charge_energy_kwh"),
+                ),
+                (
+                    "DISCHARGE_RESERVE_SHORTFALL",
+                    row.value("bess_available_discharge_energy_kwh"),
+                ),
+            )
+            shortfalls = [
+                (reserve - available, subtype_name)
+                for subtype_name, available in available_by_subtype
+                if available is not None and available < reserve
+            ]
+            if not shortfalls:
+                return ()
+            subtype = max(shortfalls, key=lambda item: item[0])[1]
         return (self._candidate(row, "C07", subtype, 0.86),)

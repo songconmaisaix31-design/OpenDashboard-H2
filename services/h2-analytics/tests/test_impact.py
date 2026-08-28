@@ -1,9 +1,7 @@
 """Impact-calculator unit tests.
 
 These exercise `ImpactCalculator` directly against hand-built windows so the
-integration arithmetic is pinned independently of detection thresholds. A
-sampling interval of 60 minutes is used throughout, which makes the kW->kWh
-integration factor exactly 1.0 and keeps every expectation readable.
+integration arithmetic is pinned independently of detection thresholds.
 """
 
 from __future__ import annotations
@@ -13,6 +11,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from h2_analytics import vocabulary
 from h2_analytics.events import EventWindow
 from h2_analytics.impact import ImpactCalculator
 from h2_analytics.impact.calculators import DECLARED_IMPACT_METRICS
@@ -61,7 +60,7 @@ def test_every_code_reports_its_declared_metric_and_unit() -> None:
         "C04": _window("C04", [_row(1, pcc_export_power_violation_kw=0.0,
                                     pcc_import_power_violation_kw=0.0)]),
         "C05": _window("C05", [_row(1, grid_export_energy_quota_excess_kwh=0.0)]),
-        "C06": _window("C06", [_row(1)]),
+        "C06": _window("C06", [_row(1)], subtype="AVOIDABLE_START_STOP"),
         "C07": _window("C07", [_row(1, bess_available_discharge_energy_kwh=0.0,
                                     bess_regulation_reserve_target_kwh=0.0)]),
     }
@@ -172,8 +171,78 @@ def test_c07_charge_subtype_reads_the_charge_headroom_field() -> None:
     assert _calculate(discharge).value == pytest.approx(0.0)
 
 
+@pytest.mark.parametrize(
+    ("subtype", "rate", "sampling_interval_minutes", "targets"),
+    [
+        ("AVOIDABLE_START_STOP", 0.018, 5.0, (400.0, 850.0, 1200.0)),
+        (
+            "INEFFICIENT_POWER_ALLOCATION",
+            0.022,
+            2.5,
+            (300.0, 675.0, 900.0, 1500.0),
+        ),
+    ],
+)
+def test_c06_integrates_varying_targets_for_every_inclusive_sample(
+    subtype: str,
+    rate: float,
+    sampling_interval_minutes: float,
+    targets: tuple[float, ...],
+) -> None:
+    window = _window(
+        "C06",
+        [
+            _row(index, ems_total_elz_target_kw=target)
+            for index, target in enumerate(targets, start=1)
+        ],
+        subtype=subtype,
+    )
+
+    calculation = ImpactCalculator().calculate(
+        window=window,
+        sampling_interval_minutes=sampling_interval_minutes,
+    )
+
+    expected = sum(targets) * rate * sampling_interval_minutes / 60
+    assert calculation.value == pytest.approx(expected)
+    assert calculation.formula_version == "impact-c06-v3"
+    assert any("inclusive event rows" in item for item in calculation.assumptions)
+
+
+def test_c06_missing_target_contributes_zero_without_rounding_other_rows() -> None:
+    window = _window(
+        "C06",
+        [
+            _row(1, ems_total_elz_target_kw=333.333),
+            _row(2, ems_total_elz_target_kw=None),
+            _row(3, ems_total_elz_target_kw=777.777),
+        ],
+        subtype="INEFFICIENT_POWER_ALLOCATION",
+    )
+
+    calculation = ImpactCalculator().calculate(
+        window=window,
+        sampling_interval_minutes=7.0,
+    )
+    expected = (333.333 + 777.777) * 0.022 * 7.0 / 60
+
+    assert calculation.value == pytest.approx(expected)
+    assert calculation.value != round(expected, 3)
+    assert any("missing EMS target" in item for item in calculation.assumptions)
+
+
+def test_c06_formula_config_declares_train_calibration_and_held_out_policy() -> None:
+    config = vocabulary.impact_formulas()
+
+    assert config["formulaVersion"] == "impact-c06-v3"
+    assert config["source"]["calibrationSplit"] == "public_train"
+    assert "acceptance-only" in config["source"]["heldOutPolicy"]
+    assert "not physical" in config["classes"]["C06"]["rationale"]
+
+
 def test_missing_inputs_yield_zero_rather_than_raising() -> None:
     """A blind test set will contain gaps; impact must degrade, not crash."""
     for code in DECLARED_IMPACT_METRICS:
-        calculation = _calculate(_window(code, [_row(1)]))
+        subtype = "AVOIDABLE_START_STOP" if code == "C06" else "TEST_SUBTYPE"
+        calculation = _calculate(_window(code, [_row(1)], subtype=subtype))
         assert calculation.value == pytest.approx(0.0), code

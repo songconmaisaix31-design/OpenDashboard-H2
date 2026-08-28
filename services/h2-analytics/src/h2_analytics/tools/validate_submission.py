@@ -37,10 +37,11 @@ def validate_submission_text(text: str) -> dict[str, Any]:
             vocabulary.primary_control_object_by_code().get(code)
         ):
             raise ValueError(f"row {index} has an invalid primary control object")
-        expected_equipment = ",".join(
-            vocabulary.affected_equipment_tokens_by_code().get(code, ())
-        )
-        if row["affected_equipment"] != expected_equipment:
+        equipment_tokens = tuple(row["affected_equipment"].split(","))
+        if (
+            any(token.strip() != token for token in equipment_tokens)
+            or not vocabulary.valid_affected_equipment_tokens(code, equipment_tokens)
+        ):
             raise ValueError(f"row {index} has invalid affected equipment")
         confidence = float(row["confidence"])
         if not 0 <= confidence <= 1:

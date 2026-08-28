@@ -60,6 +60,7 @@ export type {
   H2DeprecatedFieldMapping,
   H2EquipmentEntry,
   H2FieldDefinition,
+  H2ImpactFormulaConfig,
   H2OfficialSeverity,
 } from './vocabulary.ts'
 export {
@@ -67,6 +68,7 @@ export {
   H2_ASSISTANT_QUESTIONS_ZH,
   H2_DEPRECATED_FIELD_MAPPINGS,
   H2_EQUIPMENT,
+  H2_IMPACT_FORMULAS,
   H2_OFFICIAL_FIELDS,
   anomalyTaxonomyByCode,
   deprecatedFieldName,
@@ -74,7 +76,9 @@ export {
   equipmentNameForRef,
   fieldByName,
   submissionEquipmentTokensByCode,
+  submissionEquipmentTokensForEvent,
   toH2DatasetField,
+  validSubmissionEquipmentTokens,
 } from './vocabulary.ts'
 export type {
   H2DatasetField,

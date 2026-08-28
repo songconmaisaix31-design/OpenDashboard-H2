@@ -3,23 +3,21 @@ from __future__ import annotations
 import statistics
 from dataclasses import dataclass
 
+from h2_analytics import vocabulary
 from h2_analytics.events import EventWindow
 from h2_analytics.models import DataRow
-from h2_analytics.vocabulary import efficiency_curve_by_equipment
 
 _ELZ_IDS = ("1", "2", "3")
 _ELZ_POWER_ACTUAL = tuple(f"elz{index}_power_actual_kw" for index in _ELZ_IDS)
 _ELZ_POWER_CMD = tuple(f"elz{index}_power_cmd_kw" for index in _ELZ_IDS)
-_ELZ_SPECIFIC = tuple(f"elz{index}_specific_energy_kwh_per_kg" for index in _ELZ_IDS)
-_ELZ_AVAILABLE_FLAG = tuple(f"elz{index}_available_flag" for index in _ELZ_IDS)
-_ELZ_ACTUAL_CAPACITY = tuple(
-    f"elz{index}_actual_available_capacity_kw" for index in _ELZ_IDS
-)
-_ELZ_EQUIPMENT = ("ELZ01", "ELZ02", "ELZ03")
-
-RATED_CAPACITY_KW = 1_000.0
-MIN_STABLE_KW = 300.0
-_EPSILON = 1e-9
+_C06_CONFIG = vocabulary.impact_formulas()
+_C06_FORMULA_VERSION = str(_C06_CONFIG["formulaVersion"])
+_C06_FORMULA = _C06_CONFIG["classes"]["C06"]
+_C06_TARGET_FIELD = str(_C06_FORMULA["targetField"])
+_C06_RATE_BY_SUBTYPE = {
+    str(subtype): float(rate)
+    for subtype, rate in _C06_FORMULA["subtypeRates"].items()
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +35,7 @@ DECLARED_IMPACT_METRICS = {
     "C03": ("abnormal_grid_exchange_energy_kwh", "impact-c03-v1"),
     "C04": ("pcc_power_limit_violation_energy_kwh", "impact-c04-v1"),
     "C05": ("grid_energy_quota_deviation_kwh", "impact-c05-v1"),
-    "C06": ("extra_energy_consumption_kwh", "impact-c06-v1"),
+    "C06": ("extra_energy_consumption_kwh", _C06_FORMULA_VERSION),
     "C07": ("bess_regulation_reserve_shortfall_kwh", "impact-c07-v1"),
 }
 
@@ -186,22 +184,25 @@ class ImpactCalculator:
     def _calculate_c06(
         window: EventWindow, sampling_interval_minutes: float
     ) -> ImpactCalculation:
-        extra: list[float] = []
-        for row in window.rows:
-            actual_power = _elz_total_power(row)
-            h2_target = _elz_hydrogen_kgph(row)
-            if actual_power is None or h2_target is None:
-                continue
-            reference_power = _efficient_reference_power(row, h2_target)
-            extra.append(max(actual_power - reference_power, 0.0))
+        rate = _C06_RATE_BY_SUBTYPE.get(window.subtype)
+        if rate is None:
+            raise ValueError(f"Unsupported C06 subtype: {window.subtype}")
+        targets = [
+            target
+            for row in window.rows
+            if (target := row.value(_C06_TARGET_FIELD)) is not None
+        ]
         return ImpactCalculation(
             "extra_energy_consumption_kwh",
-            sum(extra) * sampling_interval_minutes / 60,
+            sum(target * rate * sampling_interval_minutes / 60 for target in targets),
             "kWh",
-            "impact-c06-v1",
+            _C06_FORMULA_VERSION,
             (
-                "Reference allocates the same hydrogen output to the most efficient available units.",
-                "Extra consumption is the integrated gap between actual and reference electrical power.",
+                str(_C06_FORMULA["formula"]),
+                str(_C06_FORMULA["rationale"]),
+                str(_C06_CONFIG["source"]["heldOutPolicy"]),
+                "Rows with a missing EMS target contribute no estimated impact.",
+                str(_C06_FORMULA["roundingPolicy"]),
             ),
         )
 
@@ -251,68 +252,3 @@ def _export_import_violation_kw(row: DataRow) -> tuple[float, float]:
         else 0.0
     )
     return export_violation, import_violation
-
-
-def _elz_total_power(row: DataRow) -> float | None:
-    values = [row.value(field) for field in _ELZ_POWER_ACTUAL]
-    if any(value is None for value in values):
-        return None
-    return sum(value for value in values if value is not None)
-
-
-def _elz_hydrogen_kgph(row: DataRow) -> float | None:
-    total = 0.0
-    for actual_field, specific_field in zip(
-        _ELZ_POWER_ACTUAL, _ELZ_SPECIFIC, strict=True
-    ):
-        power = row.value(actual_field)
-        specific = row.value(specific_field)
-        if power is None or specific is None or specific <= 0:
-            continue
-        total += power / specific
-    return total
-
-
-def _efficient_reference_power(row: DataRow, h2_target: float) -> float:
-    """Reference electrical power for the same hydrogen output.
-
-    Loads the available units at their efficiency-curve points in ascending
-    specific-energy order (the "efficient allocation"), keeping each assignment
-    above the minimum stable power. The curve points are the official
-    efficiency-curves vocabulary (10_electrolyzer_efficiency_curves.csv).
-    """
-    curves = efficiency_curve_by_equipment()
-    points_by_unit: list[tuple[float, float, float]] = []
-    for actual_field, capacity_field, available_field, equipment_id in zip(
-        _ELZ_POWER_ACTUAL,
-        _ELZ_ACTUAL_CAPACITY,
-        _ELZ_AVAILABLE_FLAG,
-        _ELZ_EQUIPMENT,
-        strict=True,
-    ):
-        available = row.value(available_field)
-        capacity = row.value(capacity_field)
-        if available is None or available != 1 or capacity is None:
-            continue
-        points = curves.get(equipment_id)
-        if not points:
-            continue
-        capacity_kw = min(capacity, RATED_CAPACITY_KW)
-        for point in points:
-            specific = float(point["specific_energy_kwh_per_kg"])
-            power = float(point["power_kw"])
-            points_by_unit.append((specific, power, capacity_kw))
-    points_by_unit.sort(key=lambda item: (item[0], item[1]))
-    remaining = h2_target
-    reference_power = 0.0
-    for specific, power_kw, capacity_kw in points_by_unit:
-        if remaining <= _EPSILON:
-            break
-        max_h2 = min(capacity_kw, power_kw) / specific
-        assigned_h2 = min(remaining, max_h2)
-        assigned_power = assigned_h2 * specific
-        if assigned_power > 0 and assigned_power < MIN_STABLE_KW:
-            continue
-        reference_power += assigned_power
-        remaining -= assigned_h2
-    return reference_power

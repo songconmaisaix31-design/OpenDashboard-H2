@@ -3,7 +3,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import re
 import statistics
+import unicodedata
 from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
@@ -32,17 +34,50 @@ FORBIDDEN_LABEL_FIELDS = frozenset(
     {
         "is_anomaly",
         "event_id",
+        "pred_event_id",
+        "eventid",
+        "label_event_id",
         "anomaly_code",
+        "event_code",
+        "code",
         "anomaly_subtype",
+        "anomaly_name",
         "severity",
+        "confidence",
         "start_time",
+        "starttime",
+        "event_start_time",
         "end_time",
+        "endtime",
+        "event_end_time",
+        "ground_truth",
+        "ground_truth_label",
+        "event_label",
         "primary_control_object",
         "affected_equipment",
         "root_cause",
         "recommended_action",
+        "evidence_json",
+        "primary_impact_metric",
+        "primary_impact_metric_cn",
+        "estimated_impact_value",
+        "first_detection_time",
+        "requires_human_confirmation",
+        "detection_expectation",
+        "事件id",
+        "事件编号",
+        "异常事件id",
+        "异常编码",
+        "异常类别",
+        "异常类型",
+        "开始时间",
+        "事件开始时间",
+        "结束时间",
+        "事件结束时间",
     }
 )
+_CAMEL_CASE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_HEADER_SEPARATORS = re.compile(r"[\s./-]+")
 
 
 class CsvImportError(ValueError):
@@ -59,16 +94,18 @@ class DatasetLoader:
 
     def import_csv(self, *, filename: str, text: str) -> ImportedDataset:
         safe_filename = _validate_filename(filename)
+        if "\x00" in text:
+            raise CsvImportError("import.invalid_text", "CSV contains a NUL byte.")
         encoded = text.encode("utf-8")
         if len(encoded) > MAX_CSV_BYTES:
             raise CsvImportError(
                 "import.too_large",
                 f"CSV exceeds the {MAX_CSV_BYTES}-byte in-memory import limit.",
             )
-        if "\x00" in text:
-            raise CsvImportError("import.invalid_text", "CSV contains a NUL byte.")
-
         fingerprint = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+        # The parser consumes the caller-owned text. Do not retain a second
+        # full-size byte buffer while materializing the bounded row model.
+        del encoded
         mode = "FIXTURE" if fingerprint == FIXTURE_FINGERPRINT else "LIVE_ANALYSIS"
         reader = csv.reader(io.StringIO(text, newline=""), strict=True)
         try:
@@ -89,7 +126,9 @@ class DatasetLoader:
                 tuple(duplicates),
             )
 
-        forbidden_fields = tuple(sorted(FORBIDDEN_LABEL_FIELDS.intersection(headers)))
+        forbidden_fields = tuple(
+            sorted(header for header in headers if _is_forbidden_label_header(header))
+        )
         if forbidden_fields:
             raise CsvImportError(
                 "import.label_columns_forbidden",
@@ -102,11 +141,6 @@ class DatasetLoader:
             parsed_rows, parse_counts = _parse_rows(headers, reader)
         except csv.Error as error:
             raise CsvImportError("import.malformed_csv", "CSV syntax is malformed.") from error
-        if len(parsed_rows) > MAX_CSV_ROWS:
-            raise CsvImportError(
-                "import.too_many_rows",
-                f"CSV exceeds the {MAX_CSV_ROWS}-row in-memory import limit.",
-            )
         timestamps = [row.timestamp for row in parsed_rows if row.timestamp is not None]
         interval_minutes = _sampling_interval_minutes(timestamps)
         start_time, end_time = _time_range(timestamps)
@@ -171,6 +205,23 @@ def _validate_filename(filename: str) -> str:
     return candidate
 
 
+def _normalize_header(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value.strip())
+    normalized = _CAMEL_CASE_BOUNDARY.sub("_", normalized)
+    return _HEADER_SEPARATORS.sub("_", normalized.casefold())
+
+
+def _is_forbidden_label_header(header: str) -> bool:
+    normalized = _normalize_header(header)
+    return (
+        normalized in FORBIDDEN_LABEL_FIELDS
+        or normalized == "label"
+        or normalized.startswith("label_")
+        or normalized.endswith("_label")
+        or normalized.startswith("ground_truth_")
+    )
+
+
 def _parse_rows(
     headers: tuple[str, ...],
     body: Any,
@@ -183,6 +234,11 @@ def _parse_rows(
     for index, cells in enumerate(body, start=1):
         if not any(cell.strip() for cell in cells):
             continue
+        if len(parsed) >= MAX_CSV_ROWS:
+            raise CsvImportError(
+                "import.too_many_rows",
+                f"CSV exceeds the {MAX_CSV_ROWS}-row in-memory import limit.",
+            )
         if len(cells) != len(headers):
             malformed_rows += 1
         record = {

@@ -77,10 +77,12 @@ are emitted for every class. `LightGbmRowDetector` remains an injection seam
 for an already-loaded, approved booster and never accepts a user-supplied model
 path; the default and no-LLM paths remain deterministic.
 
-In-memory imports are bounded at 300 MiB and 600,000 rows, which covers the
-reported official train, validation, and test sizes with an explicit margin.
-The limits are enforced before analysis; this is a local-runtime capability,
-not an organizer-score or production-performance claim.
+Single in-memory imports are bounded at 96 MiB and 180,000 rows. This accepts
+the supplied validation and test files while rejecting the larger train file
+during iteration before its rows are fully materialized. Train evaluation must
+use the coordinator-owned offline UTC-day chunk/overfit path; it is not accepted
+as one Web/service request. These are enforced local-runtime boundaries, not
+organizer-score or production-performance claims.
 
 ## Reuse decisions
 

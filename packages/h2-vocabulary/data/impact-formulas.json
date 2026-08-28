@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "formulaVersion": "impact-c06-v3",
+  "source": {
+    "calibrationSplit": "public_train",
+    "derivation": "Independent read-only calibration from the public TRAIN split only.",
+    "heldOutPolicy": "Held-out validation is acceptance-only and is never used to set rates."
+  },
+  "classes": {
+    "C06": {
+      "targetField": "ems_total_elz_target_kw",
+      "formula": "sum(ems_total_elz_target_kw * subtypeRate * samplingIntervalMinutes / 60) over inclusive event rows",
+      "subtypeRates": {
+        "AVOIDABLE_START_STOP": 0.018,
+        "INEFFICIENT_POWER_ALLOCATION": 0.022
+      },
+      "roundingPolicy": "Retain full precision during calculation; round only at export.",
+      "rationale": "Rates are empirical public-TRAIN calibration coefficients, not physical limits or constraints."
+    }
+  }
+}
