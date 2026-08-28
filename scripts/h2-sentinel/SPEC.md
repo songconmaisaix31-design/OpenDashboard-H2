@@ -55,16 +55,50 @@ available only from the two explicit, equivalent `/h2-sentinel` and
 
 ## Verification
 
-Run root npm checks (92 repository tests), H2 checks (60 focused tests, five
-assembled QA groups, nine launcher/composition tests, and the 684-module
-production build), locked `uv` checks and 32 Python tests, golden and submission
-validation, all nine launcher fixture/local/failure/shutdown smoke scenarios,
-visual checks at desktop and narrow widths, `git diff --check`, and the H6
-write-set audit before handoff.
+The latest integrated pre-documentation baseline passed 132 repository tests,
+117 focused H2 tests, 75 H2 contract QA tests, five static-asset QA groups, six
+assembled-runtime QA groups, and nine launcher/composition tests. The locked
+Python suite passed 169 tests, Ruff, and Mypy across 45 source files. The
+686-module production build emitted CSS at 55.13 kB / 10.83 kB gzip, the H2
+chart renderer at 175.93 kB / 58.40 kB gzip, main at 386.83 kB / 116.50 kB
+gzip, and the H2 chart runtime at 400.26 kB / 136.36 kB gzip, with no
+greater-than-500-kB warning. `npm run h2:smoke` passed all nine scenarios.
 
-The verified bundle remains 900.01 kB minified / 297.15 kB gzip for JavaScript
-and 47.44 kB for CSS, so Vite's greater-than-500-kB warning remains an accepted
-limitation rather than a passing performance claim. H2 is read-only, uses no LLM
-for the verified deterministic path, and executes no control action. Verification
-does not establish official data, validation metrics, organizer score,
-deployment, remote CI, formal screenshots, or general network isolation.
+The read-only official-package audit matched all data/material entries plus the
+workbook, or 21 of 24 total manifest entries. Three top-level
+requirement/README documents differ, so this evidence does not describe the
+package as pristine. Local public-data verification produced TP=69, FP=3,
+FN=1, precision 0.9583333333, recall 0.9857142857, F1 0.9718309859, mean
+first-detection delay 7.7826 minutes, mean start/end absolute error
+3.3623/2.7971 minutes, and correct classification for all 69 matched events.
+Per-code F1 was 0.9 for C01, 0.90909 for C04, and 1.0 for
+C02/C03/C05/C06/C07. The disjoint train-last-90-day sentinel was green with
+absolute F1 delta 0.0120399818 (validation 0.97183 versus train 0.98387).
+
+The full public test smoke verified 172,800 rows and 69 detector fields,
+produced 98 events (C01=10, C02=14, C03=14, C04=17, C05=14, C06=15,
+C07=14), exported exactly 16 columns and 98 rows, and passed the checker. The
+directed C04 slice verified the complete source and selected VA0034 with 117
+detector rows while keeping labels out of detector input. Two scripted local
+demo executions and the independent receipt validator passed with all
+unsupported-claim flags false. Desktop and iPhone 12 visual QA covered all six
+Fixture routes; Local empty/loading/error theme tokens were corrected. The
+visual evidence remains local and Fixture-bounded.
+
+Generated evidence and its recorded commit SHA form one atomic claim. The
+values above are the latest pre-documentation local baseline, but this tracked
+documentation change creates a new candidate SHA. The coordinator therefore
+regenerates the ignored evidence on the exact final clean SHA after this commit;
+the pre-documentation SHA is not the final candidate and measured timing values
+are intentionally not frozen here.
+
+H2 is read-only, uses no LLM for the verified deterministic path, and executes
+no control action. The evidence above is local public-data, pipeline, contract,
+and visual evidence; it is not an organizer score, hidden-test result,
+deployment, production, remote-CI, clean-machine, or general network-isolation
+claim. The supplied materials contain no authoritative D01-D13 mapping or
+weight table, so no official completion score can be derived. Remaining gaps
+include the intentional split required by the 96 MiB/180,000-row import cap,
+broad equipment localization, deterministic rather than fully causal root-cause
+text, bounded follow-up routing, and the absence of clean-machine or external
+runtime proof.
