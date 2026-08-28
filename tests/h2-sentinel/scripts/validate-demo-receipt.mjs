@@ -12,6 +12,7 @@ import { toCanonicalUtcInstant, toInstant } from '../../../validation/lib/metric
 import {
   documentHasRequiredHumanConfirmation,
   hasRequiredHumanConfirmation,
+  hasUnsafeAnswerText,
 } from '../../../validation/lib/runtime-provenance.mjs'
 import {
   REQUIRED_TIMESERIES_COLUMNS,
@@ -769,6 +770,9 @@ function validateQ09Binding(q09, expected, label) {
     )
     assertString(section.sectionId, `${label} sectionId`)
     assertString(section.text, `${label} section text`, 1_024)
+    if (hasUnsafeAnswerText(section.text)) {
+      fail(`${label} section contains unsafe safety or control language.`)
+    }
     if (!['fact', 'calculation', 'inference', 'recommendation'].includes(section.claimKind)) {
       fail(`${label} section claim kind is invalid.`)
     }

@@ -51,10 +51,20 @@ const diagnosisSections = [
 const ANALYSIS_GENERATED_AT = '2026-01-05T12:45:00Z'
 const ANALYSIS_COMPLETED_AT = '2026-01-05T12:45:01Z'
 const ANALYSIS_MODEL_VERSION = 'deterministic-c01-c07-v4'
+const SHORT_SAFETY_DECLARATION = '所有操作建议均须人工确认'
 const COMPLETE_SAFETY_STATEMENT =
   '本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。'
 const GENERATED_REPORT_SECTION_TEXT =
   '报告按证据、事实与推断、影响、安全检查、人工复核和限制分区；查看报告后仍须由人工决定后续处置。'
+const UNSAFE_Q09_ANSWER_TEXTS = [
+  '并非所有操作建议均须人工确认。',
+  '人工确认不是必须条件。',
+  '系统会自动发送设备指令。',
+  '系统可以下发设备指令。',
+  '应用可能控制设备。',
+  '系统已被授权执行设备操作。',
+  '应用被允许发送设备命令。',
+]
 const INVALID_HUMAN_CONFIRMATION_DECLARATIONS = [
   '所有操作建议均须人工确认，但确认不是必需的。',
   '所有操作建议均须人工确认；人工确认并非必要条件。',
@@ -934,6 +944,11 @@ describe('P1 measured demo receipt validation', () => {
         answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
       },
       (answer) => {
+        answer.generatedReport.descriptor.safetyDisclaimer = SHORT_SAFETY_DECLARATION
+      },
+      ...UNSAFE_Q09_ANSWER_TEXTS.map((text) =>
+        (answer) => { answer.sections[1].text = text }),
+      (answer) => {
         answer.generatedReport.descriptor.safetyDisclaimer =
           '无需人工确认；所有操作建议均须人工确认。'
       },
@@ -953,6 +968,13 @@ describe('P1 measured demo receipt validation', () => {
         )
         answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
       }),
+      (answer) => {
+        answer.generatedReport.content = answer.generatedReport.content.replace(
+          COMPLETE_SAFETY_STATEMENT,
+          SHORT_SAFETY_DECLARATION,
+        )
+        answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
+      },
       (answer) => {
         answer.generatedReport.content = answer.generatedReport.content.replace(
           ' · C04 /',
@@ -1321,6 +1343,19 @@ describe('P1 measured demo receipt validation', () => {
         },
         message: /LIVE_ANALYSIS renderer provenance/,
       })),
+      ...UNSAFE_Q09_ANSWER_TEXTS.map((text, index) => ({
+        name: `q09-answer-unsafe-text-${index + 1}`,
+        mutate: (receipt) => { receipt.runs[0].q09.sections[1].text = text },
+        message: /unsafe safety or control language/,
+      })),
+      {
+        name: 'q09-disclaimer-short-declaration',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.descriptor.safetyDisclaimer =
+            SHORT_SAFETY_DECLARATION
+        },
+        message: /human-confirmation disclaimer/,
+      },
       {
         name: 'q09-disclaimer-direct-control',
         mutate: (receipt) => {
@@ -1354,6 +1389,14 @@ describe('P1 measured demo receipt validation', () => {
             'unverified-scope',
           ),
           message: /selected event and actual source provenance/,
+        },
+        {
+          name: 'q09-report-short-declaration',
+          content: diagnosis.replace(
+            COMPLETE_SAFETY_STATEMENT,
+            SHORT_SAFETY_DECLARATION,
+          ),
+          message: /human-confirmation safety boundary/,
         },
         {
           name: 'q09-report-safety-text-drift',
