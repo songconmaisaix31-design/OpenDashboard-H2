@@ -62,11 +62,12 @@ class AssistantService:
             event=event,
             generated_report=generated_report,
         )
-        generated_at = run.get("completedAt", run["startedAt"])
+        generated_at = run["completedAt"]
         provenance = build_provenance(
             mode=run["dataset"]["mode"],
             generated_at=generated_at,
             fingerprint=run["dataset"]["fingerprint"],
+            model_version=run["provenance"]["modelVersion"],
             renderer_version="deterministic-assistant-p1-v1",
         )
         answer_id_suffix = event["eventId"] if event is not None else run["runId"]

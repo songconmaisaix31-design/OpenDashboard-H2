@@ -86,12 +86,13 @@ class ReportRenderer:
                 "所选事件缺少可引用证据，无法生成报告。",
             )
 
-        generated_at = run.get("completedAt", run["startedAt"])
+        generated_at = run["completedAt"]
         report_format = _report_format(kind)
         provenance = build_provenance(
             mode=run["dataset"]["mode"],
             generated_at=generated_at,
             fingerprint=run["dataset"]["fingerprint"],
+            model_version=run["provenance"]["modelVersion"],
             renderer_version=(
                 "jinja-report-p1-v1"
                 if report_format == "html"
