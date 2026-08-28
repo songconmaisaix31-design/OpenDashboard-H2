@@ -4,10 +4,12 @@ import { describe, it } from 'node:test'
 
 import type {
   H2CsvImportRequest,
+  H2DatasetField,
   H2SentinelDataSource,
 } from '@opendashboard/h2-contracts'
 import {
   H2_CSV_MAX_BYTES,
+  H2_CSV_MAX_ROWS,
   H2CsvInputError,
   hydrateH2Workspace,
   importH2CsvWorkspace,
@@ -170,9 +172,97 @@ describe('H2 CSV workspace loading', () => {
     assert.equal(result.qualityStatus, 'passed')
   })
 
-  it('accepts the official CSV byte size and the exact local analytics boundary', () => {
-    assert.doesNotThrow(() => validateH2CsvFile({ name: 'official.csv', size: 77_865_257 }))
+  it('accepts official validation files within the closed Local service boundary', () => {
+    assert.equal(H2_CSV_MAX_BYTES, 96 * 1024 * 1024)
+    assert.equal(H2_CSV_MAX_ROWS, 180_000)
+    assert.doesNotThrow(() => validateH2CsvFile({ name: 'official-validation.csv', size: 58_400_000 }))
+    assert.doesNotThrow(() => validateH2CsvFile({ name: 'official-test.csv', size: 77_865_257 }))
     assert.doesNotThrow(() => validateH2CsvFile({ name: 'at-limit.csv', size: H2_CSV_MAX_BYTES }))
+    assert.throws(
+      () => validateH2CsvFile({ name: 'unbounded.csv', size: H2_CSV_MAX_BYTES + 1 }),
+      (error: unknown) => error instanceof H2CsvInputError && error.code === 'too_large',
+    )
+  })
+
+  it('batches an official-width series request deterministically and merges every value', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    const fields = Array.from({ length: 68 }, (_, index) => ({
+      name: `measurement_${String(index + 1).padStart(2, '0')}_kw`,
+      displayNameZh: `测量 ${index + 1}`,
+      role: 'measurement',
+      required: true,
+      unit: 'kW',
+    }) satisfies H2DatasetField)
+    const dataset = { ...H2_WEB_FIXTURE_RUN.dataset, fields }
+    const run = { ...H2_WEB_FIXTURE_RUN, dataset }
+    const requestedBatches: string[][] = []
+    const dataSource: H2SentinelDataSource = {
+      ...fixture,
+      async runAnalysis() {
+        return run
+      },
+      async getSeries(request) {
+        requestedBatches.push([...request.variables])
+        return {
+          runId: run.runId,
+          variables: request.variables,
+          points: [
+            {
+              timestamp: run.dataset.timeRange.startTime,
+              values: Object.fromEntries(
+                request.variables.map((variable, index) => [variable, requestedBatches.length * 100 + index]),
+              ),
+            },
+          ],
+        }
+      },
+    }
+
+    const workspace = await hydrateH2Workspace(dataSource, [dataset], dataset)
+
+    assert.deepEqual(requestedBatches.map(({ length }) => length), [32, 32, 4])
+    assert.deepEqual(workspace.series?.variables, fields.map(({ name }) => name))
+    assert.equal(Object.keys(workspace.series?.points[0]?.values ?? {}).length, 68)
+    assert.equal(workspace.seriesError, null)
+  })
+
+  it('rejects a mismatched series batch instead of exposing a partial merge', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    const fields = Array.from({ length: 33 }, (_, index) => ({
+      name: `measurement_${index}_kw`,
+      displayNameZh: `测量 ${index}`,
+      role: 'measurement',
+      required: true,
+      unit: 'kW',
+    }) satisfies H2DatasetField)
+    const dataset = { ...H2_WEB_FIXTURE_RUN.dataset, fields }
+    const run = { ...H2_WEB_FIXTURE_RUN, dataset }
+    let requestCount = 0
+    const dataSource: H2SentinelDataSource = {
+      ...fixture,
+      async runAnalysis() {
+        return run
+      },
+      async getSeries(request) {
+        requestCount += 1
+        return {
+          runId: run.runId,
+          variables: request.variables,
+          points: [{
+            timestamp: requestCount === 1
+              ? run.dataset.timeRange.startTime
+              : run.dataset.timeRange.endTime,
+            values: Object.fromEntries(request.variables.map((variable) => [variable, 1])),
+          }],
+        }
+      },
+    }
+
+    const workspace = await hydrateH2Workspace(dataSource, [dataset], dataset)
+
+    assert.equal(requestCount, 2)
+    assert.equal(workspace.series, null)
+    assert.match(workspace.seriesError ?? '', /时间序列读取失败/)
   })
 
   it('fails invalid or oversized files before reading content or calling the data source', async () => {

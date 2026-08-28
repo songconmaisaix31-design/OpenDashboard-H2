@@ -13,7 +13,9 @@ interface SeriesDefinition {
   readonly variables: readonly string[]
   readonly label: string
   readonly color: string
+  readonly unit: string
   readonly dashed?: boolean
+  readonly transform?: (value: number) => number
 }
 
 const powerSeriesByCode = {
@@ -22,38 +24,67 @@ const powerSeriesByCode = {
       variables: ['bess_power_cmd_kw', 'bess_dispatch_command_kw'],
       label: '储能调度指令',
       color: COLORS[1],
+      unit: 'kW',
       dashed: true,
     },
-    { variables: ['bess_power_actual_kw', 'bess_power_kw'], label: '储能实际功率', color: COLORS[0] },
-    { variables: ['pcc_power_actual_kw', 'pcc_power_kw'], label: '并网点功率', color: COLORS[2] },
+    { variables: ['bess_power_actual_kw', 'bess_power_kw'], label: '储能实际功率', color: COLORS[0], unit: 'kW' },
+    { variables: ['pcc_power_actual_kw', 'pcc_power_kw'], label: '并网点功率', color: COLORS[2], unit: 'kW' },
   ],
-  C04: [
-    { variables: ['pcc_power_actual_kw', 'pcc_power_kw'], label: '并网点实际功率', color: COLORS[3] },
-    {
-      variables: ['grid_export_power_limit_kw', 'pcc_export_limit_kw'],
-      label: '送出边界',
-      color: COLORS[1],
-      dashed: true,
-    },
-  ],
-} as const satisfies Readonly<Record<'C03' | 'C04', readonly SeriesDefinition[]>>
+} as const satisfies Readonly<Record<'C03', readonly SeriesDefinition[]>>
+
+const pccActualSeries = {
+  variables: ['pcc_power_actual_kw', 'pcc_power_kw'],
+  label: '并网点实际功率',
+  color: COLORS[3],
+  unit: 'kW',
+} as const satisfies SeriesDefinition
+
+const pccExportBoundarySeries = {
+  variables: ['grid_export_power_limit_kw', 'pcc_export_limit_kw'],
+  label: '送出边界',
+  color: COLORS[1],
+  unit: 'kW',
+  dashed: true,
+} as const satisfies SeriesDefinition
+
+const pccImportBoundarySeries = {
+  variables: ['grid_import_power_limit_kw', 'pcc_import_limit_kw'],
+  label: '受电边界（负向）',
+  color: COLORS[2],
+  unit: 'kW',
+  dashed: true,
+  transform: (value: number) => -Math.abs(value),
+} as const satisfies SeriesDefinition
 
 export function createEventChartOption(
   response: H2SeriesResponse,
   event: H2AnomalyEvent,
 ): EChartsCoreOption {
-  const definitions =
-    event.code === 'C03'
-      ? powerSeriesByCode.C03
-      : event.code === 'C04'
-        ? powerSeriesByCode.C04
-        : createEvidenceSeries(event)
+  const definitions = getEventSeriesDefinitions(event)
 
-  return createLineOption(response, definitions, 'kW', {
+  return createLineOption(response, definitions, {
     startTime: event.startTime,
     endTime: event.endTime,
     label: `${event.code} 事件区间`,
   })
+}
+
+export function getEventChartUnitSummary(event: H2AnomalyEvent): string {
+  const units = uniqueUnits(getEventSeriesDefinitions(event))
+  return `纵轴：${units.join(' / ')}`
+}
+
+function getEventSeriesDefinitions(event: H2AnomalyEvent): readonly SeriesDefinition[] {
+  if (event.code === 'C03') return powerSeriesByCode.C03
+  if (event.code === 'C04') {
+    return [
+      pccActualSeries,
+      event.subtype === 'IMPORT_POWER_LIMIT_NOT_TRACKED'
+        ? pccImportBoundarySeries
+        : pccExportBoundarySeries,
+    ]
+  }
+  return createEvidenceSeries(event)
 }
 
 function createEvidenceSeries(event: H2AnomalyEvent): readonly SeriesDefinition[] {
@@ -72,6 +103,7 @@ function createEvidenceSeries(event: H2AnomalyEvent): readonly SeriesDefinition[
     variables: [variable],
     label: variable,
     color: COLORS[index] ?? COLORS[0],
+    unit: toChartUnit(variables[index]?.unit),
     dashed: kind === 'constraint',
   }))
 }
@@ -80,21 +112,10 @@ export function createPccChartOption(response: H2SeriesResponse): EChartsCoreOpt
   return createLineOption(
     response,
     [
-      { variables: ['pcc_power_actual_kw', 'pcc_power_kw'], label: '并网点实际功率', color: COLORS[0] },
-      {
-        variables: ['grid_export_power_limit_kw', 'pcc_export_limit_kw'],
-        label: '送出边界',
-        color: COLORS[1],
-        dashed: true,
-      },
-      {
-        variables: ['grid_import_power_limit_kw', 'pcc_import_limit_kw'],
-        label: '受电边界',
-        color: COLORS[2],
-        dashed: true,
-      },
+      { ...pccActualSeries, color: COLORS[0] },
+      pccExportBoundarySeries,
+      pccImportBoundarySeries,
     ],
-    'kW',
   )
 }
 
@@ -102,10 +123,9 @@ export function createSocChartOption(response: H2SeriesResponse): EChartsCoreOpt
   return createLineOption(
     response,
     [
-      { variables: ['soc_target_pct'], label: '储能目标 SOC', color: COLORS[1], dashed: true },
-      { variables: ['bess_soc_pct', 'bess_soc_percent'], label: '储能实际 SOC', color: COLORS[4] },
+      { variables: ['soc_target_pct'], label: '储能目标 SOC', color: COLORS[1], unit: '%', dashed: true },
+      { variables: ['bess_soc_pct', 'bess_soc_percent'], label: '储能实际 SOC', color: COLORS[4], unit: '%' },
     ],
-    '%',
   )
 }
 
@@ -115,15 +135,13 @@ export function createVariableChartOption(
 ): EChartsCoreOption {
   return createLineOption(
     response,
-    [{ variables: [field.name], label: field.displayNameZh, color: COLORS[0] }],
-    field.unit === 'percent' ? '%' : (field.unit ?? ''),
+    [{ variables: [field.name], label: field.displayNameZh, color: COLORS[0], unit: toChartUnit(field.unit) }],
   )
 }
 
 function createLineOption(
   response: H2SeriesResponse,
   definitions: readonly SeriesDefinition[],
-  unit: string,
   eventBand?: {
     readonly startTime: string
     readonly endTime: string
@@ -137,11 +155,20 @@ function createLineOption(
     )
     return variable ? [{ ...definition, variable }] : []
   })
+  const units = uniqueUnits(resolvedDefinitions)
+  const leftAxisCount = Math.ceil(units.length / 2)
+  const rightAxisCount = Math.floor(units.length / 2)
 
   return {
     aria: { enabled: true, decal: { show: true } },
     color: resolvedDefinitions.map(({ color }) => color),
-    grid: { left: 54, right: 24, top: 54, bottom: 48, containLabel: false },
+    grid: {
+      left: 54 + Math.max(0, leftAxisCount - 1) * 34,
+      right: 24 + Math.max(0, rightAxisCount - 1) * 34,
+      top: 54,
+      bottom: 48,
+      containLabel: false,
+    },
     legend: {
       top: 4,
       left: 0,
@@ -176,17 +203,30 @@ function createLineOption(
       },
       axisLine: { lineStyle: { color: '#4a3c41' } },
     },
-    yAxis: {
+    yAxis: units.map((unit, index) => ({
       type: 'value',
       name: unit,
+      position: index % 2 === 0 ? 'left' : 'right',
+      offset: Math.floor(index / 2) * 34,
       nameTextStyle: { color: '#9d9195' },
       axisLabel: { color: '#9d9195' },
-      splitLine: { lineStyle: { color: 'rgba(255, 238, 233, 0.08)' } },
-    },
+      axisLine: { show: index > 0, lineStyle: { color: '#4a3c41' } },
+      splitLine: {
+        show: index === 0,
+        lineStyle: { color: 'rgba(255, 238, 233, 0.08)' },
+      },
+    })),
     series: resolvedDefinitions.map((definition, index) => ({
-      name: definition.label,
+      name: units.length > 1
+        ? `${definition.label} (${definition.unit})`
+        : definition.label,
       type: 'line',
-      data: response.points.map(({ values }) => values[definition.variable] ?? null),
+      yAxisIndex: units.indexOf(definition.unit),
+      data: response.points.map(({ values }) => {
+        const value = values[definition.variable]
+        if (value === null || value === undefined) return null
+        return definition.transform ? definition.transform(value) : value
+      }),
       connectNulls: false,
       showSymbol: false,
       smooth: false,
@@ -207,4 +247,14 @@ function createLineOption(
           : undefined,
     })),
   }
+}
+
+function uniqueUnits(definitions: readonly Pick<SeriesDefinition, 'unit'>[]): string[] {
+  const units = definitions.map(({ unit }) => unit)
+  return [...new Set(units.length > 0 ? units : ['单位未声明'])]
+}
+
+function toChartUnit(unit: string | undefined): string {
+  if (unit === 'percent') return '%'
+  return unit?.trim() || '单位未声明'
 }

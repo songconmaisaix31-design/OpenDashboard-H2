@@ -13,7 +13,10 @@ import {
   H2_SEVERITY_LABELS,
   H2_SIGN_CONVENTIONS,
 } from '../../model/presentation.ts'
-import { createEventChartOption } from '../../model/chart-options.ts'
+import {
+  createEventChartOption,
+  getEventChartUnitSummary,
+} from '../../model/chart-options.ts'
 import { EChartsCanvas } from '../../components/charts/EChartsCanvas.tsx'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { SignConventionNote } from '../../components/common/SignConventionNote.tsx'
@@ -108,7 +111,7 @@ export function DiagnosisPage({
       <section className="h2-panel h2-chart-panel">
         <div className="h2-panel__heading">
           <div><p className="h2-eyebrow">Synchronized evidence</p><h2>时间对齐趋势与事件区间</h2></div>
-          <span>单位 kW · 阴影为事件区间</span>
+          <span>{getEventChartUnitSummary(event)} · 阴影为事件区间</span>
         </div>
         <SignConventionNote compact />
         {series ? (
@@ -132,6 +135,7 @@ export function DiagnosisPage({
       <SafetyPanel event={event} />
 
       <EventReviewPanel
+        key={`${event.eventId}:${reviewState.review?.runId ?? 'loading'}`}
         onReload={onReloadReview}
         onSubmit={onReview}
         state={reviewState}

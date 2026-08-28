@@ -36,12 +36,14 @@ mounts the feature behind an existing router.
 - The mode/provenance banner remains visible on every ready view.
 - Fixture and Live Analysis use the same injected contract.
 - A clean Live Analysis source with no datasets shows an accessible CSV picker;
-  the browser rejects non-CSV files and files above 300 MiB before reading.
-  The analytics service remains the authoritative schema, row, and content
-  boundary.
+  imports are limited to `.csv` files up to 96 MiB before content is read. The
+  Local service accepts at most 180,000 rows per request, so the full training
+  set remains chunk-only.
 - Live Analysis supports deterministic C01-C07 events. The sanitized Fixture
   intentionally remains a small C03/C04 demonstration and is never presented
   as official-data evidence.
+- Detected events are directly accessible from the overview, event center, and
+  diagnosis hash routes.
 - The overview exposes one judge path through source identity, data quality,
   event evidence, human review, bounded assistant explanation, and export.
 - Unknown routes and malformed encoded diagnosis hashes fail closed to the

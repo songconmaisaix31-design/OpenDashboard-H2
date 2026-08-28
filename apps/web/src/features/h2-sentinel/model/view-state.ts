@@ -53,6 +53,32 @@ export const INITIAL_H2_COMMAND_STATE: H2CommandState = {
   artifact: null,
 }
 
+export function beginH2ArtifactExport(
+  state: H2CommandState,
+  pending: H2PendingOperation,
+): H2CommandState {
+  return {
+    ...state,
+    pending,
+    notice: null,
+    error: null,
+    artifact: null,
+  }
+}
+
+export function failH2ArtifactExport(
+  state: H2CommandState,
+  error: string,
+): H2CommandState {
+  return {
+    ...state,
+    pending: null,
+    notice: null,
+    error,
+    artifact: null,
+  }
+}
+
 export interface H2ReviewCommandState {
   readonly review: H2EventReview | null
   readonly loading: boolean
