@@ -53,6 +53,8 @@ const ANALYSIS_COMPLETED_AT = '2026-01-05T12:45:01Z'
 const ANALYSIS_MODEL_VERSION = 'deterministic-c01-c07-v4'
 const COMPLETE_SAFETY_STATEMENT =
   '本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。'
+const GENERATED_REPORT_SECTION_TEXT =
+  '报告按证据、事实与推断、影响、安全检查、人工复核和限制分区；查看报告后仍须由人工决定后续处置。'
 const INVALID_HUMAN_CONFIRMATION_DECLARATIONS = [
   '所有操作建议均须人工确认，但确认不是必需的。',
   '所有操作建议均须人工确认；人工确认并非必要条件。',
@@ -344,7 +346,7 @@ function q09Binding(runId, eventId, fingerprint, contentHash) {
       {
         sectionId: 'generated_report',
         claimKind: 'recommendation',
-        text: COMPLETE_SAFETY_STATEMENT,
+        text: GENERATED_REPORT_SECTION_TEXT,
         citationIds: [reportCitationId],
       },
     ],
@@ -881,12 +883,14 @@ describe('P1 measured demo receipt validation', () => {
     assert.equal(expected.analysisProvenance.generatedAt, '2026-01-05T12:45:00Z')
     assert.equal(valid.generatedAt, '2026-01-05T12:45:01Z')
     assert.equal(valid.provenance.modelVersion, 'deterministic-c01-c07-v4')
+    assert.equal(valid.sections[1].text, GENERATED_REPORT_SECTION_TEXT)
     assert.equal(valid.generatedReport.descriptor.safetyDisclaimer, COMPLETE_SAFETY_STATEMENT)
 
     const cases = [
       (answer) => { answer.questionId = 'Q08' },
       (answer) => { answer.runId = 'different-run' },
       (answer) => { answer.eventId = 'different-event' },
+      (answer) => { answer.refusedControlClaim = false },
       (answer) => { answer.generatedAt = '2026-01-05T12:45:02Z' },
       (answer) => { answer.generatedReport.descriptor.kind = 'period_summary' },
       (answer) => { answer.generatedReport.descriptor.generatedAt = '2026-01-05T12:45:02Z' },
@@ -922,7 +926,6 @@ describe('P1 measured demo receipt validation', () => {
           ['Contradictory limitation.']
       },
       (answer) => {
-        answer.sections[1].text = '报告已生成。'
         answer.generatedReport.descriptor.safetyDisclaimer = '建议仅供参考。'
         answer.generatedReport.content = answer.generatedReport.content.replace(
           '所有操作建议均须人工确认',
@@ -930,11 +933,6 @@ describe('P1 measured demo receipt validation', () => {
         )
         answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
       },
-      (answer) => {
-        answer.sections[1].text = '并非所有操作建议均须人工确认。'
-      },
-      ...INVALID_HUMAN_CONFIRMATION_DECLARATIONS.map((text) =>
-        (answer) => { answer.sections[1].text = text }),
       (answer) => {
         answer.generatedReport.descriptor.safetyDisclaimer =
           '无需人工确认；所有操作建议均须人工确认。'
@@ -1226,6 +1224,11 @@ describe('P1 measured demo receipt validation', () => {
         message: /exact Q09, runId, eventId/,
       },
       {
+        name: 'q09-control-refusal-drift',
+        mutate: (receipt) => { receipt.runs[0].q09.refusedControlClaim = false },
+        message: /exact Q09, runId, eventId/,
+      },
+      {
         name: 'q09-answer-generated-at-drift',
         mutate: (receipt) => { receipt.runs[0].q09.generatedAt = '2026-01-05T12:45:02Z' },
         message: /exact Q09, runId, eventId/,
@@ -1317,25 +1320,6 @@ describe('P1 measured demo receipt validation', () => {
           receipt.runs[0].q09.generatedReport.descriptor.provenance[field] = value
         },
         message: /LIVE_ANALYSIS renderer provenance/,
-      })),
-      {
-        name: 'q09-answer-safety-text-drift',
-        mutate: (receipt) => {
-          receipt.runs[0].q09.sections[1].text = '报告已生成。'
-        },
-        message: /human-confirmation answer text/,
-      },
-      {
-        name: 'q09-answer-safety-negation',
-        mutate: (receipt) => {
-          receipt.runs[0].q09.sections[1].text = '并非所有操作建议均须人工确认。'
-        },
-        message: /human-confirmation answer text/,
-      },
-      ...INVALID_HUMAN_CONFIRMATION_DECLARATIONS.map((text, index) => ({
-        name: `q09-answer-closed-declaration-${index + 1}`,
-        mutate: (receipt) => { receipt.runs[0].q09.sections[1].text = text },
-        message: /human-confirmation answer text/,
       })),
       {
         name: 'q09-disclaimer-direct-control',

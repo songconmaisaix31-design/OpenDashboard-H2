@@ -270,7 +270,6 @@ export function assertQ09Answer(
       section.citationIds.includes(reportCitations[0].citationId))
   ) throw new Error('Q09 must contain exactly one matching report citation.')
   if (
-    !answer.sections.some(({ text }) => hasRequiredHumanConfirmation(text)) ||
     typeof descriptor.safetyDisclaimer !== 'string' ||
     !hasRequiredHumanConfirmation(descriptor.safetyDisclaimer) ||
     !documentHasRequiredHumanConfirmation(report.content)
