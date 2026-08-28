@@ -2,47 +2,45 @@
 
 ## Candidate record
 
-- P1-W1 baseline: `4c856eb`.
-- P1-W3 QA integration: `56eef02` on the coordinator branch.
-- Integrated Web behavior candidate: `a7f7093`; the exact final documentation
-  HEAD is recorded externally by Git because a commit cannot self-reference.
-- Official package/slice: not supplied or generated in P1-W3.
-- Timed receipt: not produced in P1-W3.
+- Exact final candidate SHA: coordinator records after all lane integration.
+- Working-tree state: must be clean except intentional ignored generated
+  evidence and known nested worktrees.
+- Official package: bounded read-only integrity check only.
+- Package integrity: all data/material entries plus the workbook match, 21 of
+  24 total manifest entries; three top-level requirement/README Markdown or DOCX files differ.
+- Official metrics, screenshots, measured receipt, and full test-set checker
+  verdict: pending final-candidate rerun.
 
-| ID | Required evidence | Worker status | Final release rule |
+| ID | Required evidence | Lane C status | Final release rule |
 | --- | --- | --- | --- |
-| R01 | Exact candidate SHA and clean changed-path audit | Coordinator verified | Record final SHA externally; only accepted commits and intentional untracked nested worktrees may remain. |
-| R02 | Official source files and expected SHA-256 values | Not supplied | Resolve from an authorized public package; do not search credentials or infer hashes. |
-| R03 | Earliest C04 slice manifest and detector CSV | Tool implemented; synthetic tests passed | Run on the explicit package into an ignored directory; verify 30-minute padding, coverage, and label removal. |
-| R04 | Official Q01–Q10 deterministic answers | Integrated automated and Fixture runtime pass | Both allowLlmRendering values, citation invariants, context errors, H2Qxx rejection, and runtime Q09 were verified. |
-| R05 | Human review transitions and reliability | Integrated automated pass; runtime confirm observed | Every transition/replay/conflict boundary passed automation; C03 revision 1 and independent C04 revision 0 were observed. |
-| R06 | Detector/submission immutability after review | Integrated automated pass | Before/after event snapshots and exact submission.csv bytes remained unchanged. |
-| R07 | Review-audit export | Integrated automated and Fixture runtime pass | Runtime JSON contained both events, revision 1, UTF-8 note, actor notice, and stable artifact metadata. |
-| R08 | Chinese report structure and safety | Integrated automated and Fixture runtime pass | Generated diagnosis/PCC HTML was zh-CN, safe, script-free, provenance-labelled, and hash-described. |
-| R09 | Validation-slice provenance across Web and reports | Integrated automated pass; official slice not run | Prepared-slice provenance passes assembled Local QA; an authorized slice runtime remains unavailable. |
-| R10 | Exact report kind/format/media/hash matrix | Integrated automated pass | Available kinds pass; unlabeled validation_metrics fails explicitly instead of returning zero metrics. |
-| R11 | Fixture fallback separation | Integrated automated and runtime pass | Fixture report/UI remained Chinese and visibly FIXTURE, never validation evidence. |
-| R12 | Two consecutive measured runs below 180 seconds | Not run | Receipt validator must pass against final SHA, exact manifest, and distinct per-run artifacts. |
-| R13 | Desktop and 390x844 rendering | Primary Fixture flows passed | 1427px desktop and 390x844 review, assistant, and report views had no page overflow, visible-control clipping, or overlap; official-slice/conflict screenshots remain uncaptured. |
-| R14 | Required project checks | Coordinator pass | TypeScript, h2:check, 52 Python tests, Ruff, Mypy, 91 repository tests, production build, and diff checks passed. |
-| R15 | Organizer result, full validation, deployment, remote CI | Not evidenced | Keep all claims false unless separate authoritative evidence is produced. |
+| R01 | Exact candidate SHA and changed-path audit | Not self-claimed | Coordinator records final SHA after integration and confirms allowed paths. |
+| R02 | Expected SHA-256 values for official source CSVs | Explicit inputs required | Obtain independently; never infer hashes or read credentials. |
+| R03 | Earliest-C04 manifest and 69-field detector CSV | Tool and fixtures implemented | Generate under ignored output; verify 30-minute padding, coverage, relative paths, and label removal. |
+| R04 | Official Q01-Q10 deterministic answers | Integrated regression gate | Run both LLM-rendering flags, citation invariants, context errors, alias rejection, and Q09. |
+| R05 | Human review transitions and reliability | Integrated regression gate | Rerun all transitions, replay, conflict, note, and per-event isolation. |
+| R06 | Detector/submission immutability after review | Integrated regression gate | Compare event snapshots and exact submission bytes before and after review. |
+| R07 | Review-audit export | Integrated regression gate | Require all events, revision-zero entries, stable ordering, UTF-8 notes, and actor notice. |
+| R08 | Chinese report structure and safety | Integrated regression gate | Require zh-CN, script-free escaped HTML, provenance, safety, and hash metadata. |
+| R09 | Validation-slice provenance | Integrated regression gate; final official run pending | Require prepared-slice provenance in Web and reports on the official run. |
+| R10 | Official evaluation metrics | Tool and event-match-v1 fixtures implemented | Generate overall and C01-C07 results from the named split and exact final SHA. |
+| R11 | Overfit sentinel | Tool implemented | Compare official validation against the disjoint public train-last-90-day window. |
+| R12 | Full public test-set smoke and submission | Tool and checker fixtures implemented | Import the entire set and require the exact 16-column checker to pass. |
+| R13 | Two scripted executions below 180 seconds | Runner and validator implemented | Validate distinct execution IDs, ordered positive stages, relative artifacts, hashes, and exact SHA. |
+| R14 | Desktop and 390x844 rendering | Final official capture pending | Inspect overflow, clipping, overlap, loading, disabled, error, and conflict states. |
+| R15 | Required project checks | Coordinator-owned final gate | Run repository, H2, Python, build, launcher, diff, ignored-output, and package-wording checks. |
+| R16 | Organizer result, full validation, deployment, remote CI | Not evidenced | Keep every claim false absent separate authoritative evidence. |
 
-## P1-W3 command set
+## Lane C command set
 
     node --test "tests/h2-sentinel/contract/*.test.mjs"
     npm run h2:qa
     npm run h2:launcher:test
-    node tests/h2-sentinel/golden-path/run-offline-golden-path.mjs
     pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1
     git diff --check
 
-The worker handoff preserves its original pass/fail results. The coordinator
-resolved the Open integration gate and recorded new integrated evidence rather
-than rewriting worker-local failures as historical passes.
+## Receipt interpretation
 
-## Timed receipt interpretation
-
-A passing receipt proves that the referenced local artifacts and timestamps
-meet the P1 evidence schema for two runs on the named target environment. It
-does not prove full validation, hidden testing, organizer scoring, deployment,
-remote CI, production behavior, or correctness beyond the recorded slice.
+A passing receipt proves that two scripted local workflows and their referenced
+files meet the evidence schema on the named clean SHA. It does not prove full
+validation, hidden testing, organizer scoring, deployment, remote CI,
+production behavior, or correctness beyond the recorded slice.

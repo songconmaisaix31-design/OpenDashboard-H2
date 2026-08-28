@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { validateSubmissionText } from '../../../validation/check-submission.mjs'
+import { assertOfficialTimeseriesColumns } from '../../../validation/lib/official-contract.mjs'
 import {
   REQUIRED_TIMESERIES_COLUMNS,
   isLabelColumn,
@@ -308,12 +310,12 @@ function validateManifest(manifest) {
   if (!Number.isInteger(manifest.slice.rowCount) || manifest.slice.rowCount < 2) {
     fail('Slice manifest rowCount must be an integer of at least two.')
   }
-  if (!Array.isArray(manifest.slice.columns) || !manifest.slice.columns.includes('timestamp')) {
-    fail('Slice manifest must list the detector timestamp column.')
-  }
+  if (!Array.isArray(manifest.slice.columns)) fail('Slice manifest must list detector columns.')
   manifest.slice.columns.forEach((column) => assertString(column, 'Slice detector column', 128))
-  if (new Set(manifest.slice.columns).size !== manifest.slice.columns.length) {
-    fail('Slice detector columns must be unique.')
+  try {
+    assertOfficialTimeseriesColumns(manifest.slice.columns)
+  } catch (error) {
+    fail(error instanceof Error ? error.message : 'Slice detector columns are invalid.')
   }
   if (!Array.isArray(manifest.slice.removedLabelColumns)) {
     fail('Slice manifest must record removed label columns.')
@@ -341,8 +343,10 @@ function validateDetectorInput(bytes, manifest) {
   if (csv.headers.some(isLabelColumn)) {
     fail('Detector input must not contain public label columns.')
   }
-  if (REQUIRED_TIMESERIES_COLUMNS.some((column) => !csv.headers.includes(column))) {
-    fail('Detector input is missing a required timeseries column.')
+  try {
+    assertOfficialTimeseriesColumns(csv.headers)
+  } catch (error) {
+    fail(error instanceof Error ? error.message : 'Detector input columns are invalid.')
   }
   const timestampIndex = csv.headers.indexOf('timestamp')
   const numericColumns = REQUIRED_TIMESERIES_COLUMNS.filter((column) => column !== 'timestamp')
@@ -489,7 +493,7 @@ function validateHtml(content, label) {
   }
 }
 
-function validateAudit(content, runId, label) {
+function validateAudit(content, runId, analyzedEventId, label) {
   let value
   try {
     value = JSON.parse(content)
@@ -504,9 +508,24 @@ function validateAudit(content, runId, label) {
   ) {
     fail(`${label} does not match the review-audit contract.`)
   }
+  const reviewed = value.events.find(
+    (entry) => entry?.event?.eventId === analyzedEventId,
+  )
+  if (
+    reviewed?.review?.currentState !== 'confirmed' ||
+    reviewed.review.revision !== 1 ||
+    !Array.isArray(reviewed.review.entries) ||
+    !reviewed.review.entries.some((entry) => entry?.action === 'confirm')
+  ) {
+    fail(`${label} must retain the analyzed event at confirmed revision 1.`)
+  }
 }
 
 function validateSubmission(content, analyzedEventId, label) {
+  const result = validateSubmissionText(content)
+  if (!result.valid) {
+    fail(`${label} failed the official checker: ${result.issues.slice(0, 3).join(' | ')}`)
+  }
   const firstLine = content.split(/\r?\n/, 1)[0]
   if (firstLine !== SUBMISSION_HEADER) {
     fail(`${label} must preserve the exact 16-column submission header.`)
@@ -522,6 +541,7 @@ async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPat
   assertExactKeys(
     run,
     [
+      'executionId',
       'sequence',
       'status',
       'runId',
@@ -536,6 +556,7 @@ async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPat
     ],
     runLabel,
   )
+  assertString(run.executionId, `${runLabel} executionId`)
   if (run.sequence !== expectedSequence || run.status !== 'passed') {
     fail(`${runLabel} must be a passing run with the expected sequence.`)
   }
@@ -580,6 +601,7 @@ async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPat
   validateAudit(
     decodeUtf8(artifactBytes.reviewAudit, `${runLabel} review audit`),
     run.runId,
+    run.analyzedEventId,
     `${runLabel} review audit`,
   )
   validateSubmission(
@@ -587,7 +609,13 @@ async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPat
     run.analyzedEventId,
     `${runLabel} submission`,
   )
-  return { startedAt, completedAt, runId: run.runId, durationMs: run.totalDurationMs }
+  return {
+    startedAt,
+    completedAt,
+    executionId: run.executionId,
+    runId: run.runId,
+    durationMs: run.totalDurationMs,
+  }
 }
 
 export async function validateDemoReceipt(options) {
@@ -650,7 +678,9 @@ export async function validateDemoReceipt(options) {
   const usedArtifactPaths = new Set()
   const first = await validateRun(receipt.runs[0], 1, artifactsRoot, usedArtifactPaths)
   const second = await validateRun(receipt.runs[1], 2, artifactsRoot, usedArtifactPaths)
-  if (first.runId === second.runId) fail('Measured runs must have distinct run IDs.')
+  if (first.executionId === second.executionId) {
+    fail('Measured runs must have distinct execution IDs.')
+  }
   if (second.startedAt < first.completedAt) {
     fail('Measured run 2 must start after measured run 1 completes.')
   }

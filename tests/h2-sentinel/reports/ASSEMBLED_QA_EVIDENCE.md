@@ -1,74 +1,71 @@
-# H2 Sentinel P1 Assembled QA Evidence
+# H2 Sentinel Remediation QA Evidence
 
 ## Evidence boundary
 
-This ledger preserves the P1-W3 worker checkout result from 2026-08-28. That
-historical checkout was based on W1 commit `4c856eb` and intentionally excluded
-W2. The coordinator result below supersedes it for current integration status.
-Neither result contains an official validation package, prepared official slice,
-measured demo receipt, organizer result, deployment proof, or remote-CI result.
+This ledger separates three evidence classes:
 
-## Coordinator integration result
+1. historical worker observations from pre-integration checkouts;
+2. current integrated P1 contract/runtime facts covered by repeatable QA; and
+3. final-candidate official-data evidence that only the coordinator can create.
 
-The coordinator integrated W2 and the validation-slice provenance correction in
-behavior candidate `a7f7093`. Fresh verification on the integrated tree passed:
+No historical test count, screenshot, report number, or candidate SHA is
+carried forward as proof for the final candidate.
 
-- `npm run h2:check`: TypeScript, 76 H2 tests, all six assembled QA groups,
-  9 launcher tests, and the production build;
-- `npm test`: 91 tests;
-- Python: 52 pytest tests, Ruff, and Mypy across 38 source files;
-- runtime Fixture review: C03 advanced from revision 0 to confirmed revision 1
-  while C04 remained independently at revision 0;
-- runtime exports: deterministic Q09 diagnosis HTML, PCC compliance HTML, and
-  review-audit JSON were generated and their bytes inspected;
-- visual review: 1427px desktop and 390x844 narrow-width primary Fixture flows
-  had no page-level horizontal overflow, visible control clipping, or overlap.
+## Current integrated P1 facts
 
-These are integrated local and Fixture results. They are not official-data,
-timed-demo, organizer, deployment, production, or remote-CI evidence.
+The repeatable P1 QA contract requires:
 
-The primary command is:
+- exact official Q01-Q10 prompts and rejection of legacy question aliases;
+- deterministic Chinese Q09 diagnosis with matching citations and report;
+- append-only review transitions, replay idempotency, stale-revision conflict,
+  and detector/submission immutability;
+- complete review-audit export and exact review-free 16-column submission;
+- prepared-slice, generic Local, and Fixture provenance separation;
+- loopback-only launcher ownership, failure cleanup, and port rebind; and
+- Chinese report structure, escaping, safety wording, and content hashes.
 
-    npm run h2:qa
+`npm run h2:qa` is the mandatory integrated regression gate for these facts.
+Its assembled runner validates response and artifact bytes without persisting
+process identifiers, absolute paths, credentials, or raw startup output.
 
-It runs dependency-free contract/tool tests, the frozen C01-C04 harness, and
-then the assembled Fixture and Local probes through the public launcher. The
-runner validates responses and report bytes in memory, emits a redacted summary,
-and cleans its owned processes. It does not persist generated reports, process
-identifiers, absolute paths, credentials, or raw startup output.
+## Lane C remediation evidence
 
-## Historical P1-W3 worker result
+Lane C adds deterministic tools and fixtures for:
 
-| Gate | Result | Current evidence |
-| --- | --- | --- |
-| Official Q01-Q10, review, and report contracts | PASS | Static contract conformance tests require exact IDs/prompts, review actions/bounds, eight report kinds, and the review-free submission schema. |
-| Slice and receipt tools | PASS with synthetic inputs | Tests cover source hashes, earliest C04 selection, 30-minute padding, label isolation, ignored output, two-run timing boundaries, and artifact hash drift. This is not an official-data or timed-demo result. |
-| Fixture P1 report | FAIL pending W2 | The pre-W2 adapter still returns an English diagnosis; P1 requires Chinese structure and explicit FIXTURE provenance. |
-| Local P1 API and review workflow | Assertions exercised; group FAIL | Q01-Q10, citations, review transitions, replay/conflict handling, audit export, submission immutability, report hashes, escaping, and safety assertions pass before the final provenance assertion. |
-| Validation-slice provenance | FAIL, `H2-QA-P1-001` | The prepared-slice filename is not retained in analytics provenance, so the report shows `LIVE_ANALYSIS · 本地导入数据` instead of `LIVE_ANALYSIS · 验证集切片`. |
-| P1-W2 source surface | FAIL pending W2 | The current source still exposes the legacy H2Qxx surface and lacks the accepted P1 Web/review presentation. |
-| Launcher failure and external-sidecar boundaries | PASS | Occupied ports, redirecting or malformed health responses, loopback ownership, process exit, and port rebind remain covered. |
-| Entry/navigation source gate | PASS | Route declarations and invalid-mode handling are inspected; this is not browser or screenshot evidence. |
-| Desktop and 390x844 rendering | MANUAL REQUIRED | No automated visual result is claimed. |
+- the exact official 69-field detector vocabulary;
+- earliest-C04 slice preparation with exact source hashes, inclusive
+  30-minute padding, public-label exclusion, and relative paths;
+- C01-C07 event-level evaluation and per-class metrics;
+- an independent train-window overfit sentinel;
+- exact affected-equipment tokens in the official 16-column submission;
+- a full public test-set offline smoke; and
+- two scripted executions covering import, analysis, evidence read, review,
+  Q09 diagnosis, review audit, and submission export.
 
-The assembled summary on this worker baseline is `PASS=3`, `FAIL=3`. Those
-failures are retained as failures: two depend on W2 integration, while the
-validation-slice provenance failure needs a coordinator-routed cross-track fix.
+Synthetic fixtures prove the tools' fail-closed behavior. They are not
+official metrics, a measured demonstration, or an organizer result.
 
-Focused worker results on this exact pre-commit tree:
+## Official-package integrity boundary
 
-- contract/tool tests: 12 passed, 0 failed;
-- launcher tests: 9 passed, 0 failed;
-- submission package validator: passed;
-- offline golden-path probe: exited successfully with an explicit `SKIP`
-  because `H2_WEB_URL` was not set; this is not runtime evidence;
-- `git diff --check` and changed-path allowlist audit: passed.
+A bounded read-only integrity check found that all data/material entries plus
+the workbook match: 21 of 24 total manifest entries. The three top-level
+requirement/README Markdown or DOCX files differ from their manifest records.
+The package remains read-only, and the differing documents cannot support
+runtime or source-integrity claims.
 
-## Remaining evidence gates
+## Historical worker findings
 
-The integrated command set and primary Fixture visual review have passed. The
-primary validation-slice demo still requires an authorized public package,
-explicit expected source hashes, an ignored generated-output directory, and two
-consecutive measured runs whose receipt passes `validate-demo-receipt.mjs` for
-the exact final SHA. Historical H6 evidence, Fixture, HTTP success, route
-declarations, and synthetic tests do not substitute for those gates.
+Pre-W2 worker checkouts reported legacy H2Qxx presentation, an English Fixture
+diagnosis, and generic provenance for a prepared slice. Those were true
+failures in the named historical checkout; later integration superseded them.
+They are retained for traceability and must not be restated as current product
+defects or converted into current passes.
+
+## Final coordinator gates
+
+After all lanes are integrated, the coordinator must use one clean exact SHA
+to rerun repository/H2/Python/build/launcher checks, official validation
+evaluation, the overfit sentinel, the full test-set offline smoke, the two-run
+demo and receipt validator, and desktop plus 390x844 visual inspection. The
+official metrics, retained screenshots, measured receipt, checker verdict,
+and final candidate SHA remain unclaimed until those reruns complete.

@@ -21,8 +21,10 @@ node tests/h2-sentinel/scripts/prepare-validation-slice.mjs `
 
 The output directory must not exist and must be inside the repository under a
 Git-ignored rule. The script verifies both exact source hashes, UTF-8 CSV
-syntax, required detector columns, label identity/code/time fields, unique and
-ordered timestamps, and complete padded coverage before writing anything.
+syntax, the exact official 69-field detector vocabulary, label
+identity/code/time fields, unique and ordered timestamps, and complete padded
+coverage before writing anything. Official UTC-naive timestamps are
+interpreted as UTC; timestamps with an explicit offset are normalized to UTC.
 
 It selects the earliest C04 label by start time, then event end and ID; creates
 an inclusive slice from 30 minutes before the label start through 30 minutes
@@ -52,17 +54,21 @@ node tests/h2-sentinel/scripts/validate-demo-receipt.mjs `
   --expected-commit '<40-character-final-integrated-sha>'
 ```
 
-The validator requires exactly two distinct passing runs, sequences `1` and
-`2`, with run 2 starting after run 1 completes. Each measured duration must be
-strictly less than 180,000 ms and must include positive durations in this
-order: `import`, `analysis`, `evidence_review`, `human_review`, `q09_report`,
-and `artifact_export`.
+The validator requires exactly two distinct scripted executions, sequences
+`1` and `2`, with run 2 starting after run 1 completes. Distinctness is proven
+by the runner-generated `executionId`; the deterministic analytics `runId` may
+legitimately repeat when identical detector bytes are analyzed by two fresh
+service processes. Each measured duration must be strictly less than 180,000
+ms and must include positive durations in this order: `import`, `analysis`,
+`evidence_review`, `human_review`, `q09_report`, and `artifact_export`.
 
 The validator recomputes the detector-input SHA-256 and verifies its columns,
 row count, monotonic timestamps, observed interval, and absence of label
 columns. For each run it also recomputes the SHA-256 of a Chinese diagnosis HTML
 report, a review-audit JSON export, and the exact 16-column `submission.csv`.
-It requires Live validation-slice provenance,
+The audit must retain the analyzed event at confirmed revision 1, and the
+submission must pass the official vocabulary/equipment checker. It requires
+Live validation-slice provenance,
 `publicLabelsUsedAsDetectorInput: false`, pre-started service disclosure, and
 explicit false values for organizer score, full validation, hidden test,
 deployment, production proof, and Fixture substitution claims.
@@ -70,3 +76,13 @@ deployment, production proof, and Fixture substitution claims.
 Passing this validator proves only that the supplied local receipt and files
 meet this evidence contract. It is not an organizer score, full-validation
 result, hidden-test result, deployment proof, or production proof.
+
+## Run the scripted two-execution demo
+
+After integration, use `validation/run-demo.mjs` with the prepared manifest,
+detector CSV, a clean exact candidate SHA, and a new ignored output directory.
+The runner starts a fresh Local launcher before each measured execution, then
+times only import, analysis, evidence read, human review, Q09 diagnosis,
+review-audit export, and submission export. Dependency installation and
+launcher startup are outside the measured window and are disclosed in the
+receipt.

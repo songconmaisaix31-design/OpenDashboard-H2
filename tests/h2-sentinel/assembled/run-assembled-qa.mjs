@@ -1050,8 +1050,11 @@ async function testLaunchFailureBoundaries() {
     unhealthy.listen({ host: LOOPBACK, port: unhealthyPort }, resolvePromise)
   })
   try {
+    const webPort = await freePort()
     const session = startExpectedFailure([
-      '--mode', 'local', '--external-sidecar-url', `http://${LOOPBACK}:${unhealthyPort}/`, '--health-timeout-ms', '500',
+      '--mode', 'local', '--web-port', String(webPort),
+      '--external-sidecar-url', `http://${LOOPBACK}:${unhealthyPort}/`,
+      '--health-timeout-ms', '500',
     ])
     const result = await waitForExit(session.child, 10_000)
     assert.equal(result.code, 1)

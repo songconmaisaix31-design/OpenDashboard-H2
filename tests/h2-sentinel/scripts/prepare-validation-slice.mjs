@@ -17,24 +17,19 @@ import {
   sep,
 } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  OFFICIAL_FIELDS,
+  assertOfficialTimeseriesColumns,
+  isLabelColumn as isOfficialLabelColumn,
+  normalizeUtcTimestamp,
+} from '../../../validation/lib/official-contract.mjs'
 
-const SCRIPT_VERSION = 'p1-validation-slice-v1'
+const SCRIPT_VERSION = 'p1-validation-slice-v2'
 const SLICE_FILENAME = 'validation-slice.csv'
 const MANIFEST_FILENAME = 'validation-slice-manifest.json'
 const PADDING_MS = 30 * 60 * 1000
 
-export const REQUIRED_TIMESERIES_COLUMNS = [
-  'timestamp',
-  'pv_actual_kw',
-  'bess_power_kw',
-  'pcc_power_kw',
-  'total_electrolyzer_power_kw',
-  'auxiliary_load_kw',
-  'bess_soc_percent',
-  'pcc_export_limit_kw',
-  'pcc_import_limit_kw',
-  'bess_dispatch_command_kw',
-]
+export const REQUIRED_TIMESERIES_COLUMNS = OFFICIAL_FIELDS
 
 const LABEL_COLUMN_ALIASES = {
   eventId: [
@@ -68,37 +63,6 @@ const LABEL_COLUMN_ALIASES = {
     '事件结束时间',
   ],
 }
-
-const EXPLICIT_LABEL_COLUMNS = new Set([
-  'event_id',
-  'eventid',
-  'label_event_id',
-  'anomaly_code',
-  'event_code',
-  'anomaly_subtype',
-  'event_start_time',
-  'event_end_time',
-  'start_time',
-  'end_time',
-  'severity',
-  'ground_truth',
-  'ground_truth_label',
-  'event_label',
-  'is_anomaly',
-  '事件id',
-  '事件编号',
-  '异常事件id',
-  '异常编码',
-  '异常类别',
-  '异常类型',
-  '开始时间',
-  '事件开始时间',
-  '结束时间',
-  '事件结束时间',
-])
-const ALL_LABEL_COLUMN_ALIASES = new Set(
-  Object.values(LABEL_COLUMN_ALIASES).flat().map(normalizeHeader),
-)
 
 const directory = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(directory, '../../..')
@@ -378,9 +342,9 @@ function resolveLabelColumns(headers) {
 }
 
 function parseTimestamp(value, label) {
-  const candidate = value.trim()
+  const candidate = normalizeUtcTimestamp(value)
   if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(candidate)) {
-    fail(`${label} must use ISO-8601 timestamps with an explicit timezone.`)
+    fail(`${label} must use ISO-8601 or official UTC-naive timestamp syntax.`)
   }
   const milliseconds = Date.parse(candidate)
   if (!Number.isFinite(milliseconds)) fail(`${label} contains an invalid timestamp.`)
@@ -427,17 +391,7 @@ function validateLabels(csv) {
     )
 }
 
-export function isLabelColumn(header) {
-  const normalized = normalizeHeader(header)
-  return (
-    ALL_LABEL_COLUMN_ALIASES.has(normalized) ||
-    EXPLICIT_LABEL_COLUMNS.has(normalized) ||
-    normalized === 'label' ||
-    normalized.startsWith('label_') ||
-    normalized.endsWith('_label') ||
-    normalized.startsWith('ground_truth_')
-  )
-}
+export const isLabelColumn = isOfficialLabelColumn
 
 function validateTimeseries(csv, sliceStart, sliceEnd) {
   const timestampIndex = csv.headers.indexOf('timestamp')
@@ -449,11 +403,10 @@ function validateTimeseries(csv, sliceStart, sliceEnd) {
     .map((header, index) => ({ header, index }))
     .filter(({ header }) => !isLabelColumn(header))
   const detectorHeaders = detectorIndexes.map(({ header }) => header)
-  const missingColumns = REQUIRED_TIMESERIES_COLUMNS.filter(
-    (column) => !detectorHeaders.includes(column),
-  )
-  if (missingColumns.length > 0) {
-    fail('Validation timeseries is missing required detector input columns.')
+  try {
+    assertOfficialTimeseriesColumns(detectorHeaders)
+  } catch (error) {
+    fail(error instanceof Error ? error.message : 'Official field validation failed.')
   }
   const numericColumns = REQUIRED_TIMESERIES_COLUMNS.filter((column) => column !== 'timestamp')
     .map((column) => ({ column, index: csv.headers.indexOf(column) }))
