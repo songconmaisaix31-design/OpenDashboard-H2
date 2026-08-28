@@ -288,7 +288,6 @@ describe('H2 Sentinel P1 Web workflows', () => {
   it('describes filename-only validation hints without asserting a public source', () => {
     const hintedMarkup = renderToStaticMarkup(
       <ProvenanceBanner
-        mode="LIVE_ANALYSIS"
         provenance={liveProvenance('local-import')}
         sourceHints={['validation-slice.csv']}
       />,
@@ -299,7 +298,6 @@ describe('H2 Sentinel P1 Web workflows', () => {
 
     const explicitMarkup = renderToStaticMarkup(
       <ProvenanceBanner
-        mode="LIVE_ANALYSIS"
         provenance={liveProvenance('public_validation_slice')}
         sourceHints={['arbitrary.csv']}
       />,

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { describe, it } from 'node:test'
 
 import type {
+  H2AnalysisRun,
   H2CsvImportRequest,
   H2SentinelDataSource,
 } from '@opendashboard/h2-contracts'
@@ -16,8 +17,40 @@ import {
 } from '../model/workspace-loader.ts'
 import {
   createH2WebFixtureDataSource,
+  H2_WEB_FIXTURE_EVENTS,
   H2_WEB_FIXTURE_RUN,
 } from './fixture-data-source.ts'
+
+const LIVE_PROVENANCE = {
+  ...H2_WEB_FIXTURE_RUN.provenance,
+  mode: 'LIVE_ANALYSIS',
+  source: 'local-import-test',
+} as const
+const LIVE_EVENTS = H2_WEB_FIXTURE_EVENTS.map((event) => ({
+  ...event,
+  provenance: LIVE_PROVENANCE,
+}))
+const LIVE_DATASET = {
+  ...H2_WEB_FIXTURE_RUN.dataset,
+  datasetId: 'live-dataset',
+  mode: 'LIVE_ANALYSIS',
+  provenance: LIVE_PROVENANCE,
+} as const
+const LIVE_RUN = {
+  ...H2_WEB_FIXTURE_RUN,
+  dataset: LIVE_DATASET,
+  quality: {
+    ...H2_WEB_FIXTURE_RUN.quality,
+    datasetId: LIVE_DATASET.datasetId,
+    checks: H2_WEB_FIXTURE_RUN.quality.checks.map((check) => ({
+      ...check,
+      provenance: LIVE_PROVENANCE,
+    })),
+    provenance: LIVE_PROVENANCE,
+  },
+  events: LIVE_EVENTS,
+  provenance: LIVE_PROVENANCE,
+} as const satisfies H2AnalysisRun
 
 describe('H2 CSV workspace loading', () => {
   it('hydrates only the request-bound run and leaves series to the active page', async () => {
@@ -68,6 +101,68 @@ describe('H2 CSV workspace loading', () => {
     assert.equal(workspace.run.provenance.mode, 'FIXTURE')
   })
 
+  it('rejects a Fixture workspace backed by a Live run and Live events', async () => {
+    const contradictoryRun = {
+      ...H2_WEB_FIXTURE_RUN,
+      events: LIVE_EVENTS,
+      provenance: LIVE_PROVENANCE,
+    } as const satisfies H2AnalysisRun
+
+    await assert.rejects(
+      () => hydrateH2Workspace(
+        createDataSourceForRun(contradictoryRun),
+        [contradictoryRun.dataset],
+        contradictoryRun.dataset,
+      ),
+      /H2 workspace provenance is internally inconsistent\./,
+    )
+  })
+
+  it('rejects a Live workspace and run containing a Fixture event', async () => {
+    const contradictoryRun = {
+      ...LIVE_RUN,
+      events: [H2_WEB_FIXTURE_EVENTS[0], ...LIVE_EVENTS.slice(1)],
+    } as const satisfies H2AnalysisRun
+
+    await assert.rejects(
+      () => hydrateH2Workspace(
+        createDataSourceForRun(contradictoryRun),
+        [contradictoryRun.dataset],
+        contradictoryRun.dataset,
+      ),
+      /H2 workspace provenance is internally inconsistent\./,
+    )
+  })
+
+  it('rejects event dataset fingerprint drift from the canonical run provenance', async () => {
+    const firstLiveEvent = LIVE_EVENTS[0]
+    assert.ok(firstLiveEvent)
+    const eventWithFingerprintDrift = {
+      ...firstLiveEvent,
+      provenance: {
+        ...LIVE_PROVENANCE,
+        datasetFingerprint: 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+      },
+    }
+    assert.notEqual(
+      eventWithFingerprintDrift.provenance.datasetFingerprint,
+      LIVE_RUN.provenance.datasetFingerprint,
+    )
+    const contradictoryRun = {
+      ...LIVE_RUN,
+      events: [eventWithFingerprintDrift, ...LIVE_EVENTS.slice(1)],
+    } as const satisfies H2AnalysisRun
+
+    await assert.rejects(
+      () => hydrateH2Workspace(
+        createDataSourceForRun(contradictoryRun),
+        [contradictoryRun.dataset],
+        contradictoryRun.dataset,
+      ),
+      /H2 workspace provenance is internally inconsistent\./,
+    )
+  })
+
   it('keeps the canonical CSV Fixture-provenanced on a local transport', async () => {
     let imported = false
     let transportModeReads = 0
@@ -114,42 +209,23 @@ describe('H2 CSV workspace loading', () => {
   it('moves a clean LIVE_ANALYSIS source from empty through import to ready', async () => {
     let imported = false
     const fixture = createH2WebFixtureDataSource()
-    const liveProvenance = {
-      ...H2_WEB_FIXTURE_RUN.provenance,
-      mode: 'LIVE_ANALYSIS',
-      source: 'local-import-test',
-    } as const
-    const liveDataset = {
-      ...H2_WEB_FIXTURE_RUN.dataset,
-      mode: 'LIVE_ANALYSIS',
-      provenance: liveProvenance,
-    } as const
-    const liveRun = {
-      ...H2_WEB_FIXTURE_RUN,
-      dataset: liveDataset,
-      quality: {
-        ...H2_WEB_FIXTURE_RUN.quality,
-        provenance: liveProvenance,
-      },
-      provenance: liveProvenance,
-    }
     const dataSource: H2SentinelDataSource = {
       ...fixture,
       async getMode() {
         return 'LIVE_ANALYSIS'
       },
       async listDatasets() {
-        return imported ? [liveDataset] : []
+        return imported ? [LIVE_DATASET] : []
       },
       async importCsv(request: H2CsvImportRequest) {
         assert.equal(request.filename, 'first-live-run.csv')
         assert.match(request.text, /^timestamp,pcc_power_kw/m)
         imported = true
-        return { dataset: liveDataset, quality: liveRun.quality }
+        return { dataset: LIVE_DATASET, quality: LIVE_RUN.quality }
       },
       async runAnalysis(datasetId: string) {
-        assert.equal(datasetId, liveDataset.datasetId)
-        return liveRun
+        assert.equal(datasetId, LIVE_DATASET.datasetId)
+        return LIVE_RUN
       },
     }
 
@@ -215,3 +291,13 @@ describe('H2 CSV workspace loading', () => {
     }
   })
 })
+
+function createDataSourceForRun(run: H2AnalysisRun): H2SentinelDataSource {
+  return {
+    ...createH2WebFixtureDataSource(),
+    async runAnalysis(datasetId: string) {
+      assert.equal(datasetId, run.dataset.datasetId)
+      return run
+    },
+  }
+}

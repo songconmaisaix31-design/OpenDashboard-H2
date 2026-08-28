@@ -148,6 +148,42 @@ describe('H2 Sentinel presentation', () => {
     assert.doesNotMatch(liveDiagnosis, /Fixture examples|FIXTURE|固定样例|样例就绪|h2-badge--fixture/)
   })
 
+  it('renders only the canonical run source identity when workspace or event fields disagree', () => {
+    const fixtureRunWithLiveWorkspaceFields = {
+      status: 'ready',
+      workspace: {
+        ...readyState.workspace,
+        mode: 'LIVE_ANALYSIS',
+        events: liveEvents,
+      },
+    } as const satisfies H2WorkspaceState
+    const liveRunWithFixtureWorkspaceFields = {
+      status: 'ready',
+      workspace: {
+        ...liveReadyState.workspace,
+        mode: 'FIXTURE',
+        events: H2_WEB_FIXTURE_EVENTS,
+      },
+    } as const satisfies H2WorkspaceState
+    const fixtureEventId = H2_WEB_FIXTURE_EVENTS[0].eventId
+
+    for (const navigation of [
+      { route: 'overview' },
+      { route: 'events' },
+      { route: 'diagnosis', eventId: fixtureEventId },
+      { route: 'analysis' },
+      { route: 'assistant' },
+      { route: 'reports' },
+    ] as const satisfies readonly H2NavigationTarget[]) {
+      assertOnlyFixtureSourceIdentity(
+        renderView(fixtureRunWithLiveWorkspaceFields, navigation),
+      )
+      assertOnlyLiveSourceIdentity(
+        renderView(liveRunWithFixtureWorkspaceFields, navigation),
+      )
+    }
+  })
+
   it('makes the judge path, C01-C07 coverage, source identity, and sign conventions visible', () => {
     const overviewMarkup = renderView(readyState, { route: 'overview' })
     assert.match(overviewMarkup, /一条路径完成核验、复核与导出/)
@@ -333,5 +369,23 @@ function renderView(
       selectedEventId={navigation.eventId ?? null}
       workspaceState={workspaceState}
     />,
+  )
+}
+
+function assertOnlyFixtureSourceIdentity(markup: string): void {
+  assert.match(markup, /FIXTURE · 固定样例/)
+  assert.match(markup, /h2-badge--fixture/)
+  assert.doesNotMatch(
+    markup,
+    /LIVE_ANALYSIS · 本地数据|本地实时分析|Official capabilities|LIVE · 当前运行|h2-badge--live/,
+  )
+}
+
+function assertOnlyLiveSourceIdentity(markup: string): void {
+  assert.match(markup, /LIVE_ANALYSIS · 本地数据/)
+  assert.match(markup, /h2-badge--live/)
+  assert.doesNotMatch(
+    markup,
+    /FIXTURE · 固定样例|Fixture examples|固定样例直达|样例就绪/,
   )
 }
