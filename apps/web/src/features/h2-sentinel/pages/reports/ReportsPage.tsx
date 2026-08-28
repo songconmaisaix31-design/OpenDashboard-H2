@@ -80,7 +80,7 @@ export function ReportsPage({ artifact, error, event, notice, onDownload, onExpo
         <section className="h2-panel h2-empty-panel"><strong>尚未生成报告</strong><p>选择一个导出类型。生成结果将显示文件名、媒体类型、完整哈希、来源和安全声明。</p></section>
       )}
 
-      <aside className="h2-report-boundary"><StatusBadge tone="fixture">来源可见</StatusBadge><p>FIXTURE、验证集切片与其他 LIVE_ANALYSIS 来源会明确区分；本地结果不等于官方成绩、隐藏测试或生产证明。</p></aside>
+      <aside className="h2-report-boundary"><StatusBadge tone="neutral">来源可见</StatusBadge><p>FIXTURE、验证集切片与其他 LIVE_ANALYSIS 来源会明确区分；本地结果不等于官方成绩、隐藏测试或生产证明。</p></aside>
     </div>
   )
 }
