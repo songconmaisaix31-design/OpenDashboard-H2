@@ -1,4 +1,4 @@
-export function parseCsvText(text, label = 'CSV') {
+export function parseCsvText(text, label = 'CSV', { normalizeHeaders = true } = {}) {
   const rows = []
   let row = []
   let cell = ''
@@ -50,9 +50,11 @@ export function parseCsvText(text, label = 'CSV') {
   if (cell !== '' || row.length > 0 || quoteClosed) pushRow()
   if (rows.length === 0) throw new Error(`${label} must include a header row.`)
 
-  const columns = rows[0].map((header, index) =>
-    (index === 0 ? header.replace(/^\uFEFF/, '') : header).trim(),
-  )
+  const columns = normalizeHeaders
+    ? rows[0].map((header, index) =>
+        (index === 0 ? header.replace(/^\uFEFF/, '') : header).trim(),
+      )
+    : [...rows[0]]
   if (columns.some((header) => header === '')) {
     throw new Error(`${label} header names must be non-empty.`)
   }

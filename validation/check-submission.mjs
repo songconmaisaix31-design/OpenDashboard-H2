@@ -9,13 +9,23 @@ import {
   PRIMARY_CONTROL_OBJECT_BY_CODE,
   PRIMARY_IMPACT_METRIC_BY_CODE,
   SUBTYPES_BY_CODE,
+  SEVERITY_BY_CODE,
   validateEquipmentTokenSet,
 } from './lib/official-contract.mjs'
-import { toInstant } from './lib/metrics.mjs'
+import { toCanonicalUtcInstant } from './lib/metrics.mjs'
 import { SUBMISSION_COLUMNS, parseSubmission } from './lib/submission.mjs'
 
 const MAX_SUBMISSION_BYTES = 64 * 1024 * 1024
 const MOJIBAKE_PATTERN = /[\uFFFD�]|锟斤拷|烫烫烫|屯屯屯|鈥/
+const DECIMAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
+
+function finiteDecimal(value) {
+  if (typeof value !== 'string' || value !== value.trim() || !DECIMAL_PATTERN.test(value)) {
+    return Number.NaN
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : Number.NaN
+}
 
 function validateAffectedEquipment(code, field, issues, label) {
   if (/\s/.test(field)) {
@@ -86,21 +96,29 @@ export function validateSubmissionText(text) {
     }
     if (!OFFICIAL_SEVERITIES.includes(row.severity.trim())) {
       issues.push(`${label} has invalid official severity "${row.severity}"`)
+    } else if (row.severity.trim() !== SEVERITY_BY_CODE.get(code)) {
+      issues.push(`${label} severity does not match ${code}`)
     }
     const expectedControl = PRIMARY_CONTROL_OBJECT_BY_CODE.get(code)
     if (row.primary_control_object.trim() !== expectedControl) {
       issues.push(`${label} primary_control_object does not match ${code}`)
     }
-    validateAffectedEquipment(code, row.affected_equipment.trim(), issues, label)
+    validateAffectedEquipment(code, row.affected_equipment, issues, label)
 
-    const confidence = Number(row.confidence)
+    const confidence = finiteDecimal(row.confidence)
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       issues.push(`${label} has invalid confidence "${row.confidence}"`)
     }
     try {
       const evidence = JSON.parse(row.evidence_json)
-      if (!Array.isArray(evidence) || evidence.length === 0) {
-        issues.push(`${label} evidence_json must be a non-empty array`)
+      if (
+        !Array.isArray(evidence) ||
+        evidence.length === 0 ||
+        evidence.some((entry) =>
+          entry === null || Array.isArray(entry) || typeof entry !== 'object' ||
+          typeof entry.evidence_id !== 'string' || entry.evidence_id.trim() === '')
+      ) {
+        issues.push(`${label} evidence_json must be a non-empty array of evidence objects with evidence_id`)
       }
     } catch {
       issues.push(`${label} evidence_json is not valid JSON`)
@@ -112,24 +130,28 @@ export function validateSubmissionText(text) {
     if (row.primary_impact_metric.trim() !== PRIMARY_IMPACT_METRIC_BY_CODE.get(code)) {
       issues.push(`${label} primary_impact_metric does not match ${code}`)
     }
-    if (!Number.isFinite(Number(row.estimated_impact_value))) {
+    const estimatedImpact = finiteDecimal(row.estimated_impact_value)
+    if (!Number.isFinite(estimatedImpact) || estimatedImpact < 0) {
       issues.push(`${label} has an invalid estimated_impact_value`)
     }
 
-    const start = toInstant(row.start_time)
-    const end = toInstant(row.end_time)
-    const firstDetection = toInstant(row.first_detection_time)
+    const start = toCanonicalUtcInstant(row.start_time)
+    const end = toCanonicalUtcInstant(row.end_time)
+    const firstDetection = toCanonicalUtcInstant(row.first_detection_time)
+    const predictiveEarlyWarning = code === 'C05' || code === 'C07'
     if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
       issues.push(`${label} has an invalid event interval`)
     }
     if (
       !Number.isFinite(firstDetection) ||
-      (Number.isFinite(start) && Number.isFinite(end) &&
-        (firstDetection < start || firstDetection > end))
+      (Number.isFinite(end) && firstDetection > end) ||
+      (!predictiveEarlyWarning && Number.isFinite(start) && firstDetection < start)
     ) {
-      issues.push(`${label} first_detection_time is outside the event interval`)
+      issues.push(
+        `${label} first_detection_time must be canonical UTC, no later than event end, and may precede start only for predictive C05/C07`,
+      )
     }
-    if (row.requires_human_confirmation.trim() !== 'true') {
+    if (row.requires_human_confirmation !== 'true') {
       issues.push(`${label} requires_human_confirmation must be true for every recommendation`)
     }
   }

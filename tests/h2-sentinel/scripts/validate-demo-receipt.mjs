@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto'
 import { readFile, realpath, stat } from 'node:fs/promises'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateSubmissionText } from '../../../validation/check-submission.mjs'
 import { assertOfficialTimeseriesColumns } from '../../../validation/lib/official-contract.mjs'
+import { OFFICIAL_SOURCES } from '../../../validation/lib/official-sources.mjs'
+import { toInstant } from '../../../validation/lib/metrics.mjs'
 import {
   REQUIRED_TIMESERIES_COLUMNS,
   isLabelColumn,
@@ -138,7 +140,7 @@ function parseTimestamp(value, label) {
   if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(value)) {
     fail(`${label} must include an explicit timezone.`)
   }
-  const milliseconds = Date.parse(value)
+  const milliseconds = toInstant(value)
   if (!Number.isFinite(milliseconds)) fail(`${label} must be a valid ISO-8601 timestamp.`)
   return milliseconds
 }
@@ -209,7 +211,16 @@ async function artifactFile(artifactsRoot, relativePath, label) {
   return readBytes(canonical, label)
 }
 
-function validateManifest(manifest) {
+function expectedVerifiedScope(sourceContract) {
+  return sourceContract.verifiedScope ?? {
+    mode: 'LIVE_ANALYSIS',
+    scope: 'VALIDATION_SLICE',
+    displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+  }
+}
+
+function validateManifest(manifest, sourceContract) {
+  const verifiedScope = expectedVerifiedScope(sourceContract)
   assertExactKeys(
     manifest,
     [
@@ -232,21 +243,50 @@ function validateManifest(manifest) {
   parseTimestamp(manifest.generatedAt, 'Slice manifest generatedAt')
   assertExactKeys(manifest.provenance, ['mode', 'scope', 'displayLabel', 'limitations'], 'Slice provenance')
   if (
-    manifest.provenance.mode !== 'LIVE_ANALYSIS' ||
-    manifest.provenance.scope !== 'VALIDATION_SLICE' ||
-    manifest.provenance.displayLabel !== 'LIVE_ANALYSIS · 验证集切片'
+    manifest.provenance.mode !== verifiedScope.mode ||
+    manifest.provenance.scope !== verifiedScope.scope ||
+    manifest.provenance.displayLabel !== verifiedScope.displayLabel
   ) {
-    fail('Slice manifest must retain validation-slice provenance.')
+    fail('Slice manifest must retain the independently verified source scope.')
   }
   if (!Array.isArray(manifest.provenance.limitations) || manifest.provenance.limitations.length < 3) {
     fail('Slice manifest must state bounded validation limitations.')
   }
   assertExactKeys(manifest.sources, ['timeseries', 'labels'], 'Slice sources')
+  assertExactKeys(
+    manifest.sources.timeseries,
+    ['relativePath', 'sha256', 'rowCount', 'firstTimestamp', 'lastTimestamp'],
+    'Slice timeseries source',
+  )
+  assertExactKeys(
+    manifest.sources.labels,
+    [
+      'relativePath', 'sha256', 'rowCount', 'eventCount', 'uniqueEventIdCount',
+      'firstStart', 'lastEnd', 'byCode',
+    ],
+    'Slice label source',
+  )
   for (const [name, source] of Object.entries(manifest.sources)) {
-    assertExactKeys(source, ['relativePath', 'sha256'], `Slice ${name} source`)
     assertSafeRelativePath(source.relativePath, `Slice ${name} source path`)
     assertHash(source.sha256, `Slice ${name} source hash`)
   }
+  if (
+    basename(manifest.sources.timeseries.relativePath) !== sourceContract.timeseries.filename ||
+    manifest.sources.timeseries.sha256 !== sourceContract.timeseries.sha256 ||
+    manifest.sources.timeseries.rowCount !== sourceContract.timeseries.rowCount ||
+    manifest.sources.timeseries.firstTimestamp !== sourceContract.timeseries.firstTimestamp ||
+    manifest.sources.timeseries.lastTimestamp !== sourceContract.timeseries.lastTimestamp ||
+    basename(manifest.sources.labels.relativePath) !== sourceContract.labels.filename ||
+    manifest.sources.labels.sha256 !== sourceContract.labels.sha256 ||
+    manifest.sources.labels.rowCount !== sourceContract.labels.rowCount ||
+    manifest.sources.labels.eventCount !== sourceContract.labels.eventCount ||
+    manifest.sources.labels.uniqueEventIdCount !== sourceContract.labels.eventCount ||
+    manifest.sources.labels.firstStart !== sourceContract.labels.firstStart ||
+    manifest.sources.labels.lastEnd !== sourceContract.labels.lastEnd ||
+    Object.entries(sourceContract.labels.byCode).some(
+      ([code, count]) => manifest.sources.labels.byCode?.[code] !== count,
+    )
+  ) fail('Slice manifest does not match the verified source identity.')
   assertExactKeys(manifest.selectedEvent, ['eventId', 'code', 'startTime', 'endTime'], 'Slice selected event')
   assertString(manifest.selectedEvent.eventId, 'Slice selected event ID')
   if (manifest.selectedEvent.code !== 'C04') fail('Slice selected event must be C04.')
@@ -327,6 +367,15 @@ function validateManifest(manifest) {
   if (!Array.isArray(manifest.overlappingLabels) || manifest.overlappingLabels.length === 0) {
     fail('Slice manifest must retain overlapping public labels outside detector input.')
   }
+  const overlappingIdentities = manifest.overlappingLabels.map(
+    ({ eventId, code, startTime, endTime }) => ({ eventId, code, startTime, endTime }),
+  )
+  if (
+    JSON.stringify(manifest.selectedEvent) !==
+      JSON.stringify(sourceContract.directedDemo?.selectedEvent) ||
+    JSON.stringify(overlappingIdentities) !==
+      JSON.stringify(sourceContract.directedDemo?.overlappingLabels)
+  ) fail('Selected event and overlapping labels do not match the independent source contract.')
 }
 
 function validateDetectorInput(bytes, manifest) {
@@ -359,7 +408,11 @@ function validateDetectorInput(bytes, manifest) {
     }
     for (const { column, index } of numericColumns) {
       const value = row[index].trim()
-      if (value === '' || !Number.isFinite(Number(value))) {
+      if (
+        value === '' ||
+        !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value) ||
+        !Number.isFinite(Number(value))
+      ) {
         fail(`Detector input ${column} values must be finite numbers.`)
       }
     }
@@ -374,7 +427,7 @@ function validateDetectorInput(bytes, manifest) {
   }
 }
 
-function validateReceiptShape(receipt) {
+function validateReceiptShape(receipt, verifiedScope) {
   assertExactKeys(
     receipt,
     [
@@ -385,7 +438,7 @@ function validateReceiptShape(receipt) {
       'targetEnvironment',
       'servicesStartedBeforeTimer',
       'timedScopeExcludes',
-      'provenance',
+      'verifiedManifestScope',
       'sourceHashes',
       'selectedEvent',
       'runs',
@@ -393,7 +446,7 @@ function validateReceiptShape(receipt) {
     ],
     'Demo receipt',
   )
-  if (receipt.schemaVersion !== 1 || receipt.receiptKind !== 'h2_validation_slice_demo') {
+  if (receipt.schemaVersion !== 2 || receipt.receiptKind !== 'h2_validation_slice_demo') {
     fail('Demo receipt identity is invalid.')
   }
   parseTimestamp(receipt.recordedAt, 'Demo receipt recordedAt')
@@ -413,13 +466,24 @@ function validateReceiptShape(receipt) {
   ) {
     fail('Demo receipt must exclude only installation and launcher startup from timing.')
   }
-  assertExactKeys(receipt.provenance, ['mode', 'scope', 'displayLabel'], 'Demo provenance')
+  assertExactKeys(
+    receipt.verifiedManifestScope,
+    [
+      'scope',
+      'displayLabel',
+      'publicLabelsMaySelectDirectedDemoBeforeAnalysis',
+      'publicLabelsUsedAsDetectorInput',
+      'sourceIdentity',
+    ],
+    'Verified manifest scope',
+  )
   if (
-    receipt.provenance.mode !== 'LIVE_ANALYSIS' ||
-    receipt.provenance.scope !== 'VALIDATION_SLICE' ||
-    receipt.provenance.displayLabel !== 'LIVE_ANALYSIS · 验证集切片'
+    receipt.verifiedManifestScope.scope !== verifiedScope.scope ||
+    receipt.verifiedManifestScope.displayLabel !== verifiedScope.displayLabel ||
+    receipt.verifiedManifestScope.publicLabelsMaySelectDirectedDemoBeforeAnalysis !== true ||
+    receipt.verifiedManifestScope.publicLabelsUsedAsDetectorInput !== false
   ) {
-    fail('Demo receipt must retain validation-slice provenance.')
+    fail('Demo receipt must distinguish verified manifest scope from service provenance.')
   }
   assertExactKeys(
     receipt.sourceHashes,
@@ -475,7 +539,7 @@ function validateStageDurations(stages, totalDurationMs, runLabel) {
   }
 }
 
-function validateHtml(content, label) {
+function validateHtml(content, label, bindings) {
   if (!/^<!doctype html>/i.test(content) || !/<html lang=["']zh-CN["']>/i.test(content)) {
     fail(`${label} must be a Simplified Chinese HTML document.`)
   }
@@ -490,6 +554,16 @@ function validateHtml(content, label) {
   }
   if (/<script\b|https?:\/\//i.test(content)) {
     fail(`${label} must not contain scripts or remote resources.`)
+  }
+  for (const binding of [
+    bindings.analyzedEventId,
+    bindings.sourceFilename,
+    bindings.fingerprint,
+    bindings.displayLabel,
+  ]) {
+    if (!content.includes(binding)) {
+      fail(`${label} must bind the selected event and actual source provenance.`)
+    }
   }
 }
 
@@ -536,7 +610,54 @@ function validateSubmission(content, analyzedEventId, label) {
   }
 }
 
-async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPaths) {
+function validateLiveProvenance(provenance, label, fingerprint) {
+  assertExactKeys(
+    provenance,
+    [
+      'mode', 'source', 'generatedAt', 'datasetFingerprint', 'modelVersion',
+      'ruleVersion', 'configurationVersion', 'limitations',
+    ],
+    label,
+  )
+  if (
+    provenance.mode !== 'LIVE_ANALYSIS' ||
+    provenance.datasetFingerprint !== fingerprint ||
+    typeof provenance.source !== 'string' || provenance.source.trim() === '' ||
+    typeof provenance.ruleVersion !== 'string' || provenance.ruleVersion.trim() === '' ||
+    typeof provenance.configurationVersion !== 'string' ||
+    provenance.configurationVersion.trim() === '' ||
+    !Array.isArray(provenance.limitations)
+  ) fail(`${label} must retain complete actual LIVE_ANALYSIS provenance.`)
+  parseTimestamp(provenance.generatedAt, `${label} generatedAt`)
+  if (provenance.modelVersion !== null) assertString(provenance.modelVersion, `${label} modelVersion`)
+}
+
+function validateRuntimeIdentity(identity, kind, detector, label) {
+  const idField = kind === 'import' ? 'datasetId' : 'runId'
+  assertExactKeys(
+    identity,
+    [idField, 'sourceFilename', 'rowCount', 'fingerprint', 'timeRange', 'provenance'],
+    label,
+  )
+  assertString(identity[idField], `${label} ${idField}`)
+  if (
+    identity.sourceFilename !== 'validation-slice.csv' ||
+    identity.rowCount !== detector.rowCount ||
+    identity.fingerprint !== detector.fingerprint
+  ) fail(`${label} does not match the verified detector input identity.`)
+  assertExactKeys(identity.timeRange, ['startTime', 'endTime'], `${label} timeRange`)
+  parseTimestamp(identity.timeRange.startTime, `${label} startTime`)
+  parseTimestamp(identity.timeRange.endTime, `${label} endTime`)
+  validateLiveProvenance(identity.provenance, `${label} provenance`, detector.fingerprint)
+}
+
+async function validateRun(
+  run,
+  expectedSequence,
+  artifactsRoot,
+  usedArtifactPaths,
+  detector,
+) {
   const runLabel = `Measured run ${expectedSequence}`
   assertExactKeys(
     run,
@@ -550,7 +671,8 @@ async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPat
       'completedAt',
       'totalDurationMs',
       'stageDurations',
-      'provenanceMode',
+      'importedDataset',
+      'analysisRun',
       'publicLabelsUsedAsDetectorInput',
       'artifacts',
     ],
@@ -574,9 +696,17 @@ async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPat
     fail(`${runLabel} timestamps must agree with totalDurationMs.`)
   }
   validateStageDurations(run.stageDurations, run.totalDurationMs, runLabel)
-  if (run.provenanceMode !== 'LIVE_ANALYSIS' || run.publicLabelsUsedAsDetectorInput !== false) {
+  if (run.publicLabelsUsedAsDetectorInput !== false) {
     fail(`${runLabel} must use Live analysis without passing public labels to the detector.`)
   }
+  validateRuntimeIdentity(run.importedDataset, 'import', detector, `${runLabel} import`)
+  validateRuntimeIdentity(run.analysisRun, 'analysis', detector, `${runLabel} analysis`)
+  if (
+    run.runId !== run.analysisRun.runId ||
+    run.importedDataset.sourceFilename !== run.analysisRun.sourceFilename ||
+    run.importedDataset.rowCount !== run.analysisRun.rowCount ||
+    run.importedDataset.fingerprint !== run.analysisRun.fingerprint
+  ) fail(`${runLabel} import and analysis identities do not match.`)
   assertExactKeys(run.artifacts, ['diagnosisReport', 'reviewAudit', 'submissionCsv'], `${runLabel} artifacts`)
 
   const artifactBytes = {}
@@ -597,6 +727,12 @@ async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPat
   validateHtml(
     decodeUtf8(artifactBytes.diagnosisReport, `${runLabel} diagnosis report`),
     `${runLabel} diagnosis report`,
+    {
+      analyzedEventId: run.analyzedEventId,
+      sourceFilename: run.analysisRun.sourceFilename,
+      fingerprint: run.analysisRun.fingerprint,
+      displayLabel: detector.displayLabel,
+    },
   )
   validateAudit(
     decodeUtf8(artifactBytes.reviewAudit, `${runLabel} review audit`),
@@ -618,7 +754,10 @@ async function validateRun(run, expectedSequence, artifactsRoot, usedArtifactPat
   }
 }
 
-export async function validateDemoReceipt(options) {
+export async function validateDemoReceipt(
+  options,
+  sourceContract = OFFICIAL_SOURCES.validation,
+) {
   if (!/^[a-fA-F0-9]{40}$/.test(options.expectedCommit)) {
     fail('Expected commit must be a full 40-character commit SHA.')
   }
@@ -643,14 +782,29 @@ export async function validateDemoReceipt(options) {
   } catch {
     fail('Slice manifest could not be resolved.')
   }
+  const manifestDirectory = dirname(manifestPath)
+  if (
+    artifactsRoot === manifestDirectory ||
+    isWithin(artifactsRoot, manifestDirectory) ||
+    isWithin(manifestDirectory, artifactsRoot)
+  ) fail('Artifact root must be fresh and separate from the slice manifest directory.')
+  let receiptPath
+  try {
+    receiptPath = await realpath(resolve(options.receiptPath))
+  } catch {
+    fail('Demo receipt could not be resolved.')
+  }
+  if (dirname(receiptPath) !== artifactsRoot) {
+    fail('Demo receipt must be written directly under the declared artifact root.')
+  }
   const [receiptBytes, manifestBytes] = await Promise.all([
-    readBytes(options.receiptPath, 'Demo receipt'),
+    readBytes(receiptPath, 'Demo receipt'),
     readBytes(manifestPath, 'Slice manifest'),
   ])
   const receipt = parseJson(receiptBytes, 'Demo receipt')
   const manifest = parseJson(manifestBytes, 'Slice manifest')
-  validateReceiptShape(receipt)
-  validateManifest(manifest)
+  validateManifest(manifest, sourceContract)
+  validateReceiptShape(receipt, expectedVerifiedScope(sourceContract))
   const detectorInputBytes = await artifactFile(
     dirname(manifestPath),
     manifest.slice.filename,
@@ -674,10 +828,23 @@ export async function validateDemoReceipt(options) {
   if (JSON.stringify(receipt.selectedEvent) !== JSON.stringify(manifest.selectedEvent)) {
     fail('Demo receipt selected event does not match the prepared slice manifest.')
   }
+  if (
+    JSON.stringify(receipt.verifiedManifestScope.sourceIdentity) !==
+    JSON.stringify(manifest.sources)
+  ) fail('Demo receipt verified manifest scope does not match the prepared source identity.')
 
   const usedArtifactPaths = new Set()
-  const first = await validateRun(receipt.runs[0], 1, artifactsRoot, usedArtifactPaths)
-  const second = await validateRun(receipt.runs[1], 2, artifactsRoot, usedArtifactPaths)
+  const detector = {
+    rowCount: manifest.slice.rowCount,
+    fingerprint: manifest.slice.sha256,
+    displayLabel: receipt.verifiedManifestScope.displayLabel,
+  }
+  const first = await validateRun(
+    receipt.runs[0], 1, artifactsRoot, usedArtifactPaths, detector,
+  )
+  const second = await validateRun(
+    receipt.runs[1], 2, artifactsRoot, usedArtifactPaths, detector,
+  )
   if (first.executionId === second.executionId) {
     fail('Measured runs must have distinct execution IDs.')
   }
@@ -688,7 +855,7 @@ export async function validateDemoReceipt(options) {
     status: 'valid',
     receiptKind: receipt.receiptKind,
     candidateCommit: receipt.candidateCommit,
-    provenanceScope: receipt.provenance.scope,
+    provenanceScope: receipt.verifiedManifestScope.scope,
     consecutiveRuns: 2,
     durationsMs: [first.durationMs, second.durationMs],
     eachUnder180Seconds: true,
