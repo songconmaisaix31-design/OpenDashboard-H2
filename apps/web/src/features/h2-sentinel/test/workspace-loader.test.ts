@@ -51,6 +51,8 @@ const LIVE_RUN = {
   events: LIVE_EVENTS,
   provenance: LIVE_PROVENANCE,
 } as const satisfies H2AnalysisRun
+const CONTRADICTORY_FINGERPRINT =
+  'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 
 describe('H2 CSV workspace loading', () => {
   it('hydrates only the request-bound run and leaves series to the active page', async () => {
@@ -141,7 +143,7 @@ describe('H2 CSV workspace loading', () => {
       ...firstLiveEvent,
       provenance: {
         ...LIVE_PROVENANCE,
-        datasetFingerprint: 'sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
+        datasetFingerprint: CONTRADICTORY_FINGERPRINT,
       },
     }
     assert.notEqual(
@@ -158,6 +160,62 @@ describe('H2 CSV workspace loading', () => {
         createDataSourceForRun(contradictoryRun),
         [contradictoryRun.dataset],
         contradictoryRun.dataset,
+      ),
+      /H2 workspace provenance is internally inconsistent\./,
+    )
+  })
+
+  it('rejects an injected run and events consistently bound to a different dataset fingerprint', async () => {
+    const contradictoryProvenance = {
+      ...LIVE_PROVENANCE,
+      datasetFingerprint: CONTRADICTORY_FINGERPRINT,
+    }
+    const contradictoryRun = {
+      ...LIVE_RUN,
+      dataset: {
+        ...LIVE_DATASET,
+        fingerprint: CONTRADICTORY_FINGERPRINT,
+        provenance: contradictoryProvenance,
+      },
+      events: LIVE_EVENTS.map((event) => ({
+        ...event,
+        provenance: contradictoryProvenance,
+      })),
+      provenance: contradictoryProvenance,
+    } as const satisfies H2AnalysisRun
+    assert.notEqual(
+      contradictoryRun.dataset.fingerprint,
+      LIVE_DATASET.fingerprint,
+    )
+
+    await assert.rejects(
+      () => hydrateH2Workspace(
+        createDataSourceForRun(contradictoryRun),
+        [LIVE_DATASET],
+        LIVE_DATASET,
+      ),
+      /H2 workspace provenance is internally inconsistent\./,
+    )
+  })
+
+  it('rejects an injected run fingerprint that contradicts its real dataset provenance', async () => {
+    const contradictoryRun = {
+      ...LIVE_RUN,
+      dataset: {
+        ...LIVE_DATASET,
+        fingerprint: CONTRADICTORY_FINGERPRINT,
+      },
+    } as const satisfies H2AnalysisRun
+    assert.equal(
+      contradictoryRun.dataset.provenance.datasetFingerprint,
+      LIVE_DATASET.fingerprint,
+    )
+
+    await assert.rejects(
+      () => hydrateH2Workspace(
+        createDataSourceForRun(contradictoryRun),
+        [LIVE_DATASET],
+        LIVE_DATASET,
       ),
       /H2 workspace provenance is internally inconsistent\./,
     )

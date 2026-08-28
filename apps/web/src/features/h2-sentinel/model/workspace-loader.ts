@@ -1,7 +1,6 @@
 import type {
   H2AnalysisRun,
   H2DatasetManifest,
-  H2DatasetMode,
   H2SentinelDataSource,
 } from '@opendashboard/h2-contracts'
 import type { H2Workspace } from './view-state.ts'
@@ -36,9 +35,9 @@ export async function hydrateH2Workspace(
 ): Promise<H2Workspace> {
   const run = await dataSource.runAnalysis(dataset.datasetId)
   const events = run.events
-  const mode = run.dataset.mode
+  const mode = dataset.mode
 
-  assertH2WorkspaceProvenanceConsistency(mode, run)
+  assertH2WorkspaceProvenanceConsistency(dataset, run)
 
   return {
     mode,
@@ -49,17 +48,27 @@ export async function hydrateH2Workspace(
 }
 
 function assertH2WorkspaceProvenanceConsistency(
-  workspaceMode: H2DatasetMode,
+  workspaceDataset: H2DatasetManifest,
   run: H2AnalysisRun,
 ): void {
   const runProvenance = run.provenance
+  const hasContradictoryMode = [
+    run.dataset.mode,
+    run.dataset.provenance.mode,
+    runProvenance.mode,
+  ].some((mode) => mode !== workspaceDataset.mode)
+  const hasContradictoryFingerprint = [
+    run.dataset.fingerprint,
+    run.dataset.provenance.datasetFingerprint,
+    runProvenance.datasetFingerprint,
+  ].some((fingerprint) => fingerprint !== workspaceDataset.fingerprint)
   const hasContradictoryEvent = run.events.some(({ provenance }) =>
     provenance.mode !== runProvenance.mode ||
     provenance.datasetFingerprint !== runProvenance.datasetFingerprint,
   )
 
   // Contradictory source identities must stop at hydration, before any page can relabel them.
-  if (workspaceMode !== runProvenance.mode || hasContradictoryEvent) {
+  if (hasContradictoryMode || hasContradictoryFingerprint || hasContradictoryEvent) {
     throw new Error('H2 workspace provenance is internally inconsistent.')
   }
 }

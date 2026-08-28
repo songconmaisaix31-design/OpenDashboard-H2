@@ -386,6 +386,6 @@ function assertOnlyLiveSourceIdentity(markup: string): void {
   assert.match(markup, /h2-badge--live/)
   assert.doesNotMatch(
     markup,
-    /FIXTURE · 固定样例|Fixture examples|固定样例直达|样例就绪/,
+    /FIXTURE · 固定样例|Fixture examples|固定样例直达|样例就绪|h2-badge--fixture/,
   )
 }
