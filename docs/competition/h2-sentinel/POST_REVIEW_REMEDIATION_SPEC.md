@@ -314,3 +314,57 @@ official-data absence from Git, package-integrity wording, browser desktop and
 Remote deployment, publication, GitHub Actions, hidden-test scoring, organizer
 approval, and changes to protected `main` are outside the authority of this
 task. They remain false claims unless separately authorized and verified.
+
+## 8. Implementation-review addendum
+
+Read-only review of the first remediation commits found additional trust and
+correctness gaps. They are part of this specification rather than deferred
+follow-up work.
+
+### R11 - Causal diagnosis and predictive-event correctness
+
+- Detection candidates must retain the actual triggering equipment, variables,
+  direction, and subtype context. Evidence, assistant answers, and submission
+  rows must derive from that context instead of code-level static defaults.
+- C05 quota risk and C07 reserve risk must support prospective first detection
+  without truncating the event when the risk is increasing.
+- C06 efficient-reference allocation must enforce one capacity boundary per
+  physical electrolyzer and satisfy equivalent hydrogen output before emitting
+  an avoidable-energy impact.
+- Dynamic PCC safety limits must be evaluated against the matching row, not the
+  first row of an event window.
+
+### R12 - Evidence source identity and output safety
+
+- An official-named report requires independently frozen source hashes, exact
+  full-source row and event counts, split identity, unique event IDs, and actual
+  loopback import provenance. A same-name or self-consistent synthetic fixture
+  must use a lower evidence classification.
+- All generated evidence stays under the canonical ignored
+  `tests/h2-sentinel/reports/generated/` root. Tools reject tracked targets,
+  existing candidate outputs, arbitrary ignored files, and untracked source or
+  configuration drift.
+- Evaluation and overfit reports are fresh, candidate-specific, atomically
+  written, finite-valued, and bound to their input report hashes and matching
+  configuration.
+
+### R13 - Strict submission, launcher, and receipt boundaries
+
+- Submission validation uses exact headers, canonical UTC timestamps, finite
+  decimal numbers, non-negative impact values, structured evidence, and the
+  required human-confirmation flag. Only predictive C05/C07 events may detect
+  before the labeled start; no category may detect after its event end.
+- Every resolved validation request URL remains literal-loopback and redirects
+  fail closed. Launcher spawn/readiness failures terminate only the exact owned
+  child tree before returning a redacted error.
+- Demo receipts bind the selected event, overlapping labels, Q09 artifact,
+  source identity, actual runtime provenance, exact clean candidate, two fresh
+  executions, and recomputed artifact hashes.
+
+### R14 - Bounded import means bounded memory
+
+Raising byte or row constants is insufficient. Row limits must be enforced
+while parsing, label aliases must be rejected before numeric conversion, and
+the service must not retain avoidable full-input text, encoded copies, parser
+buffers, and expanded row dictionaries at the same time. Tests must exercise
+the boundary before the official train-size claim is retained.

@@ -1,5 +1,10 @@
 # H2 Sentinel H6 Integration Handoff
 
+> Historical archive: this file records the original H6 integration snapshot.
+> Its test counts, bundle sizes, screenshots, warnings, and limitations are not
+> final-candidate evidence. Current status is established only by fresh checks
+> from the final integrated SHA.
+
 ## Identity and boundary
 
 - Gate: `H6` integration and packaging.

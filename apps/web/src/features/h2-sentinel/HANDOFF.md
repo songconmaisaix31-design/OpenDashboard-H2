@@ -1,7 +1,12 @@
 # H2 Sentinel Web Handoff
 
+> Historical archive: this file records the original Web worker snapshot. It
+> is not the current integrated candidate, current verification result, or
+> current limitation list. See `README.md`, the root remediation specification,
+> and final-candidate evidence for current behavior.
+
 - Branch: `songconmaisaix31-design/h2-web`
-- Worktree: `C:\Users\DW\orca\workspaces\OpenDashboard\h2-web`
+- Worktree: historical isolated worker checkout (not part of the deliverable)
 - Immutable Wave 1 base SHA: `f9dd7df83a81da57fdaa2b03cd67470c8c7a22c4`
 - Contract correction design input: `4f2a8a3156a96a7670f4ee9830ff1c560faf1c94`
 - Owned write path: `apps/web/src/features/h2-sentinel/**`
