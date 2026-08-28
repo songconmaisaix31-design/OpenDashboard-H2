@@ -119,29 +119,91 @@ export const H2_MODE_COPY = {
   Record<H2DatasetMode, { readonly label: string; readonly description: string }>
 >
 
+type H2ProvenancePresentationKind =
+  | 'fixture'
+  | 'explicit_validation_slice'
+  | 'explicit_full_validation'
+  | 'hint_validation_slice'
+  | 'hint_full_validation'
+  | 'local'
+
+export interface H2ProvenancePresentation {
+  readonly label: string
+  readonly description: string
+}
+
+const H2_PROVENANCE_PRESENTATION = {
+  fixture: H2_MODE_COPY.FIXTURE,
+  explicit_validation_slice: {
+    label: 'LIVE_ANALYSIS · 验证集切片',
+    description: '来自公开验证数据的本地准备切片；不是完整验证集、隐藏测试结果或官方成绩。',
+  },
+  explicit_full_validation: {
+    label: 'LIVE_ANALYSIS · 完整验证集',
+    description: '来自完整公开验证数据的本地分析；不是隐藏测试结果、官方成绩或生产证明。',
+  },
+  hint_validation_slice: {
+    label: 'LIVE_ANALYSIS · 未核验文件名提示（验证集切片）',
+    description: '文件名或数据集名称看起来像验证集切片，但来源身份未核验；只有独立 manifest/receipt 才能确认公共来源身份。',
+  },
+  hint_full_validation: {
+    label: 'LIVE_ANALYSIS · 未核验文件名提示（完整验证集）',
+    description: '文件名或数据集名称看起来像完整验证集，但来源身份未核验；只有独立 manifest/receipt 才能确认公共来源身份。',
+  },
+  local: H2_MODE_COPY.LIVE_ANALYSIS,
+} as const satisfies Readonly<
+  Record<H2ProvenancePresentationKind, H2ProvenancePresentation>
+>
+
+export function getH2ProvenancePresentation(
+  provenance: H2Provenance,
+  sourceHints: readonly string[] = [],
+): H2ProvenancePresentation {
+  return H2_PROVENANCE_PRESENTATION[classifyH2Provenance(provenance, sourceHints)]
+}
+
 export function getH2ProvenanceLabel(
   provenance: H2Provenance,
   sourceHints: readonly string[] = [],
 ): string {
-  if (provenance.mode === 'FIXTURE') return 'FIXTURE · 固定样例'
-  const evidence = [
+  return getH2ProvenancePresentation(provenance, sourceHints).label
+}
+
+function classifyH2Provenance(
+  provenance: H2Provenance,
+  sourceHints: readonly string[],
+): H2ProvenancePresentationKind {
+  if (provenance.mode === 'FIXTURE') return 'fixture'
+
+  const explicitEvidence = normalizeH2ProvenanceEvidence([
     provenance.source,
     ...provenance.limitations,
-    ...sourceHints,
-  ].join(' ').toLocaleLowerCase('zh-CN')
-  if (
-    evidence.includes('validation slice') ||
+  ])
+  if (hasH2ValidationSliceMarker(explicitEvidence)) return 'explicit_validation_slice'
+  if (hasH2FullValidationMarker(explicitEvidence)) return 'explicit_full_validation'
+
+  const hintEvidence = normalizeH2ProvenanceEvidence(sourceHints)
+  if (hasH2ValidationSliceMarker(hintEvidence)) return 'hint_validation_slice'
+  if (hasH2FullValidationMarker(hintEvidence)) return 'hint_full_validation'
+  return 'local'
+}
+
+function normalizeH2ProvenanceEvidence(values: readonly string[]): string {
+  return values.join(' ').toLocaleLowerCase('zh-CN')
+}
+
+function hasH2ValidationSliceMarker(evidence: string): boolean {
+  return evidence.includes('validation slice') ||
     evidence.includes('validation-slice') ||
     evidence.includes('validation_slice') ||
     evidence.includes('验证集切片')
-  ) return 'LIVE_ANALYSIS · 验证集切片'
-  if (
-    evidence.includes('full validation') ||
+}
+
+function hasH2FullValidationMarker(evidence: string): boolean {
+  return evidence.includes('full validation') ||
     evidence.includes('full-validation') ||
     evidence.includes('full_validation') ||
     evidence.includes('完整验证集')
-  ) return 'LIVE_ANALYSIS · 完整验证集'
-  return 'LIVE_ANALYSIS · 本地数据'
 }
 
 export interface H2OverviewMetric {
