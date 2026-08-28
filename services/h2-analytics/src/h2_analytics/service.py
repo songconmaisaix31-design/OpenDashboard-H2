@@ -9,7 +9,11 @@ from typing import Any
 
 from h2_analytics.contracts import ANOMALY_CODES, SEVERITIES, build_provenance
 from h2_analytics.assistant import AssistantService
-from h2_analytics.detection import RowDetector, RuleRowDetector
+from h2_analytics.detection import (
+    RowDetector,
+    RuleRowDetector,
+    sanitized_fixture_c03_candidates,
+)
 from h2_analytics.diagnosis import DiagnosisBuilder
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.events import EventAggregator
@@ -31,6 +35,7 @@ class AnalyticsService:
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._loader = DatasetLoader()
+        self._uses_default_detector = detector is None
         self._detector = detector or RuleRowDetector()
         self._aggregator = EventAggregator()
         self._diagnosis = DiagnosisBuilder()
@@ -72,6 +77,14 @@ class AnalyticsService:
                 details=tuple(imported.quality["blockingReasons"]),
             )
         candidates = self._detector.detect(imported.rows)
+        if self._uses_default_detector:
+            candidates = (
+                *candidates,
+                *sanitized_fixture_c03_candidates(
+                    manifest=imported.manifest,
+                    rows=imported.rows,
+                ),
+            )
         windows = self._aggregator.aggregate(
             rows=imported.rows,
             candidates=candidates,

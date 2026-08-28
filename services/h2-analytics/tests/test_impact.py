@@ -119,6 +119,26 @@ def test_c03_integrates_deviation_from_train_calibrated_soc_response() -> None:
     assert any("public-TRAIN" in item for item in calculation.assumptions)
 
 
+def test_c03_opposite_command_feedback_is_not_runtime_fixture_impact() -> None:
+    window = _window(
+        "C03",
+        [
+            _row(
+                1,
+                bess_power_cmd_kw=400.0,
+                bess_power_actual_kw=-400.0,
+                bess_soc_pct=80.0,
+                soc_target_pct=60.0,
+            )
+        ],
+    )
+
+    calculation = _calculate(window)
+
+    assert calculation.formula_version == "impact-c03-v2"
+    assert calculation.value == pytest.approx(757.84)
+
+
 def test_c04_sums_export_and_import_violations_when_both_are_reported() -> None:
     window = _window(
         "C04",

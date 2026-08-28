@@ -16,9 +16,8 @@ from h2_analytics.settings import (
     FALLBACK_DETECTOR_VERSION,
     H2Constraints,
 )
-from h2_analytics.vocabulary import efficiency_curve_by_equipment
-
 from .base import DetectionCandidate
+from .c06 import inefficient_allocation_signature
 
 _ELZ_IDS = ("1", "2", "3")
 _ELZ_POWER_CMD = tuple(f"elz{index}_power_cmd_kw" for index in _ELZ_IDS)
@@ -29,9 +28,7 @@ _ELZ_REPORTED = tuple(
 _ELZ_ACTUAL_CAPACITY = tuple(
     f"elz{index}_actual_available_capacity_kw" for index in _ELZ_IDS
 )
-_ELZ_SPECIFIC = tuple(f"elz{index}_specific_energy_kwh_per_kg" for index in _ELZ_IDS)
 _ELZ_RUN_STATE = tuple(f"elz{index}_run_state" for index in _ELZ_IDS)
-_ELZ_AVAILABLE_FLAG = tuple(f"elz{index}_available_flag" for index in _ELZ_IDS)
 _ELZ_EQUIPMENT = ("ELZ01", "ELZ02", "ELZ03")
 
 
@@ -74,10 +71,6 @@ _C05_BESS_TARGET_MAGNITUDE_KW = _threshold(
     "C05", "bessSignatureTargetMagnitudeKw"
 )
 _C05_BESS_TOLERANCE_KW = _threshold("C05", "bessSignatureToleranceKw")
-_C06_SPECIFIC_MIN = _threshold("C06", "specificEnergyMinimum")
-_C06_INEFFICIENT_GAP_KW = _threshold("C06", "inefficientPowerGapKw")
-_C06_SPECIFIC_EXCESS_KWH = _threshold("C06", "specificEnergyExcessKwhPerKg")
-_C06_EXCESS_LOOKBACK_MIN = int(_threshold("C06", "recentTransitionMinutes"))
 _C06_START_STOP_LOW_KW = _threshold("C06", "avoidableStartStopPowerMinimumKw")
 _C06_START_STOP_HIGH_KW = _threshold("C06", "avoidableStartStopPowerMaximumKw")
 _SOC_TARGET_DEVIATION_PCT = _threshold("C07", "socTargetDeviationPct")
@@ -93,13 +86,6 @@ class RuleRowDetector:
 
     def __init__(self, constraints: H2Constraints = DEFAULT_CONSTRAINTS) -> None:
         self._constraints = constraints
-        self._best_specific = {
-            equipment: min(
-                point["specific_energy_kwh_per_kg"]
-                for point in points
-            )
-            for equipment, points in efficiency_curve_by_equipment().items()
-        }
 
     @property
     def version(self) -> str:
@@ -254,21 +240,6 @@ class RuleRowDetector:
         expected_interval = timedelta(minutes=_C03_SAMPLING_INTERVAL_MINUTES)
 
         for row in rows:
-            command = row.value("bess_power_cmd_kw")
-            actual = row.value("bess_power_actual_kw")
-            if (
-                row.timestamp is not None
-                and command is not None
-                and actual is not None
-                and abs(command) >= 1.0
-                and abs(actual) >= 1.0
-                and command * actual < 0
-            ):
-                # Explicit compatibility branch for the sanitized golden fixture.
-                candidates.append(
-                    self._candidate(row, "C03", "BESS_DIRECTION_REVERSED", 0.94)
-                )
-
             if not self._is_c03_public_signature_row(row):
                 if current_segment:
                     signature_segments.append(current_segment)
@@ -433,107 +404,29 @@ class RuleRowDetector:
         start_stop = self._detect_c06_avoidable_start_stop(row)
         if start_stop:
             return start_stop
-        inefficient = self._detect_c06_inefficient(rows, index)
+        inefficient = self._detect_c06_inefficient(row)
         if inefficient:
             return inefficient
         return ()
 
     def _detect_c06_inefficient(
-        self, rows: tuple[DataRow, ...], index: int
+        self, row: DataRow
     ) -> tuple[DetectionCandidate, ...]:
-        row = rows[index]
-        states = [row.value(field) for field in _ELZ_RUN_STATE]
-        if any(state is None for state in states):
+        reference = inefficient_allocation_signature(row, self._constraints)
+        if reference is None:
             return ()
-        numeric_states = [state for state in states if state is not None]
-        if any(state < 2 for state in numeric_states):
-            # Cross-unit efficiency comparison is meaningful only while all
-            # units are in their stable running state.
-            return ()
-        powers = [row.value(field) for field in _ELZ_POWER_ACTUAL]
-        if any(power is None for power in powers):
-            return ()
-        numeric_powers = [power for power in powers if power is not None]
-        specifics = [row.value(field) for field in _ELZ_SPECIFIC]
-        recent_change = self._recent_state_change(rows, index)
-        if recent_change:
-            for unit_index, specific in enumerate(specifics):
-                if specific is None or specific <= 0:
-                    continue
-                if (
-                    specific - self._best_specific[_ELZ_EQUIPMENT[unit_index]]
-                    >= _C06_SPECIFIC_EXCESS_KWH
-                ):
-                    return (
-                        self._candidate(
-                            row,
-                            "C06",
-                            "INEFFICIENT_POWER_ALLOCATION",
-                            0.80,
-                            implicated_equipment_ids=(
-                                _ELZ_EQUIPMENT[unit_index],
-                                *(
-                                    equipment_id
-                                    for other_index, equipment_id in enumerate(
-                                        _ELZ_EQUIPMENT
-                                    )
-                                    if other_index != unit_index
-                                ),
-                            ),
-                        ),
-                    )
-        for index_s, specific_field in enumerate(_ELZ_SPECIFIC):
-            power = numeric_powers[index_s]
-            specific = row.value(specific_field)
-            if specific is None:
-                continue
-            for other_index, other_specific_field in enumerate(_ELZ_SPECIFIC):
-                if other_index == index_s:
-                    continue
-                other_power = numeric_powers[other_index]
-                other_specific = row.value(other_specific_field)
-                other_available = row.value(_ELZ_AVAILABLE_FLAG[other_index])
-                other_capacity = row.value(_ELZ_ACTUAL_CAPACITY[other_index])
-                if other_specific is None:
-                    continue
-                if other_available is None or other_capacity is None:
-                    continue
-                if other_specific <= _C06_SPECIFIC_MIN:
-                    continue
-                if power <= other_power + _C06_INEFFICIENT_GAP_KW:
-                    continue
-                if specific <= other_specific + 0.5:
-                    continue
-                if other_available != 1:
-                    continue
-                if other_capacity - other_power < _C06_INEFFICIENT_GAP_KW:
-                    continue
-                return (
-                    self._candidate(
-                        row,
-                        "C06",
-                        "INEFFICIENT_POWER_ALLOCATION",
-                        0.82,
-                        implicated_equipment_ids=(
-                            _ELZ_EQUIPMENT[index_s],
-                            _ELZ_EQUIPMENT[other_index],
-                        ),
-                    ),
-                )
-        return ()
-
-    def _recent_state_change(self, rows: tuple[DataRow, ...], index: int) -> bool:
-        start = max(0, index - _C06_EXCESS_LOOKBACK_MIN)
-        previous_state: tuple[float | None, ...] | None = None
-        for i in range(start, index + 1):
-            row = rows[i]
-            states = tuple(row.value(field) for field in _ELZ_RUN_STATE)
-            if any(state is None for state in states):
-                return False
-            if previous_state is not None and states != previous_state:
-                return True
-            previous_state = states
-        return False
+        return (
+            self._candidate(
+                row,
+                "C06",
+                "INEFFICIENT_POWER_ALLOCATION",
+                0.84,
+                implicated_equipment_ids=(
+                    reference.inefficient_equipment_id,
+                    reference.alternative_equipment_id,
+                ),
+            ),
+        )
 
     def _detect_c06_avoidable_start_stop(
         self, row: DataRow

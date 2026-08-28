@@ -7,7 +7,12 @@ from datetime import timedelta
 import pytest
 
 from h2_analytics import vocabulary
-from h2_analytics.detection import DetectionCandidate, LightGbmRowDetector, RuleRowDetector
+from h2_analytics.detection import (
+    DetectionCandidate,
+    LightGbmRowDetector,
+    RuleRowDetector,
+    sanitized_fixture_c03_candidates,
+)
 from h2_analytics.events import EventAggregator
 from h2_analytics.impact import ImpactCalculator
 from h2_analytics.ingestion import DatasetLoader
@@ -46,6 +51,9 @@ def test_rule_detector_and_aggregation_produce_golden_boundaries(valid_csv: str)
     # integrates the export excess, so the two metrics are numerically distinct.
     assert c03["impact"]["value"] == pytest.approx(84.33333333333333)
     assert c03["impact"]["formulaVersion"] == "impact-c03-v1"
+    assert next(
+        item for item in c03["evidence"] if item["kind"] == "derived_metric"
+    )["source"] == "impact-c03-v1"
     assert c04["impact"]["value"] == pytest.approx(120.0)
     assert c04["evidence"][2]["actualValue"] == pytest.approx(120.0)
 
@@ -201,18 +209,28 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
                 },
             ),
         ),
-        # C06: all units running; the less-efficient unit carries the load while
-        # the efficient unit has headroom.
+        # C06: the TRAIN-frozen allocation marker also has a feasible,
+        # curve-supported equivalent-output transfer from ELZ03 to ELZ02.
         "C06": single(
+            ems_total_elz_target_kw=2000.0,
+            elz1_available_flag=1.0,
             elz1_run_state=2.0,
+            elz1_actual_available_capacity_kw=1000.0,
+            elz1_power_cmd_kw=400.0,
+            elz1_power_actual_kw=400.0,
+            elz1_specific_energy_kwh_per_kg=51.0,
+            elz2_available_flag=1.0,
             elz2_run_state=2.0,
-            elz3_run_state=2.0,
-            elz1_power_actual_kw=500.0,
-            elz1_specific_energy_kwh_per_kg=55.0,
-            elz2_power_actual_kw=100.0,
-            elz2_specific_energy_kwh_per_kg=52.0,
-            elz2_available_flag=1,
             elz2_actual_available_capacity_kw=1000.0,
+            elz2_power_cmd_kw=600.0,
+            elz2_power_actual_kw=600.0,
+            elz2_specific_energy_kwh_per_kg=52.0,
+            elz3_available_flag=1.0,
+            elz3_run_state=2.0,
+            elz3_actual_available_capacity_kw=1000.0,
+            elz3_power_cmd_kw=1000.0,
+            elz3_power_actual_kw=1000.0,
+            elz3_specific_energy_kwh_per_kg=54.2,
         ),
         # C07: SOC deviation with the elevated 350 kWh reserve target.
         "C07": single(
@@ -229,7 +247,7 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
     c02 = next(item for item in detector.detect(scenarios["C02"]) if item.code == "C02")
     assert c02.implicated_equipment_ids == ("ELZ02",)
     c06 = next(item for item in detector.detect(scenarios["C06"]) if item.code == "C06")
-    assert c06.implicated_equipment_ids == ("ELZ01", "ELZ02")
+    assert c06.implicated_equipment_ids == ("ELZ03", "ELZ02")
 
 
 @pytest.mark.parametrize(
@@ -473,6 +491,91 @@ def test_c06_persistent_start_stop_signature_wins_and_preserves_boundaries(
     assert window.implicated_equipment_ids == ("ELZ01", "ELZ02", "ELZ03")
 
 
+def test_c06_inefficient_signature_preserves_persistent_boundaries(
+    valid_csv: str,
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    start = baseline.timestamp.replace(hour=8, minute=0)
+
+    def row(index: int, *, signature: bool) -> DataRow:
+        timestamp = start + timedelta(minutes=index)
+        powers = (300.0, 450.0, 750.0) if signature else (500.0, 500.0, 500.0)
+        specifics = (57.0, 56.0, 53.2) if signature else (52.0, 52.7, 54.2)
+        values = {**baseline.values, "ems_total_elz_target_kw": 1500.0}
+        for unit, (power, specific) in enumerate(
+            zip(powers, specifics, strict=True),
+            start=1,
+        ):
+            values.update(
+                {
+                    f"elz{unit}_available_flag": 1.0,
+                    f"elz{unit}_run_state": 2.0,
+                    f"elz{unit}_actual_available_capacity_kw": 1000.0,
+                    f"elz{unit}_power_cmd_kw": power,
+                    f"elz{unit}_power_actual_kw": power,
+                    f"elz{unit}_specific_energy_kwh_per_kg": specific,
+                }
+            )
+        return replace(
+            baseline,
+            index=index + 1,
+            timestamp=timestamp,
+            timestamp_text=timestamp.isoformat(),
+            values=values,
+        )
+
+    rows = (
+        row(0, signature=False),
+        *(row(index, signature=True) for index in range(1, 36)),
+        row(36, signature=False),
+    )
+    candidates = tuple(
+        item
+        for item in RuleRowDetector().detect(rows)
+        if item.code == "C06"
+        and item.subtype == "INEFFICIENT_POWER_ALLOCATION"
+    )
+    windows = EventAggregator().aggregate(
+        rows=rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
+    )
+
+    assert [candidate.row_index for candidate in candidates] == list(range(2, 37))
+    assert len(windows) == 1
+    assert windows[0].start_time == rows[1].timestamp
+    assert windows[0].first_detection_time == rows[10].timestamp
+    assert windows[0].end_time == rows[-2].timestamp
+    assert set(windows[0].implicated_equipment_ids) == {"ELZ02", "ELZ03"}
+
+
+def test_c06_allocation_marker_without_feasible_alternative_fails_closed(
+    valid_csv: str,
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    values = {**baseline.values, "ems_total_elz_target_kw": 1500.0}
+    for unit, power in enumerate((300.0, 450.0, 750.0), start=1):
+        values.update(
+            {
+                f"elz{unit}_available_flag": 1.0,
+                f"elz{unit}_run_state": 2.0,
+                f"elz{unit}_actual_available_capacity_kw": 1000.0,
+                f"elz{unit}_power_cmd_kw": power,
+                f"elz{unit}_power_actual_kw": power,
+                f"elz{unit}_specific_energy_kwh_per_kg": 54.0,
+            }
+        )
+    row = replace(baseline, values=values)
+
+    assert not any(
+        item.code == "C06" and item.subtype == "INEFFICIENT_POWER_ALLOCATION"
+        for item in RuleRowDetector().detect((row,))
+    )
+
+
 def test_c03_and_c06_thresholds_freeze_train_only_findings() -> None:
     classes = vocabulary.detection_thresholds()["classes"]
     c03 = classes["C03"]
@@ -485,11 +588,85 @@ def test_c03_and_c06_thresholds_freeze_train_only_findings() -> None:
     assert c03["calibration"]["shortNonLabelRunCount"] == 3
     assert "acceptance-only" in c03["calibration"]["heldOutPolicy"]
     start_stop = c06["calibration"]["avoidableStartStop"]
+    inefficient = c06["calibration"]["inefficientPowerAllocation"]
     assert start_stop["eventCount"] == 20
     assert start_stop["signatureRunCount"] == 20
     assert start_stop["extraSignatureRunCount"] == 0
     assert "evaluated before" in start_stop["precedence"]
+    assert inefficient["eventCount"] == 20
+    assert inefficient["inclusiveEventSampleCount"] == 3265
+    assert inefficient["signatureRunCount"] == 20
+    assert inefficient["exactBoundaryMatchCount"] == 20
+    assert inefficient["extraSignatureRunCount"] == 0
+    assert "equivalent-output reference" in inefficient["signature"]
+    assert "retains no official rows" in inefficient["derivationProcedure"][-1]
+    assert len(c06["calibration"]["sourceFiles"]["timeseries"]["sha256"]) == 64
     assert "acceptance-only" in c06["calibration"]["heldOutPolicy"]
+
+
+def test_runtime_c03_rejects_opposite_feedback_without_frozen_causal_gate(
+    valid_csv: str,
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    rows = tuple(
+        replace(
+            baseline,
+            index=index + 1,
+            timestamp=baseline.timestamp + timedelta(minutes=index),
+            timestamp_text=(baseline.timestamp + timedelta(minutes=index)).isoformat(),
+            values={
+                **baseline.values,
+                "bess_power_cmd_kw": 400.0,
+                "bess_power_actual_kw": -400.0,
+                "pcc_power_actual_kw": -500.0,
+                "pv_actual_kw": 0.0,
+                "aux_load_kw": 100.0,
+                "elz1_power_actual_kw": 100.0,
+                "elz2_power_actual_kw": 100.0,
+                "elz3_power_actual_kw": 100.0,
+                "bess_soc_pct": 80.0,
+                "soc_target_pct": 60.0,
+            },
+        )
+        for index in range(5)
+    )
+    candidates = tuple(
+        item for item in RuleRowDetector().detect(rows) if item.code == "C03"
+    )
+
+    assert candidates == ()
+    assert EventAggregator().aggregate(
+        rows=rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
+    ) == ()
+
+
+def test_sanitized_fixture_c03_is_outside_runtime_rule_detector(
+    valid_csv: str,
+) -> None:
+    imported = DatasetLoader().import_csv(
+        filename="tiny-valid-timeseries.csv",
+        text=valid_csv,
+    )
+
+    assert not any(
+        candidate.code == "C03"
+        for candidate in RuleRowDetector().detect(imported.rows)
+    )
+    service = AnalyticsService()
+    dataset = service.import_csv(
+        filename="tiny-valid-timeseries.csv",
+        text=valid_csv,
+    )["dataset"]
+    run = service.run_analysis(dataset["datasetId"])
+    assert any(event["code"] == "C03" for event in run["events"])
+    assert sanitized_fixture_c03_candidates(
+        manifest={**imported.manifest, "mode": "LIVE_ANALYSIS"},
+        rows=imported.rows,
+    ) == ()
 
 
 def test_c07_continues_while_charge_reserve_is_short_after_soc_recovers(

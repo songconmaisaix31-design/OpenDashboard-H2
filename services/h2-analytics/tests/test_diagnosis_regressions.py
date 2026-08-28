@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from h2_analytics import vocabulary
 from h2_analytics.detection import RuleRowDetector
@@ -57,6 +59,7 @@ def test_mixed_c07_subtype_plans_do_not_mutate_global_templates(valid_csv: str) 
 
 def test_c01_c02_c06_use_implicated_electrolyzers_in_evidence_and_submission(
     valid_csv: str,
+    repository_root,
 ) -> None:
     imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
     baseline = imported.rows[0]
@@ -112,11 +115,36 @@ def test_c01_c02_c06_use_implicated_electrolyzers_in_evidence_and_submission(
     ]
     assert submission_rows([c02])[0]["affected_equipment"] == "ELZ2"
 
+    c06_row = replace(
+        baseline,
+        values={
+            **baseline.values,
+            "ems_total_elz_target_kw": 2000.0,
+            "elz1_available_flag": 1.0,
+            "elz1_run_state": 2.0,
+            "elz1_actual_available_capacity_kw": 1000.0,
+            "elz1_power_cmd_kw": 400.0,
+            "elz1_power_actual_kw": 400.0,
+            "elz1_specific_energy_kwh_per_kg": 51.0,
+            "elz2_available_flag": 1.0,
+            "elz2_run_state": 2.0,
+            "elz2_actual_available_capacity_kw": 1000.0,
+            "elz2_power_cmd_kw": 600.0,
+            "elz2_power_actual_kw": 600.0,
+            "elz2_specific_energy_kwh_per_kg": 52.0,
+            "elz3_available_flag": 1.0,
+            "elz3_run_state": 2.0,
+            "elz3_actual_available_capacity_kw": 1000.0,
+            "elz3_power_cmd_kw": 1000.0,
+            "elz3_power_actual_kw": 1000.0,
+            "elz3_specific_energy_kwh_per_kg": 54.2,
+        },
+    )
     c06 = builder.build(
         window=_window(
             "C06",
             "INEFFICIENT_POWER_ALLOCATION",
-            baseline,
+            c06_row,
             implicated_equipment_ids=("ELZ03", "ELZ02"),
         ),
         manifest=imported.manifest,
@@ -125,10 +153,37 @@ def test_c01_c02_c06_use_implicated_electrolyzers_in_evidence_and_submission(
         "ELZ03",
         "ELZ02",
     ]
-    assert [item["variable"] for item in c06["evidence"][:2]] == [
+    assert [item["variable"] for item in c06["evidence"][:5]] == [
         "elz3_specific_energy_kwh_per_kg",
-        "elz2_power_actual_kw",
+        "elz3_power_actual_kw",
+        "elz3_run_state",
+        "elz3_available_flag",
+        "elz3_actual_available_capacity_kw",
     ]
+    variables = {item["variable"] for item in c06["evidence"]}
+    assert {
+        "elz2_specific_energy_kwh_per_kg",
+        "elz2_power_actual_kw",
+        "elz2_run_state",
+        "elz2_available_flag",
+        "elz2_actual_available_capacity_kw",
+        "ems_total_elz_target_kw",
+        "equivalent_reallocation_kw",
+        "ELZ03_to_ELZ02_curve_specific_energy",
+    }.issubset(variables)
+    impact_evidence = next(
+        item
+        for item in c06["evidence"]
+        if item["variable"] == "extra_energy_consumption_kwh"
+    )
+    assert impact_evidence["source"] == "impact-c06-v3"
+    event_schema = json.loads(
+        (
+            repository_root
+            / "packages/h2-contracts/schema/anomaly-event.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    Draft202012Validator(event_schema).validate(c06)
     assert submission_rows([c06])[0]["affected_equipment"] == "ELZ1,ELZ2,ELZ3"
     assert validate_submission_text(serialize_submission([c01, c02, c06]))[
         "rowCount"
@@ -212,6 +267,70 @@ def test_c03_official_sign_detector_to_event_requires_causal_conflict(
         "pcc_power_actual_kw",
     ]
     assert all("相反" not in item["conclusion"] for item in event["evidence"][:3])
+    impact_evidence = next(
+        item
+        for item in event["evidence"]
+        if item["variable"] == "abnormal_grid_exchange_energy_kwh"
+    )
+    assert impact_evidence["source"] == "impact-c03-v2"
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "ems_total_elz_target_kw",
+        "elz2_run_state",
+        "elz2_available_flag",
+        "elz2_actual_available_capacity_kw",
+        "elz2_specific_energy_kwh_per_kg",
+        "elz3_run_state",
+        "elz3_actual_available_capacity_kw",
+    ],
+)
+def test_c06_diagnosis_fails_closed_without_claim_inputs(
+    valid_csv: str,
+    missing_field: str,
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    values = {
+        **baseline.values,
+        "ems_total_elz_target_kw": 2000.0,
+        "elz1_available_flag": 1.0,
+        "elz1_run_state": 2.0,
+        "elz1_actual_available_capacity_kw": 1000.0,
+        "elz1_power_cmd_kw": 400.0,
+        "elz1_power_actual_kw": 400.0,
+        "elz1_specific_energy_kwh_per_kg": 51.0,
+        "elz2_available_flag": 1.0,
+        "elz2_run_state": 2.0,
+        "elz2_actual_available_capacity_kw": 1000.0,
+        "elz2_power_cmd_kw": 600.0,
+        "elz2_power_actual_kw": 600.0,
+        "elz2_specific_energy_kwh_per_kg": 52.0,
+        "elz3_available_flag": 1.0,
+        "elz3_run_state": 2.0,
+        "elz3_actual_available_capacity_kw": 1000.0,
+        "elz3_power_cmd_kw": 1000.0,
+        "elz3_power_actual_kw": 1000.0,
+        "elz3_specific_energy_kwh_per_kg": 54.2,
+    }
+    values[missing_field] = None
+    row = replace(baseline, values=values)
+
+    with pytest.raises(
+        vocabulary.VocabularyError,
+        match="complete feasible-reallocation evidence",
+    ):
+        DiagnosisBuilder().build(
+            window=_window(
+                "C06",
+                "INEFFICIENT_POWER_ALLOCATION",
+                row,
+                implicated_equipment_ids=("ELZ03", "ELZ02"),
+            ),
+            manifest=imported.manifest,
+        )
 
 
 @pytest.mark.parametrize(

@@ -10,13 +10,48 @@ def test_c06_calibration_tool_derives_rates_from_inclusive_train_rows(
 ) -> None:
     timeseries = tmp_path / "train.csv"
     labels = tmp_path / "labels.csv"
+    fields = [
+        "timestamp",
+        "ems_total_elz_target_kw",
+        *(
+            f"elz{index}_{suffix}"
+            for index in (1, 2, 3)
+            for suffix in (
+                "power_cmd_kw",
+                "power_actual_kw",
+                "actual_available_capacity_kw",
+                "available_flag",
+                "run_state",
+                "specific_energy_kwh_per_kg",
+            )
+        ),
+    ]
+
+    def row(
+        timestamp: str,
+        target: float,
+        powers: tuple[float, float, float],
+        specifics: tuple[float, float, float],
+    ) -> str:
+        values: list[str] = [timestamp, str(target)]
+        for power, specific in zip(powers, specifics, strict=True):
+            values.extend(
+                [str(power), str(power), "1000", "1", "2", str(specific)]
+            )
+        return ",".join(values)
+
     timeseries.write_text(
-        "timestamp,ems_total_elz_target_kw\n"
-        "2025-01-01 00:00:00,1000\n"
-        "2025-01-01 00:01:00,1000\n"
-        "2025-01-01 00:02:00,0\n"
-        "2025-01-01 00:03:00,1500\n"
-        "2025-01-01 00:04:00,1500\n",
+        "\n".join(
+            [
+                ",".join(fields),
+                row("2025-01-01 00:00:00", 1000, (400, 400, 400), (55, 54, 53)),
+                row("2025-01-01 00:01:00", 1000, (400, 400, 400), (55, 54, 53)),
+                row("2025-01-01 00:02:00", 0, (0, 0, 0), (0, 0, 0)),
+                row("2025-01-01 00:03:00", 1500, (300, 450, 750), (57, 56, 53.2)),
+                row("2025-01-01 00:04:00", 1500, (300, 450, 750), (57, 56, 53.2)),
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
     labels.write_text(
@@ -41,3 +76,10 @@ def test_c06_calibration_tool_derives_rates_from_inclusive_train_rows(
     assert inefficient["inclusiveSampleCount"] == 2
     assert inefficient["calibratedRate"] == "0.022"
     assert inefficient["roundedReferenceMatchCount"] == 1
+    signature = report["c06"]["inefficientDetectionSignature"]
+    assert signature["eventCount"] == 1
+    assert signature["signatureRunCount"] == 1
+    assert signature["exactBoundaryMatchCount"] == 1
+    assert signature["extraSignatureRunCount"] == 0
+    assert signature["signatureSampleCount"] == 2
+    assert signature["selectedPairSampleCounts"] == {"ELZ02->ELZ03": 2}
