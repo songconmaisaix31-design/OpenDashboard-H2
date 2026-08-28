@@ -400,9 +400,13 @@ for every official row is accumulated and then copied during merge.
 
 ### R16 - Sign, cadence, and subtype-correct aggregation
 
-- C03 requires command/actual direction disagreement and adverse PCC response;
-  same-direction BESS command, actual power, and PCC behavior must not produce
-  `BESS_DIRECTION_REVERSED`.
+- C03 follows the public-train causal signature, not a generic raw-sign rule.
+  A labeled row may have same-sign BESS command, actual power, and PCC power;
+  the anomaly requires the command to conflict with the BESS power-gap or SOC
+  target demand and to drive PCC exchange in the adverse direction. Ordinary
+  same-sign behavior without that causal conflict must not produce
+  `BESS_DIRECTION_REVERSED`, and diagnosis text must not falsely claim that
+  command and actual power point in opposite directions.
 - C05 confirmation requires four genuinely consecutive one-minute samples.
   The event starts at the first causal risk sample, detection is recorded at
   the confirmation sample, and the early-warning claim refers to warning
