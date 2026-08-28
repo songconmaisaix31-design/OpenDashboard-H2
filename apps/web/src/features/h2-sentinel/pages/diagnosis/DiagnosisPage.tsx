@@ -74,6 +74,8 @@ export function DiagnosisPage({
     )
   }
 
+  const runProvenanceTone = run.provenance.mode === 'FIXTURE' ? 'fixture' : 'live'
+
   return (
     <div className="h2-page h2-diagnosis-page">
       <PageHeader
@@ -156,7 +158,7 @@ export function DiagnosisPage({
       />
 
       <section className="h2-panel h2-provenance-detail">
-        <div className="h2-panel__heading"><div><p className="h2-eyebrow">Traceability</p><h2>版本与来源</h2></div><StatusBadge tone="fixture">{H2_PROVENANCE_LABELS[event.provenance.mode]}</StatusBadge></div>
+        <div className="h2-panel__heading"><div><p className="h2-eyebrow">Traceability</p><h2>版本与来源</h2></div><StatusBadge tone={runProvenanceTone}>{H2_PROVENANCE_LABELS[run.provenance.mode]}</StatusBadge></div>
         <dl className="h2-key-values h2-key-values--four">
           <div><dt>数据指纹</dt><dd>{event.provenance.datasetFingerprint ?? '未提供'}</dd></div>
           <div><dt>模型版本</dt><dd>{event.provenance.modelVersion ?? '此结果未声明模型版本'}</dd></div>

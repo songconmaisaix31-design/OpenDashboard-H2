@@ -44,6 +44,7 @@ export function OverviewPage({ dataSource, onNavigate, workspace }: OverviewPage
   const seriesMessage = getOverviewSeriesMessage(seriesState.status)
   const representativeEvent = workspace.events[0]
   const qualityBlocked = workspace.run.quality.status === 'blocked'
+  const isFixture = workspace.mode === 'FIXTURE'
   const judgePath = [
     {
       label: '数据源 / 导入',
@@ -179,10 +180,12 @@ export function OverviewPage({ dataSource, onNavigate, workspace }: OverviewPage
       <section aria-labelledby="h2-golden-title" className="h2-golden-path">
         <div className="h2-panel__heading">
           <div>
-            <p className="h2-eyebrow">Fixture examples</p>
-            <h2 id="h2-golden-title">C03 / C04 固定样例直达</h2>
+            <p className="h2-eyebrow">{isFixture ? 'Fixture examples' : 'Official capabilities'}</p>
+            <h2 id="h2-golden-title">
+              {isFixture ? 'C03 / C04 固定样例直达' : 'C03 / C04 当前运行事件直达'}
+            </h2>
           </div>
-          <span>两次以内直达详情</span>
+          <span>{isFixture ? '两次以内直达详情' : '仅显示当前运行已检出事件'}</span>
         </div>
         <div className="h2-golden-grid">
           {(['C03', 'C04'] as const).map((code) => {
@@ -191,6 +194,7 @@ export function OverviewPage({ dataSource, onNavigate, workspace }: OverviewPage
               <GoldenCase
                 code={code}
                 event={event}
+                isFixture={isFixture}
                 key={code}
                 onOpen={(eventId) => onNavigate({ route: 'diagnosis', eventId })}
               />
@@ -271,17 +275,23 @@ export function OverviewPage({ dataSource, onNavigate, workspace }: OverviewPage
 function GoldenCase({
   code,
   event,
+  isFixture,
   onOpen,
 }: {
   readonly code: 'C03' | 'C04'
   readonly event: H2AnomalyEvent | undefined
+  readonly isFixture: boolean
   readonly onOpen: (eventId: string) => void
 }) {
   return (
     <article className={`h2-golden-card h2-golden-card--${code.toLocaleLowerCase('en-US')}`}>
       <div>
         <span className="h2-code">{code}</span>
-        <StatusBadge tone={event ? 'warning' : 'planned'}>{event ? '样例就绪' : '事件不可用'}</StatusBadge>
+        <StatusBadge tone={event ? (isFixture ? 'fixture' : 'live') : 'planned'}>
+          {event
+            ? (isFixture ? '样例就绪' : 'LIVE · 当前运行')
+            : (isFixture ? '样例不可用' : '当前运行未检出')}
+        </StatusBadge>
       </div>
       <h3>{H2_CODE_LABELS[code]}</h3>
       <p>

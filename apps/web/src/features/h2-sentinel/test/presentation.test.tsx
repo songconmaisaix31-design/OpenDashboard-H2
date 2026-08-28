@@ -43,6 +43,49 @@ const readyState = {
   },
 } as const satisfies H2WorkspaceState
 
+const liveProvenance = {
+  ...H2_WEB_FIXTURE_RUN.provenance,
+  mode: 'LIVE_ANALYSIS',
+  source: 'local-import',
+} as const
+const liveEvents = H2_WEB_FIXTURE_EVENTS.map((event) => ({
+  ...event,
+  provenance: liveProvenance,
+}))
+const liveDataset = {
+  ...H2_WEB_FIXTURE_RUN.dataset,
+  datasetId: 'live-dataset',
+  name: 'Imported H2 dataset',
+  mode: 'LIVE_ANALYSIS',
+  sourceFilename: 'live-input.csv',
+  provenance: liveProvenance,
+} as const
+const liveRun = {
+  ...H2_WEB_FIXTURE_RUN,
+  runId: 'run-live-analysis',
+  dataset: liveDataset,
+  quality: {
+    ...H2_WEB_FIXTURE_RUN.quality,
+    datasetId: liveDataset.datasetId,
+    checks: H2_WEB_FIXTURE_RUN.quality.checks.map((check) => ({
+      ...check,
+      provenance: liveProvenance,
+    })),
+    provenance: liveProvenance,
+  },
+  events: liveEvents,
+  provenance: liveProvenance,
+} as const
+const liveReadyState = {
+  status: 'ready',
+  workspace: {
+    mode: 'LIVE_ANALYSIS',
+    datasets: [liveDataset],
+    run: liveRun,
+    events: liveEvents,
+  },
+} as const satisfies H2WorkspaceState
+
 describe('H2 Sentinel presentation', () => {
   it('keeps all six top-level views directly addressable', () => {
     const expectations = [
@@ -71,6 +114,38 @@ describe('H2 Sentinel presentation', () => {
     assert.doesNotMatch(markup, /86\.5/)
     assert.match(markup, /必须人工确认/)
     assert.match(markup, /正在读取当前事件窗口/)
+  })
+
+  it('keeps overview shortcuts and diagnosis source badges truthful for each mode', () => {
+    const fixtureOverview = renderView(readyState, { route: 'overview' })
+    assert.match(fixtureOverview, /Fixture examples/)
+    assert.match(fixtureOverview, /C03 \/ C04 固定样例直达/)
+    assert.match(fixtureOverview, /两次以内直达详情/)
+    assert.match(fixtureOverview, /样例就绪/)
+    assert.match(fixtureOverview, /h2-badge--fixture[^>]*>样例就绪<\/span>/)
+
+    const liveOverview = renderView(liveReadyState, { route: 'overview' })
+    assert.match(liveOverview, /Official capabilities/)
+    assert.match(liveOverview, /C03 \/ C04 当前运行事件直达/)
+    assert.match(liveOverview, /仅显示当前运行已检出事件/)
+    assert.match(liveOverview, /LIVE · 当前运行/)
+    assert.match(liveOverview, /h2-badge--live[^>]*>LIVE · 当前运行<\/span>/)
+    assert.doesNotMatch(liveOverview, /Fixture examples|FIXTURE|固定样例|两次以内直达详情|样例就绪|h2-badge--fixture/)
+
+    const fixtureDiagnosis = renderView(readyState, {
+      route: 'diagnosis',
+      eventId: H2_WEB_FIXTURE_EVENTS[0].eventId,
+    })
+    assert.match(fixtureDiagnosis, /h2-badge--fixture[^>]*>固定样例<\/span>/)
+
+    const liveEvent = liveEvents[0]
+    assert.ok(liveEvent)
+    const liveDiagnosis = renderView(liveReadyState, {
+      route: 'diagnosis',
+      eventId: liveEvent.eventId,
+    })
+    assert.match(liveDiagnosis, /h2-badge--live[^>]*>本地实时分析<\/span>/)
+    assert.doesNotMatch(liveDiagnosis, /Fixture examples|FIXTURE|固定样例|样例就绪|h2-badge--fixture/)
   })
 
   it('makes the judge path, C01-C07 coverage, source identity, and sign conventions visible', () => {
