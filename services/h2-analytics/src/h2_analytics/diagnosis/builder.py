@@ -171,17 +171,25 @@ _EVIDENCE_PLAN: dict[str, tuple[dict[str, Any], ...]] = {
         {
             "kind": "measurement",
             "variable": "bess_power_cmd_kw",
-            "reference": "requested direction",
-            "comparator": "=",
-            "conclusion": "EMS指令请求了记录的储能方向。",
+            "reference": "power gap or SOC target need",
+            "comparator": "!=",
+            "conclusion": "储能指令方向与功率缺口或SOC目标需求冲突。",
             "unit": "kW",
         },
         {
             "kind": "measurement",
             "variable": "bess_power_actual_kw",
             "reference": "command direction",
-            "comparator": "!=",
-            "conclusion": "储能实际功率与指令方向相反。",
+            "comparator": "=",
+            "conclusion": "储能实际功率跟随冻结竞争签名中的指令方向。",
+            "unit": "kW",
+        },
+        {
+            "kind": "measurement",
+            "variable": "pcc_power_actual_kw",
+            "reference": "command direction",
+            "comparator": "=",
+            "conclusion": "PCC交换功率与储能响应同向并被推向不利方向。",
             "unit": "kW",
         },
     ),
@@ -303,6 +311,7 @@ class DiagnosisBuilder:
         manifest: dict[str, Any],
     ) -> dict[str, Any]:
         metadata = _METADATA[window.code]
+        affected_equipment = _affected_equipment(window)
         generated_at = manifest["provenance"]["generatedAt"]
         provenance = build_provenance(
             mode=manifest["mode"],
@@ -341,7 +350,7 @@ class DiagnosisBuilder:
                 "id": _CONTROL_ID_BY_CODE[window.code],
                 "displayName": vocabulary.primary_control_object_by_code()[window.code],
             },
-            "affectedEquipment": _affected_equipment(window),
+            "affectedEquipment": affected_equipment,
             "evidence": evidence,
             "impact": {
                 "metric": calculation.metric,
@@ -441,7 +450,7 @@ class DiagnosisBuilder:
             detection_row = _detection_row(window)
             command = detection_row.value("bess_power_cmd_kw")
             actual = detection_row.value("bess_power_actual_kw")
-            if command is not None and (actual is None or command * actual >= 0):
+            if command is not None and actual is not None and command * actual < 0:
                 comparator = "<" if command < 0 else ">"
                 plan = [
                     {
@@ -451,13 +460,13 @@ class DiagnosisBuilder:
                         "conclusion": "储能功率指令记录了异常时段的请求方向。",
                     },
                     {
-                        **plan[1],
+                        **plan[2],
                         "variable": "pcc_power_actual_kw",
                         "reference": 0,
                         "comparator": comparator,
                         "conclusion": (
-                            "PCC交换功率与储能指令同向，控制关系需要人工复核；"
-                            "未据此判定储能指令与实际反馈存在方向冲突。"
+                            "PCC交换功率记录了兼容样例中的并网点响应；"
+                            "该样例不用于校准公共TRAIN因果规则。"
                         ),
                     },
                 ]
@@ -641,7 +650,13 @@ class DiagnosisBuilder:
 
 
 def _affected_equipment(window: EventWindow) -> list[dict[str, str]]:
-    if window.implicated_equipment_ids and window.code in {"C01", "C02", "C06"}:
+    if window.code in {"C01", "C02", "C06"}:
+        if not vocabulary.valid_implicated_equipment_ids(
+            window.code, window.implicated_equipment_ids
+        ):
+            raise vocabulary.VocabularyError(
+                f"{window.code} diagnosis requires valid implicated equipment."
+            )
         equipment_ids = window.implicated_equipment_ids
         if window.code == "C01":
             equipment_ids = tuple(

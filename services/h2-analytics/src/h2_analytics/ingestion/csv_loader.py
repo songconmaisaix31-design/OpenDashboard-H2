@@ -97,11 +97,7 @@ class DatasetLoader:
         if "\x00" in text:
             raise CsvImportError("import.invalid_text", "CSV contains a NUL byte.")
         encoded = text.encode("utf-8")
-        if len(encoded) > MAX_CSV_BYTES:
-            raise CsvImportError(
-                "import.too_large",
-                f"CSV exceeds the {MAX_CSV_BYTES}-byte in-memory import limit.",
-            )
+        _enforce_csv_byte_limit(len(encoded))
         fingerprint = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
         # The parser consumes the caller-owned text. Do not retain a second
         # full-size byte buffer while materializing the bounded row model.
@@ -184,6 +180,14 @@ class DatasetLoader:
             generated_at=generated_at,
         )
         return ImportedDataset(manifest, quality, tuple(parsed_rows))
+
+
+def _enforce_csv_byte_limit(byte_count: int) -> None:
+    if byte_count > MAX_CSV_BYTES:
+        raise CsvImportError(
+            "import.too_large",
+            f"CSV exceeds the {MAX_CSV_BYTES}-byte in-memory import limit.",
+        )
 
 
 def _validate_filename(filename: str) -> str:

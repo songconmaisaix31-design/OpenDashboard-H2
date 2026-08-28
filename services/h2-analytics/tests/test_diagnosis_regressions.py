@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import timedelta
 
+import pytest
+
+from h2_analytics import vocabulary
+from h2_analytics.detection import RuleRowDetector
 from h2_analytics.diagnosis import DiagnosisBuilder
-from h2_analytics.events import EventWindow
+from h2_analytics.events import EventAggregator, EventWindow
 from h2_analytics.ingestion import DatasetLoader
+from h2_analytics.models import DataRow
 from h2_analytics.reports import serialize_submission, submission_rows
 from h2_analytics.tools.validate_submission import validate_submission_text
 
@@ -129,29 +135,109 @@ def test_c01_c02_c06_use_implicated_electrolyzers_in_evidence_and_submission(
     ] == 3
 
 
-def test_c03_same_direction_measurements_do_not_claim_opposite_feedback(
+def test_c03_official_sign_detector_to_event_requires_causal_conflict(
     valid_csv: str,
 ) -> None:
     imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
     baseline = imported.rows[0]
-    row = replace(
-        baseline,
-        values={
-            **baseline.values,
-            "bess_power_cmd_kw": -400.0,
-            "bess_power_actual_kw": -400.0,
-            "pcc_power_actual_kw": -500.0,
-        },
+    assert baseline.timestamp is not None
+    baseline_timestamp = baseline.timestamp
+
+    def marker_row(index: int, *, causal_conflict: bool) -> DataRow:
+        timestamp = baseline_timestamp + timedelta(minutes=index)
+        return replace(
+            baseline,
+            index=index,
+            timestamp=timestamp,
+            timestamp_text=timestamp.isoformat(),
+            values={
+                **baseline.values,
+                "bess_power_cmd_kw": 400.0,
+                "bess_power_actual_kw": 400.0,
+                "pcc_power_actual_kw": 500.0,
+                "elz1_power_actual_kw": 100.0,
+                "elz2_power_actual_kw": 100.0,
+                "elz3_power_actual_kw": 100.0,
+                "aux_load_kw": 100.0,
+                "pv_actual_kw": 1000.0 if causal_conflict else 0.0,
+                "bess_soc_pct": 80.0,
+                "soc_target_pct": 60.0,
+            },
+        )
+
+    def quiet_row(index: int) -> DataRow:
+        row = marker_row(index, causal_conflict=False)
+        return replace(
+            row,
+            values={
+                **row.values,
+                "bess_power_cmd_kw": 0.0,
+                "bess_power_actual_kw": 0.0,
+                "pcc_power_actual_kw": 0.0,
+            },
+        )
+
+    ordinary_same_direction = tuple(
+        marker_row(index, causal_conflict=False) for index in range(5)
+    )
+    causal_event_rows = tuple(
+        marker_row(index, causal_conflict=True) for index in range(6, 12)
+    )
+    rows = (*ordinary_same_direction, quiet_row(5), *causal_event_rows, quiet_row(12))
+    candidates = tuple(
+        item for item in RuleRowDetector().detect(rows) if item.code == "C03"
+    )
+    windows = EventAggregator().aggregate(
+        rows=rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
     )
 
     event = DiagnosisBuilder().build(
-        window=_window("C03", "BESS_DIRECTION_REVERSED", row),
+        window=windows[0],
         manifest=imported.manifest,
     )
 
+    assert [item.timestamp for item in candidates] == [
+        item.timestamp for item in causal_event_rows
+    ]
+    assert len(windows) == 1
+    assert windows[0].start_time == causal_event_rows[0].timestamp
+    assert windows[0].first_detection_time == causal_event_rows[4].timestamp
+    assert windows[0].end_time == causal_event_rows[-1].timestamp
     assert "相反" not in event["rootCause"]
-    assert [item["variable"] for item in event["evidence"][:2]] == [
+    assert [item["variable"] for item in event["evidence"][:3]] == [
         "bess_power_cmd_kw",
+        "bess_power_actual_kw",
         "pcc_power_actual_kw",
     ]
-    assert all("相反" not in item["conclusion"] for item in event["evidence"][:2])
+    assert all("相反" not in item["conclusion"] for item in event["evidence"][:3])
+
+
+@pytest.mark.parametrize(
+    ("code", "subtype", "equipment_ids"),
+    [
+        ("C01", "SETPOINT_OSCILLATION", ()),
+        ("C01", "SETPOINT_OSCILLATION", ("ELZ01",)),
+        ("C02", "CAPACITY_NOT_SYNCHRONIZED", ("ELZ99",)),
+        ("C06", "INEFFICIENT_POWER_ALLOCATION", ("ELZ01",)),
+    ],
+)
+def test_dynamic_diagnosis_equipment_attribution_fails_closed(
+    valid_csv: str,
+    code: str,
+    subtype: str,
+    equipment_ids: tuple[str, ...],
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+
+    with pytest.raises(vocabulary.VocabularyError, match="requires valid"):
+        DiagnosisBuilder().build(
+            window=_window(
+                code,
+                subtype,
+                imported.rows[0],
+                implicated_equipment_ids=equipment_ids,
+            ),
+            manifest=imported.manifest,
+        )

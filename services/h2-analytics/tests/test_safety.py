@@ -201,6 +201,11 @@ def _scenario_windows(
     windows: dict[str, tuple[EventWindow, tuple]] = {}
     for code, rows in scenarios.items():
         subtype = vocabulary.subtypes_by_code()[code][0]
+        implicated_equipment_ids = {
+            "C01": ("ELZ01", "ELZ02"),
+            "C02": ("ELZ01",),
+            "C06": ("ELZ01", "ELZ02"),
+        }.get(code, ())
         window = EventWindow(
             event_id=f"{code}-20260105-001",
             code=code,
@@ -211,6 +216,7 @@ def _scenario_windows(
             first_detection_time=baseline.timestamp,
             confidence=0.9,
             detector_version="test-detector-v1",
+            implicated_equipment_ids=implicated_equipment_ids,
         )
         windows[code] = (window, rows)
     return windows
