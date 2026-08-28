@@ -131,12 +131,13 @@ artifact, binding its relative path, run, event, anomaly code, ordered evidence
 IDs, and count. Those identities must also appear in the already-hashed C04
 diagnosis report, so coordinated receipt and evidence-response changes fail.
 It separately binds the exact non-replayed human-review request,
-run, event, action, revision, and actor. The controlled positive safety field
-may equal `所有操作建议均须人工确认` exactly, while the Analytics Q09
-section and report disclaimer use the exact complete statement
+run, event, action, revision, and actor. The Analytics Q09 answer section uses
+the deterministic report explanation and rejects contradictory safety or
+equipment-control language. The report descriptor and diagnosis HTML require
+the exact complete statement
 `本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。`.
-Suffixes, negation, no-confirmation wording, and any equipment-control
-authorization fail closed. Public labels
+The short declaration alone, suffixes, negation, no-confirmation wording, and
+any equipment-control authorization fail closed. Public labels
 may select the directed demo before analysis but are never included in detector
 input.
 

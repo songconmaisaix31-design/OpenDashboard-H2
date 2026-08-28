@@ -4,22 +4,22 @@ export const REQUIRED_HUMAN_CONFIRMATION_DECLARATION = '所有操作建议均须
 export const REQUIRED_HUMAN_CONFIRMATION_STATEMENT =
   '本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。'
 
-const unsafeControlText = /(?:并非|不是|否认|无需|不需|不须|不必|免于|绕过).{0,12}(?:人工|确认)|(?:人工确认|确认).{0,8}(?:并非|不是|不再是).{0,8}(?:必需|必要|条件)|(?:自动|直接).{0,12}(?:执行|控制|下发|操作)|(?:系统|应用).{0,12}(?:可以|可|能够|将会|有权|获授权|获准).{0,12}(?:执行|控制|下发|发送).{0,12}(?:设备|指令|命令|操作)?|(?:无需|不经|绕过)人工确认/u
-const acceptedHumanConfirmationText = new Set([
-  REQUIRED_HUMAN_CONFIRMATION_DECLARATION,
-  REQUIRED_HUMAN_CONFIRMATION_STATEMENT,
-])
-const standaloneDeclaration = new RegExp(
-  `>\\s*(?:${REQUIRED_HUMAN_CONFIRMATION_DECLARATION}|${REQUIRED_HUMAN_CONFIRMATION_STATEMENT})\\s*<`,
+const unsafeControlText = /(?:并非|不是|否认|无需|不需|不须|不必|免于|绕过).{0,12}(?:人工|确认)|(?:人工确认|确认).{0,8}(?:并非|不是|不再是).{0,8}(?:必需|必须|必要|条件)|(?:自动|直接).{0,12}(?:执行|控制|下发|发送|操作)|(?:系统|应用).{0,12}(?:可以|可|可能|能够|将会|有权|获授权|被授权|获准|被允许|允许|获许可).{0,12}(?:执行|控制|下发|发送).{0,12}(?:设备|指令|命令|操作)?|(?:无需|不经|绕过)人工确认/u
+const standaloneStatement = new RegExp(
+  `>\\s*${REQUIRED_HUMAN_CONFIRMATION_STATEMENT}\\s*<`,
   'u',
 )
 
 export function hasRequiredHumanConfirmation(value) {
-  return acceptedHumanConfirmationText.has(value)
+  return value === REQUIRED_HUMAN_CONFIRMATION_STATEMENT
+}
+
+export function hasUnsafeAnswerText(value) {
+  return typeof value !== 'string' || unsafeControlText.test(value)
 }
 
 export function documentHasRequiredHumanConfirmation(value) {
-  return typeof value === 'string' && standaloneDeclaration.test(value) &&
+  return typeof value === 'string' && standaloneStatement.test(value) &&
     !unsafeControlText.test(value)
 }
 

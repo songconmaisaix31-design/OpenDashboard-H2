@@ -33,6 +33,7 @@ import {
   assertRendererProvenance,
   documentHasRequiredHumanConfirmation,
   hasRequiredHumanConfirmation,
+  hasUnsafeAnswerText,
 } from './lib/runtime-provenance.mjs'
 import { validateDemoReceipt } from '../tests/h2-sentinel/scripts/validate-demo-receipt.mjs'
 
@@ -269,6 +270,9 @@ export function assertQ09Answer(
       Array.isArray(section.citationIds) &&
       section.citationIds.includes(reportCitations[0].citationId))
   ) throw new Error('Q09 must contain exactly one matching report citation.')
+  if (answer.sections.some((section) => hasUnsafeAnswerText(section?.text))) {
+    throw new Error('Q09 answer sections contain unsafe safety or control language.')
+  }
   if (
     typeof descriptor.safetyDisclaimer !== 'string' ||
     !hasRequiredHumanConfirmation(descriptor.safetyDisclaimer) ||
