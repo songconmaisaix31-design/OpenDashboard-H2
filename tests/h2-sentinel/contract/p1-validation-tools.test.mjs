@@ -56,7 +56,12 @@ const COMPLETE_SAFETY_STATEMENT =
   '本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。'
 const GENERATED_REPORT_SECTION_TEXT =
   '报告按证据、事实与推断、影响、安全检查、人工复核和限制分区；查看报告后仍须由人工决定后续处置。'
+const REAL_C04_CONTROL_DENIAL_TEXTS = [
+  '事件证明存在越限，但不授权自动控制动作。',
+  '本建议需人工确认后执行，服务不自动闭环下发。',
+]
 const LEGITIMATE_CONTROL_DENIAL_TEXTS = [
+  ...REAL_C04_CONTROL_DENIAL_TEXTS,
   '系统不具备设备控制权限。',
   '所有运行建议都只是辅助信息，执行任何操作前均须人工确认；本应用不具备设备控制、设定值修改或模式切换权限。',
 ]
@@ -71,6 +76,15 @@ const MODAL_CONTROL_AUTHORITY_TEXTS = [
   ...ACTIVE_CONTROL_AUTHORITY_TEXTS,
   ...PASSIVE_CONTROL_AUTHORITY_TEXTS,
 ]
+const MIXED_REAL_C04_UNSAFE_TEXTS = REAL_C04_CONTROL_DENIAL_TEXTS.flatMap(
+  (denial) => [
+    ...MODAL_CONTROL_AUTHORITY_TEXTS.map((text) => `${denial}${text}`),
+    `${denial}系统自动执行设备操作。`,
+    `${denial}系统直接下发设备指令。`,
+    `${denial}系统此前已获授权执行设备操作。`,
+    `${denial}人工确认不是必须条件。`,
+  ],
+)
 const UNSAFE_Q09_ANSWER_TEXTS = [
   '并非所有操作建议均须人工确认。',
   '人工确认不是必须条件。',
@@ -85,6 +99,7 @@ const UNSAFE_Q09_ANSWER_TEXTS = [
   ...MODAL_CONTROL_AUTHORITY_TEXTS.map(
     (text) => `系统不具备设备控制权限，但${text}`,
   ),
+  ...MIXED_REAL_C04_UNSAFE_TEXTS,
 ]
 const INVALID_HUMAN_CONFIRMATION_DECLARATIONS = [
   '所有操作建议均须人工确认，但确认不是必需的。',
@@ -103,6 +118,7 @@ const CONTROL_AUTHORITY_TEXTS = [
   ...MODAL_CONTROL_AUTHORITY_TEXTS.map(
     (text) => `系统不具备设备控制权限，但${text}`,
   ),
+  ...MIXED_REAL_C04_UNSAFE_TEXTS,
 ]
 
 function sha256(value) {
@@ -274,6 +290,7 @@ async function writeRunArtifacts(
     `<p><code>${analyzedEventId}</code> · C04 / EXPORT_POWER_LIMIT_NOT_TRACKED</p>`,
     `<p>validation-slice.csv · ${detectorFingerprint} · ${displayLabel}</p>`,
     `<p><code>evidence-${sequence}-1</code></p>`,
+    ...REAL_C04_CONTROL_DENIAL_TEXTS.map((text) => `<p>${text}</p>`),
     `<p>${COMPLETE_SAFETY_STATEMENT}</p></body></html>`,
   ].join('')
   const evidenceResponse = `${JSON.stringify({
@@ -434,6 +451,7 @@ function runnerQ09Answer(runId, eventId, fingerprint, displayLabel) {
     `<p><code>${eventId}</code> · C04 / EXPORT_POWER_LIMIT_NOT_TRACKED</p>`,
     `<p>validation-slice.csv · ${fingerprint} · ${displayLabel}</p>`,
     '<p><code>evidence-1</code></p>',
+    ...REAL_C04_CONTROL_DENIAL_TEXTS.map((text) => `<p>${text}</p>`),
     `<p>${COMPLETE_SAFETY_STATEMENT}</p>`,
     '</body></html>',
   ].join('')
