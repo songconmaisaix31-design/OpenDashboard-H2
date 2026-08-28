@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 
+import {
+  createAnalysisStep,
+  createOfflineDeploySmokeReport,
+} from '../../../validation/offline-deploy-smoke.mjs'
 import { parseCsvText, serializeCsv } from '../../../validation/lib/csv.mjs'
 import { OFFICIAL_FIELDS } from '../../../validation/lib/official-contract.mjs'
 import { sha256 } from '../../../validation/lib/official-sources.mjs'
@@ -42,6 +46,45 @@ function contractFor(content, overrides = {}) {
 }
 
 describe('H2 Sentinel streamed official timeseries', () => {
+  it('keeps analysis lifecycle status separate from the offline smoke gate verdict', () => {
+    const analysisStep = createAnalysisStep({
+      durationMs: 2,
+      run: {
+        events: [{ eventId: 'event-1' }],
+        eventCountsByCode: { H2_PRESSURE_LOW: 1 },
+      },
+      analysisIdentity: {
+        runId: 'run-1',
+        status: 'completed',
+        startedAt: '2026-01-01T00:00:00Z',
+        completedAt: '2026-01-01T00:00:01Z',
+      },
+    })
+    const passedSteps = [
+      { step: 'import', status: 'passed' },
+      analysisStep,
+      { step: 'submission_export', status: 'passed' },
+    ]
+    const reportOptions = {
+      candidate: { commit: 'candidate-commit' },
+      sourceIdentity: { filename: 'official.csv' },
+      submittedFingerprint: `sha256:${'a'.repeat(64)}`,
+    }
+
+    assert.equal(analysisStep.status, 'passed')
+    assert.equal(analysisStep.lifecycleStatus, 'completed')
+    const passedReport = createOfflineDeploySmokeReport({ ...reportOptions, steps: passedSteps })
+    assert.equal(passedReport.contractVersion, 'offline-testset-smoke-v4')
+    assert.equal(passedReport.verdict, 'passed')
+
+    for (const failedIndex of passedSteps.keys()) {
+      const steps = passedSteps.map((step, index) => (
+        index === failedIndex ? { ...step, status: 'failed' } : step
+      ))
+      assert.equal(createOfflineDeploySmokeReport({ ...reportOptions, steps }).verdict, 'blocked')
+    }
+  })
+
   it('verifies the full source twice while retaining only the selected UTC-day chunk', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'h2-streamed-timeseries-'))
     const path = join(directory, 'streamed-timeseries.csv')
