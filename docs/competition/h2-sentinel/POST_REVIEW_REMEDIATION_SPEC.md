@@ -373,3 +373,58 @@ the service must not retain avoidable full-input text, encoded copies, parser
 buffers, and expanded row dictionaries at the same time. Tests must exercise
 the 96 MiB/180,000-row interactive boundary; the larger train file remains an
 offline UTC-day-chunk claim rather than a single-import claim.
+
+Official train, validation, and test identity checks must stream the complete
+source while verifying the frozen SHA-256, exact 69-column header, row count,
+time range, and strictly increasing unique timestamps. Evaluators and slice
+preparation retain only the requested UTC-day window. The full test file may
+be materialized only once at the unavoidable loopback import boundary; source
+identity and the submitted bytes must remain fingerprint-bound.
+
+### R15 - Consumer-bounded Web series
+
+API batching alone does not bound browser memory when every numeric variable
+for every official row is accumulated and then copied during merge.
+
+- Overview requests only the semantic series it renders and uses a bounded
+  recent time window.
+- Diagnosis requests only the current event's evidence or subtype-specific
+  series over the event window.
+- The variable explorer requests the selected variable on demand instead of
+  retaining all official variables in one workspace object.
+- Asynchronous series responses are keyed to the active run and consumer
+  selection so stale event or variable requests cannot replace current data.
+- A 69-field manifest regression proves that irrelevant fields are not
+  requested; a representative 129,600-row path proves that complete batch
+  responses are not retained and duplicated.
+
+### R16 - Sign, cadence, and subtype-correct aggregation
+
+- C03 requires command/actual direction disagreement and adverse PCC response;
+  same-direction BESS command, actual power, and PCC behavior must not produce
+  `BESS_DIRECTION_REVERSED`.
+- C05 confirmation requires four genuinely consecutive one-minute samples.
+  The event starts at the first causal risk sample, detection is recorded at
+  the confirmation sample, and the early-warning claim refers to warning
+  before the hard quota consequence rather than an invented pre-event sample.
+- C06 aggregation is subtype-specific. A persisted avoidable-start/stop state
+  must not disappear because a transition detector emitted only one candidate
+  while a different C06 subtype uses a sustained-duration threshold.
+- Detector-to-event tests cover these boundaries; hand-built event objects are
+  insufficient evidence for detector correctness.
+
+### R17 - Auditable calibration and fail-closed equipment identity
+
+- C05/C06 thresholds and impact rates derived from public train record the
+  exact public-source hashes, event/sample counts, derivation procedure, and
+  versioned results. A small dependency-free replay tool or equivalent
+  executable contract must reproduce the frozen calibration without importing
+  validation labels.
+- Validation is run only after thresholds are frozen and is reported as
+  held-out acceptance, not calibration evidence or an organizer score.
+- C01, C02, and C06 require valid implicated equipment from the triggering
+  detector context. Missing or invalid dynamic equipment fails closed; static
+  taxonomy defaults must not silently invent affected assets for rule or model
+  detector paths.
+- Exact 96 MiB and 180,000-row acceptance plus one-byte and one-row overflow
+  failures are executable boundary tests, not constant-only assertions.
