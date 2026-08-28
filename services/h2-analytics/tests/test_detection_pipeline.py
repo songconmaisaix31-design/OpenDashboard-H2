@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import timedelta
+from io import StringIO
 
 import pytest
 
@@ -13,6 +15,7 @@ from h2_analytics.detection import (
     RuleRowDetector,
     sanitized_fixture_c03_candidates,
 )
+from h2_analytics.detection.c06 import inefficient_allocation_signature
 from h2_analytics.events import EventAggregator
 from h2_analytics.impact import ImpactCalculator
 from h2_analytics.ingestion import DatasetLoader
@@ -248,6 +251,64 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
     assert c02.implicated_equipment_ids == ("ELZ02",)
     c06 = next(item for item in detector.detect(scenarios["C06"]) if item.code == "C06")
     assert c06.implicated_equipment_ids == ("ELZ03", "ELZ02")
+
+
+def test_c01_requires_exactly_two_causally_oscillating_electrolyzers(
+    valid_csv: str,
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+
+    def rows(oscillating_units: set[int]) -> tuple[DataRow, ...]:
+        output: list[DataRow] = []
+        for index in range(24):
+            timestamp = baseline.timestamp + timedelta(minutes=index)
+            values = {
+                **baseline.values,
+                "bess_power_actual_kw": 400.0 if index % 2 == 0 else -400.0,
+            }
+            for unit in range(1, 4):
+                if unit in oscillating_units:
+                    values[f"elz{unit}_power_cmd_kw"] = (
+                        600.0 if index % 2 == 0 else 300.0
+                    )
+            output.append(
+                replace(
+                    baseline,
+                    index=index + 1,
+                    timestamp=timestamp,
+                    timestamp_text=timestamp.isoformat(),
+                    values=values,
+                )
+            )
+        return tuple(output)
+
+    one_unit_candidates = tuple(
+        candidate
+        for candidate in RuleRowDetector().detect(rows({1}))
+        if candidate.code == "C01"
+    )
+    two_unit_rows = rows({1, 2})
+    two_unit_candidates = tuple(
+        candidate
+        for candidate in RuleRowDetector().detect(two_unit_rows)
+        if candidate.code == "C01"
+    )
+
+    assert one_unit_candidates == ()
+    assert len(two_unit_candidates) == 5
+    assert all(
+        candidate.implicated_equipment_ids == ("ELZ01", "ELZ02")
+        for candidate in two_unit_candidates
+    )
+    assert len(
+        EventAggregator().aggregate(
+            rows=two_unit_rows,
+            candidates=two_unit_candidates,
+            sampling_interval_minutes=1.0,
+        )
+    ) == 1
 
 
 @pytest.mark.parametrize(
@@ -576,6 +637,38 @@ def test_c06_allocation_marker_without_feasible_alternative_fails_closed(
     )
 
 
+def test_c06_rejects_current_power_above_actual_capacity(valid_csv: str) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    values = {**baseline.values, "ems_total_elz_target_kw": 1500.0}
+    for unit, (power, capacity, specific) in enumerate(
+        (
+            (300.0, 1000.0, 57.0),
+            (450.0, 100.0, 56.0),
+            (750.0, 1000.0, 53.2),
+        ),
+        start=1,
+    ):
+        values.update(
+            {
+                f"elz{unit}_available_flag": 1.0,
+                f"elz{unit}_run_state": 2.0,
+                f"elz{unit}_actual_available_capacity_kw": capacity,
+                f"elz{unit}_power_cmd_kw": power,
+                f"elz{unit}_power_actual_kw": power,
+                f"elz{unit}_specific_energy_kwh_per_kg": specific,
+            }
+        )
+    row = replace(baseline, values=values)
+
+    assert inefficient_allocation_signature(row) is None
+    assert not any(
+        candidate.code == "C06"
+        and candidate.subtype == "INEFFICIENT_POWER_ALLOCATION"
+        for candidate in RuleRowDetector().detect((row,))
+    )
+
+
 def test_c03_and_c06_thresholds_freeze_train_only_findings() -> None:
     classes = vocabulary.detection_thresholds()["classes"]
     c03 = classes["C03"]
@@ -731,6 +824,71 @@ def test_lightgbm_seam_accepts_only_a_preloaded_booster(valid_csv: str) -> None:
     assert len(candidates) == 2
     assert all(candidate.detector_version == "test-booster-v1" for candidate in candidates)
     assert not hasattr(detector, "model_path")
+
+
+def test_live_lightgbm_c03_requires_the_shared_causal_gate(valid_csv: str) -> None:
+    service = AnalyticsService(detector=_c03_model_detector())
+    dataset = service.import_csv(
+        filename="fixture-with-byte-drift.csv",
+        text=f"{valid_csv}\n",
+    )["dataset"]
+
+    assert dataset["mode"] == "LIVE_ANALYSIS"
+    run = service.run_analysis(dataset["datasetId"])
+    assert not any(event["code"] == "C03" for event in run["events"])
+
+
+def test_live_lightgbm_c03_retains_true_causal_rows(valid_csv: str) -> None:
+    service = AnalyticsService(detector=_c03_model_detector())
+    dataset = service.import_csv(
+        filename="causal-live.csv",
+        text=_live_csv_with_c03_causal_rows(valid_csv),
+    )["dataset"]
+
+    assert dataset["mode"] == "LIVE_ANALYSIS"
+    run = service.run_analysis(dataset["datasetId"])
+    c03_events = [event for event in run["events"] if event["code"] == "C03"]
+
+    assert len(c03_events) == 1
+    assert (
+        c03_events[0]["startTime"],
+        c03_events[0]["firstDetectionTime"],
+        c03_events[0]["endTime"],
+    ) == (
+        "2026-01-05T10:20:00Z",
+        "2026-01-05T10:24:00Z",
+        "2026-01-05T10:24:00Z",
+    )
+
+
+def _c03_model_detector() -> LightGbmRowDetector:
+    return LightGbmRowDetector(
+        booster=FakeBooster(),
+        feature_names=("bess_power_actual_kw", "pcc_power_actual_kw"),
+        class_map={1: ("C03", "BESS_DIRECTION_REVERSED")},
+        version="test-booster-v1",
+    )
+
+
+def _live_csv_with_c03_causal_rows(valid_csv: str) -> str:
+    source = StringIO(valid_csv)
+    reader = csv.DictReader(source)
+    assert reader.fieldnames is not None
+    rows = list(reader)
+    for row in rows[:5]:
+        row.update(
+            {
+                "bess_power_cmd_kw": "400",
+                "bess_power_actual_kw": "400",
+                "pcc_power_actual_kw": "500",
+                "pv_actual_kw": "1000",
+            }
+        )
+    output = StringIO()
+    writer = csv.DictWriter(output, fieldnames=reader.fieldnames, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue()
 
 
 @pytest.mark.parametrize("code", ["C01", "C02", "C06"])

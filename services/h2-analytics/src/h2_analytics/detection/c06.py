@@ -138,11 +138,30 @@ def inefficient_allocation_signature(
                 < _SPECIFIC_ADVANTAGE
             ):
                 continue
+            inefficient_capacity = numeric_capacities[inefficient_index]
+            alternative_capacity = numeric_capacities[alternative_index]
+            inefficient_power = numeric_powers[inefficient_index]
+            alternative_power = numeric_powers[alternative_index]
+            if not (
+                _within_stable_capacity(
+                    inefficient_power,
+                    inefficient_capacity,
+                    constraints,
+                )
+                and _within_stable_capacity(
+                    alternative_power,
+                    alternative_capacity,
+                    constraints,
+                )
+            ):
+                continue
+            alternative_power_limit = min(
+                alternative_capacity,
+                constraints.electrolyzer_max_power_kw,
+            )
             transferable_kw = min(
-                numeric_powers[inefficient_index]
-                - constraints.electrolyzer_min_stable_power_kw,
-                numeric_capacities[alternative_index]
-                - numeric_powers[alternative_index],
+                inefficient_power - constraints.electrolyzer_min_stable_power_kw,
+                alternative_power_limit - alternative_power,
             )
             if transferable_kw < _MINIMUM_REALLOCATION_KW:
                 continue
@@ -151,11 +170,24 @@ def inefficient_allocation_signature(
                 _REFERENCE_REALLOCATION_KW,
             )
             inefficient_equivalent_power = (
-                numeric_powers[inefficient_index] - reallocation_kw
+                inefficient_power - reallocation_kw
             )
             alternative_equivalent_power = (
-                numeric_powers[alternative_index] + reallocation_kw
+                alternative_power + reallocation_kw
             )
+            if not (
+                _within_stable_capacity(
+                    inefficient_equivalent_power,
+                    inefficient_capacity,
+                    constraints,
+                )
+                and _within_stable_capacity(
+                    alternative_equivalent_power,
+                    alternative_capacity,
+                    constraints,
+                )
+            ):
+                continue
             inefficient_curve_specific = _interpolate_specific_energy(
                 curves[inefficient_equipment],
                 inefficient_equivalent_power,
@@ -175,8 +207,8 @@ def inefficient_allocation_signature(
                 target_kw=target,
                 actual_total_kw=actual_total,
                 reallocation_kw=reallocation_kw,
-                inefficient_power_kw=numeric_powers[inefficient_index],
-                alternative_power_kw=numeric_powers[alternative_index],
+                inefficient_power_kw=inefficient_power,
+                alternative_power_kw=alternative_power,
                 inefficient_equivalent_power_kw=inefficient_equivalent_power,
                 alternative_equivalent_power_kw=alternative_equivalent_power,
                 inefficient_specific_energy=inefficient_specific,
@@ -187,8 +219,8 @@ def inefficient_allocation_signature(
                 alternative_run_state=numeric_states[alternative_index],
                 inefficient_available_flag=numeric_available[inefficient_index],
                 alternative_available_flag=numeric_available[alternative_index],
-                inefficient_actual_capacity_kw=numeric_capacities[inefficient_index],
-                alternative_actual_capacity_kw=numeric_capacities[alternative_index],
+                inefficient_actual_capacity_kw=inefficient_capacity,
+                alternative_actual_capacity_kw=alternative_capacity,
             )
             key = (
                 inefficient_specific - alternative_specific,
@@ -201,6 +233,18 @@ def inefficient_allocation_signature(
     if not options:
         return None
     return max(options, key=lambda item: item[0])[1]
+
+
+def _within_stable_capacity(
+    power_kw: float,
+    actual_capacity_kw: float,
+    constraints: H2Constraints,
+) -> bool:
+    maximum_kw = min(
+        actual_capacity_kw,
+        constraints.electrolyzer_max_power_kw,
+    )
+    return constraints.electrolyzer_min_stable_power_kw <= power_kw <= maximum_kw
 
 
 def _interpolate_specific_energy(

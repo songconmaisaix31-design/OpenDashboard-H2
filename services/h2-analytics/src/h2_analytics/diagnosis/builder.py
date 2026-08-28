@@ -868,9 +868,9 @@ def _c06_inefficient_plan(
         {
             "kind": "measurement",
             "variable": _elz_field(inefficient, "actual_available_capacity_kw"),
-            "reference": reference.inefficient_actual_capacity_kw,
-            "comparator": "=",
-            "conclusion": "高单位电耗设备的实际容量与当前功率已同时读取。",
+            "reference": reference.inefficient_equivalent_power_kw,
+            "comparator": ">=",
+            "conclusion": "高单位电耗设备实际容量覆盖等功率转移后的参考功率。",
             "unit": "kW",
         },
         {

@@ -85,6 +85,7 @@ def test_assistant_enforces_event_context_and_rejects_legacy_alias(
 
 def test_q09_returns_one_matching_chinese_generated_report(valid_csv: str) -> None:
     service, run_id = _analyzed(valid_csv)
+    run = service.get_run(run_id)
     answer = service.ask(
         run_id=run_id,
         question_id="Q09",
@@ -99,10 +100,24 @@ def test_q09_returns_one_matching_chinese_generated_report(valid_csv: str) -> No
         if citation["sourceType"] == "report"
     ]
 
+    assert run["provenance"]["generatedAt"] == run["dataset"]["provenance"][
+        "generatedAt"
+    ]
+    assert run["completedAt"] != run["provenance"]["generatedAt"]
+    assert answer["generatedAt"] == run["completedAt"]
+    assert answer["provenance"]["generatedAt"] == run["completedAt"]
+    assert answer["provenance"]["modelVersion"] == run["provenance"][
+        "modelVersion"
+    ]
     assert descriptor["kind"] == "single_event_diagnosis"
     assert descriptor["format"] == "html"
     assert descriptor["runId"] == run_id
     assert descriptor["eventId"] == answer["eventId"]
+    assert descriptor["generatedAt"] == run["completedAt"]
+    assert descriptor["provenance"]["generatedAt"] == run["completedAt"]
+    assert descriptor["provenance"]["modelVersion"] == run["provenance"][
+        "modelVersion"
+    ]
     assert artifact["mediaType"] == "text/html"
     assert report_citations == [
         {

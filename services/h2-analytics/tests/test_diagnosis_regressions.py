@@ -171,6 +171,29 @@ def test_c01_c02_c06_use_implicated_electrolyzers_in_evidence_and_submission(
         "equivalent_reallocation_kw",
         "ELZ03_to_ELZ02_curve_specific_energy",
     }.issubset(variables)
+    capacity_evidence = {
+        item["variable"]: item
+        for item in c06["evidence"]
+        if item["variable"].endswith("actual_available_capacity_kw")
+    }
+    assert capacity_evidence["elz3_actual_available_capacity_kw"][
+        "actualValue"
+    ] == 1000.0
+    assert capacity_evidence["elz3_actual_available_capacity_kw"][
+        "referenceValue"
+    ] == 950.0
+    assert capacity_evidence["elz3_actual_available_capacity_kw"][
+        "comparator"
+    ] == ">="
+    assert capacity_evidence["elz2_actual_available_capacity_kw"][
+        "actualValue"
+    ] == 1000.0
+    assert capacity_evidence["elz2_actual_available_capacity_kw"][
+        "referenceValue"
+    ] == 650.0
+    assert capacity_evidence["elz2_actual_available_capacity_kw"][
+        "comparator"
+    ] == ">="
     impact_evidence = next(
         item
         for item in c06["evidence"]

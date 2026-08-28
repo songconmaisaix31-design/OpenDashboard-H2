@@ -12,6 +12,7 @@ from h2_analytics.assistant import AssistantService
 from h2_analytics.detection import (
     RowDetector,
     RuleRowDetector,
+    filter_c03_candidates,
     sanitized_fixture_c03_candidates,
 )
 from h2_analytics.diagnosis import DiagnosisBuilder
@@ -77,6 +78,11 @@ class AnalyticsService:
                 details=tuple(imported.quality["blockingReasons"]),
             )
         candidates = self._detector.detect(imported.rows)
+        if imported.manifest["mode"] == "LIVE_ANALYSIS":
+            candidates = filter_c03_candidates(
+                rows=imported.rows,
+                candidates=candidates,
+            )
         if self._uses_default_detector:
             candidates = (
                 *candidates,

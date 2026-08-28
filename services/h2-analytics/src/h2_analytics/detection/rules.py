@@ -7,8 +7,6 @@ columns are rejected at the ingestion boundary.
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from h2_analytics import vocabulary
 from h2_analytics.models import DataRow
 from h2_analytics.settings import (
@@ -17,6 +15,7 @@ from h2_analytics.settings import (
     H2Constraints,
 )
 from .base import DetectionCandidate
+from .c03 import c03_causal_row_keys
 from .c06 import inefficient_allocation_signature
 
 _ELZ_IDS = ("1", "2", "3")
@@ -52,15 +51,6 @@ _C01_BESS_RANGE_KW = _threshold("C01", "bessRangeKw")
 _RATED_CAPACITY_KW = _threshold("C02", "ratedCapacityKw")
 _CAPACITY_SKEW_KW = _threshold("C02", "capacitySkewKw")
 _COMMAND_EXECUTION_GAP_KW = _threshold("C02", "commandExecutionGapKw")
-_C03_BESS_TARGET_MAGNITUDE_KW = _threshold(
-    "C03", "bessSignatureTargetMagnitudeKw"
-)
-_C03_BESS_TOLERANCE_KW = _threshold("C03", "bessSignatureToleranceKw")
-_C03_ACTUAL_TRACKING_TOLERANCE_KW = _threshold(
-    "C03", "actualTrackingToleranceKw"
-)
-_C03_CAUSAL_CONFIRMATION_ROWS = int(_threshold("C03", "causalConfirmationRows"))
-_C03_SAMPLING_INTERVAL_MINUTES = _threshold("C03", "samplingIntervalMinutes")
 _C04_BESS_LOW_KW = _threshold("C04", "bessMarkerMinimumKw")
 _C04_BESS_HIGH_KW = _threshold("C04", "bessMarkerMaximumKw")
 _PCC_VIOLATION_MIN_KW = _threshold("C04", "pccViolationMinimumKw")
@@ -159,7 +149,10 @@ class RuleRowDetector:
             )
             if turns >= _OSCILLATION_TURNS:
                 oscillating_equipment_ids.append(equipment_id)
-        if not oscillating_equipment_ids:
+        implicated_equipment_ids = tuple(oscillating_equipment_ids)
+        if not vocabulary.valid_implicated_equipment_ids(
+            "C01", implicated_equipment_ids
+        ):
             return ()
         pv = [row.value("pv_actual_kw") for row in window]
         pcc = [row.value("pcc_power_actual_kw") for row in window]
@@ -185,7 +178,7 @@ class RuleRowDetector:
                 "C01",
                 "SETPOINT_OSCILLATION",
                 0.80,
-                implicated_equipment_ids=tuple(oscillating_equipment_ids),
+                implicated_equipment_ids=implicated_equipment_ids,
             ),
         )
 
@@ -234,85 +227,12 @@ class RuleRowDetector:
     def _detect_c03(
         self, rows: tuple[DataRow, ...]
     ) -> tuple[DetectionCandidate, ...]:
-        candidates: list[DetectionCandidate] = []
-        signature_segments: list[list[DataRow]] = []
-        current_segment: list[DataRow] = []
-        expected_interval = timedelta(minutes=_C03_SAMPLING_INTERVAL_MINUTES)
-
-        for row in rows:
-            if not self._is_c03_public_signature_row(row):
-                if current_segment:
-                    signature_segments.append(current_segment)
-                    current_segment = []
-                continue
-            if (
-                current_segment
-                and row.timestamp is not None
-                and current_segment[-1].timestamp is not None
-                and row.timestamp - current_segment[-1].timestamp != expected_interval
-            ):
-                signature_segments.append(current_segment)
-                current_segment = []
-            current_segment.append(row)
-        if current_segment:
-            signature_segments.append(current_segment)
-
-        for segment in signature_segments:
-            if len(segment) < _C03_CAUSAL_CONFIRMATION_ROWS:
-                continue
-            confirmation_rows = segment[:_C03_CAUSAL_CONFIRMATION_ROWS]
-            if not any(self._c03_command_opposes_control_need(row) for row in confirmation_rows):
-                continue
-            candidates.extend(
-                self._candidate(row, "C03", "BESS_DIRECTION_REVERSED", 0.94)
-                for row in segment
-            )
-        return tuple(candidates)
-
-    @staticmethod
-    def _is_c03_public_signature_row(row: DataRow) -> bool:
-        if row.timestamp is None:
-            return False
-        command = row.value("bess_power_cmd_kw")
-        actual = row.value("bess_power_actual_kw")
-        pcc = row.value("pcc_power_actual_kw")
-        if command is None or actual is None or pcc is None:
-            return False
-        return (
-            abs(abs(command) - _C03_BESS_TARGET_MAGNITUDE_KW)
-            <= _C03_BESS_TOLERANCE_KW
-            and abs(actual - command) <= _C03_ACTUAL_TRACKING_TOLERANCE_KW
-            and command * pcc > 0
+        accepted = c03_causal_row_keys(rows)
+        return tuple(
+            self._candidate(row, "C03", "BESS_DIRECTION_REVERSED", 0.94)
+            for row in rows
+            if row.timestamp is not None and (row.index, row.timestamp) in accepted
         )
-
-    @staticmethod
-    def _c03_command_opposes_control_need(row: DataRow) -> bool:
-        command = row.value("bess_power_cmd_kw")
-        electrolyzer_powers = [row.value(field) for field in _ELZ_POWER_ACTUAL]
-        auxiliary_load = row.value("aux_load_kw")
-        pv_power = row.value("pv_actual_kw")
-        soc = row.value("bess_soc_pct")
-        soc_target = row.value("soc_target_pct")
-        if command is None:
-            return False
-        power_gap_conflict = False
-        if (
-            auxiliary_load is not None
-            and pv_power is not None
-            and all(power is not None for power in electrolyzer_powers)
-        ):
-            load_minus_pv = (
-                sum(power for power in electrolyzer_powers if power is not None)
-                + auxiliary_load
-                - pv_power
-            )
-            power_gap_conflict = command * load_minus_pv < 0
-        soc_conflict = (
-            soc is not None
-            and soc_target is not None
-            and command * (soc - soc_target) < 0
-        )
-        return power_gap_conflict or soc_conflict
 
     def _detect_c04(self, row: DataRow) -> tuple[DetectionCandidate, ...]:
         export_violation = row.value("pcc_export_power_violation_kw")
