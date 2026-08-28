@@ -6,7 +6,56 @@ import { terminatePidTree } from '../../scripts/h2-sentinel/launch.mjs'
 import { repositoryRoot } from './official-contract.mjs'
 
 const LOOPBACK_HOST = '127.0.0.1'
+const MAX_ERROR_CODE_LENGTH = 128
+const MAX_ERROR_TEXT_LENGTH = 512
+const MAX_ERROR_DETAILS = 8
+const ERROR_CODE_PATTERN = /^[A-Za-z0-9._-]+$/
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/
+const SENSITIVE_ERROR_TEXT_PATTERN =
+  /(?:[A-Za-z]:[\\/]|\\\\|\/(?:Users|home|etc|root|tmp|var)\/|api[_ -]?key|password|private[_ -]?key|token|secret|credential)/i
 const launcherPath = resolve(repositoryRoot, 'scripts/h2-sentinel/launch.mjs')
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function safeErrorCode(value) {
+  if (typeof value !== 'string') return ''
+  const code = value.trim()
+  return code.length > 0 &&
+      code.length <= MAX_ERROR_CODE_LENGTH &&
+      ERROR_CODE_PATTERN.test(code) &&
+      !SENSITIVE_ERROR_TEXT_PATTERN.test(code)
+    ? code
+    : ''
+}
+
+function safeErrorText(value) {
+  if (typeof value !== 'string') return ''
+  const text = value.trim()
+  return text.length > 0 &&
+      text.length <= MAX_ERROR_TEXT_LENGTH &&
+      !CONTROL_CHARACTER_PATTERN.test(text) &&
+      !SENSITIVE_ERROR_TEXT_PATTERN.test(text)
+    ? text
+    : ''
+}
+
+function formatEnvelopeFailure(route, status, body) {
+  const envelope = isRecord(body) ? body : null
+  const error = isRecord(envelope?.error) ? envelope.error : envelope
+  const code = safeErrorCode(error?.code)
+  const message = safeErrorText(error?.message) || 'unknown error'
+  const details = Array.isArray(error?.details)
+    ? error.details
+      .slice(0, MAX_ERROR_DETAILS)
+      .map(safeErrorText)
+      .filter(Boolean)
+    : []
+  return `${route} returned HTTP ${status}${code ? ` ${code}` : ''}: ${message}${
+    details.length > 0 ? ` ${details.join(' ')}` : ''
+  }`
+}
 
 export async function freeLoopbackPort() {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -210,14 +259,14 @@ export async function requestEnvelope(
         }),
     signal: AbortSignal.timeout(timeoutMs),
   })
-  const body = await response.json()
-  if (!response.ok || body.ok !== true) {
-    const details = Array.isArray(body.details) ? ` ${body.details.join(' ')}` : ''
-    throw new Error(
-      `${route} returned HTTP ${response.status} ${body.code ?? ''}: ${
-        body.message ?? 'unknown error'
-      }${details}`,
-    )
+  let body
+  try {
+    body = await response.json()
+  } catch {
+    throw new Error(formatEnvelopeFailure(route, response.status, null))
+  }
+  if (!response.ok || !isRecord(body) || body.ok !== true) {
+    throw new Error(formatEnvelopeFailure(route, response.status, body))
   }
   return body.data
 }
