@@ -74,7 +74,8 @@ export function DiagnosisPage({
     )
   }
 
-  const runProvenanceTone = run.provenance.mode === 'FIXTURE' ? 'fixture' : 'live'
+  const runProvenance = run.provenance
+  const runProvenanceTone = runProvenance.mode === 'FIXTURE' ? 'fixture' : 'live'
 
   return (
     <div className="h2-page h2-diagnosis-page">
@@ -111,7 +112,7 @@ export function DiagnosisPage({
             <StatusBadge tone="danger">{H2_SEVERITY_LABELS[event.severity]}风险</StatusBadge>
             <StatusBadge tone="warning">置信度 {formatH2Confidence(event.confidence)}</StatusBadge>
             <StatusBadge tone="neutral">{H2_REVIEW_LABELS[event.reviewState]}</StatusBadge>
-            <StatusBadge tone={event.provenance.mode === 'FIXTURE' ? 'fixture' : 'live'}>{H2_PROVENANCE_LABELS[event.provenance.mode]}</StatusBadge>
+            <StatusBadge tone={runProvenanceTone}>{H2_PROVENANCE_LABELS[runProvenance.mode]}</StatusBadge>
           </div>
           <dl className="h2-event-hero__facts">
             <div><dt>事件区间</dt><dd>{formatH2Timestamp(event.startTime)}–{formatH2Timestamp(event.endTime)}</dd></div>
@@ -158,14 +159,14 @@ export function DiagnosisPage({
       />
 
       <section className="h2-panel h2-provenance-detail">
-        <div className="h2-panel__heading"><div><p className="h2-eyebrow">Traceability</p><h2>版本与来源</h2></div><StatusBadge tone={runProvenanceTone}>{H2_PROVENANCE_LABELS[run.provenance.mode]}</StatusBadge></div>
+        <div className="h2-panel__heading"><div><p className="h2-eyebrow">Traceability</p><h2>版本与来源</h2></div><StatusBadge tone={runProvenanceTone}>{H2_PROVENANCE_LABELS[runProvenance.mode]}</StatusBadge></div>
         <dl className="h2-key-values h2-key-values--four">
-          <div><dt>数据指纹</dt><dd>{event.provenance.datasetFingerprint ?? '未提供'}</dd></div>
-          <div><dt>模型版本</dt><dd>{event.provenance.modelVersion ?? '此结果未声明模型版本'}</dd></div>
-          <div><dt>规则版本</dt><dd>{event.provenance.ruleVersion ?? '未提供'}</dd></div>
-          <div><dt>配置版本</dt><dd>{event.provenance.configurationVersion ?? '未提供'}</dd></div>
+          <div><dt>数据指纹</dt><dd>{runProvenance.datasetFingerprint ?? '未提供'}</dd></div>
+          <div><dt>模型版本</dt><dd>{runProvenance.modelVersion ?? '此结果未声明模型版本'}</dd></div>
+          <div><dt>规则版本</dt><dd>{runProvenance.ruleVersion ?? '未提供'}</dd></div>
+          <div><dt>配置版本</dt><dd>{runProvenance.configurationVersion ?? '未提供'}</dd></div>
         </dl>
-        <ul className="h2-limitations">{event.provenance.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+        <ul className="h2-limitations">{runProvenance.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
       </section>
     </div>
   )

@@ -102,7 +102,6 @@ export function H2SentinelView({
   return (
     <H2Shell
       activeRoute={navigation.route}
-      mode={workspace.mode}
       onNavigate={onNavigate}
       run={workspace.run}
     >

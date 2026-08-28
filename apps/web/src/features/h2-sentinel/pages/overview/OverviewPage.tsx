@@ -44,7 +44,7 @@ export function OverviewPage({ dataSource, onNavigate, workspace }: OverviewPage
   const seriesMessage = getOverviewSeriesMessage(seriesState.status)
   const representativeEvent = workspace.events[0]
   const qualityBlocked = workspace.run.quality.status === 'blocked'
-  const isFixture = workspace.mode === 'FIXTURE'
+  const isFixture = workspace.run.provenance.mode === 'FIXTURE'
   const judgePath = [
     {
       label: '数据源 / 导入',

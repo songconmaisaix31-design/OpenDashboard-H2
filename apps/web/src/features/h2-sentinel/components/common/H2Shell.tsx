@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 
-import type { H2AnalysisRun, H2DatasetMode } from '@opendashboard/h2-contracts'
+import type { H2AnalysisRun } from '@opendashboard/h2-contracts'
 import {
   toH2SentinelHash,
   type H2NavigationTarget,
@@ -59,14 +59,14 @@ const navigation = [
 export interface H2ShellProps {
   readonly activeRoute: H2SentinelRoute
   readonly children: ReactNode
-  readonly mode: H2DatasetMode
   readonly onNavigate: (target: H2NavigationTarget) => void
   readonly run: H2AnalysisRun
 }
 
-export function H2Shell({ activeRoute, children, mode, onNavigate, run }: H2ShellProps) {
+export function H2Shell({ activeRoute, children, onNavigate, run }: H2ShellProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const activePage = navigation.find(({ route }) => route === activeRoute) ?? navigation[0]
+  const isFixture = run.provenance.mode === 'FIXTURE'
 
   function navigate(target: H2NavigationTarget): void {
     setMenuOpen(false)
@@ -177,8 +177,8 @@ export function H2Shell({ activeRoute, children, mode, onNavigate, run }: H2Shel
           </div>
           <div className="h2-topbar__status">
             <StatusBadge
-              icon={mode === 'FIXTURE' ? '◇' : '●'}
-              tone={mode === 'FIXTURE' ? 'fixture' : 'live'}
+              icon={isFixture ? '◇' : '●'}
+              tone={isFixture ? 'fixture' : 'live'}
             >
               {getH2ProvenanceLabel(run.provenance, [
                 run.dataset.name,
@@ -193,7 +193,6 @@ export function H2Shell({ activeRoute, children, mode, onNavigate, run }: H2Shel
           <div className="h2-shell-grid">
             <div className="h2-content-column">
               <ProvenanceBanner
-                mode={mode}
                 provenance={run.provenance}
                 sourceHints={[run.dataset.name, run.dataset.sourceFilename]}
               />

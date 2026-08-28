@@ -32,6 +32,7 @@ export interface EventsPageProps {
 
 export function EventsPage({ onNavigate, workspace }: EventsPageProps) {
   const [filters, setFilters] = useState<H2EventFilterState>(INITIAL_EVENT_FILTERS)
+  const runProvenance = workspace.run.provenance
   const filteredEvents = useMemo(
     () => filterH2Events(workspace.events, filters),
     [filters, workspace.events],
@@ -111,7 +112,7 @@ export function EventsPage({ onNavigate, workspace }: EventsPageProps) {
                     <td><strong>{event.primaryControlObject.displayName}</strong><small>{event.affectedEquipment.map(({ displayName }) => displayName).join('、')}</small></td>
                     <td><strong>{formatH2Number(event.impact.value, event.impact.unit)}</strong><small>{event.impact.metric}</small></td>
                     <td><strong>{formatH2Confidence(event.confidence)}</strong></td>
-                    <td><StatusBadge tone={event.provenance.mode === 'FIXTURE' ? 'fixture' : 'live'}>{H2_PROVENANCE_LABELS[event.provenance.mode]}</StatusBadge></td>
+                    <td><StatusBadge tone={runProvenance.mode === 'FIXTURE' ? 'fixture' : 'live'}>{H2_PROVENANCE_LABELS[runProvenance.mode]}</StatusBadge></td>
                     <td><button aria-label={`打开 ${event.eventId} 诊断`} className="h2-icon-button" onClick={() => onNavigate({ route: 'diagnosis', eventId: event.eventId })} type="button">→</button></td>
                   </tr>
                 ))}

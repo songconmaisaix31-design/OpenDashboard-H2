@@ -1,4 +1,4 @@
-import type { H2DatasetMode, H2Provenance } from '@opendashboard/h2-contracts'
+import type { H2Provenance } from '@opendashboard/h2-contracts'
 import {
   getH2ProvenancePresentation,
   H2_PROVENANCE_LABELS,
@@ -7,13 +7,13 @@ import { H2Icon } from '../common/H2Icon.tsx'
 import { StatusBadge } from '../common/StatusBadge.tsx'
 
 export interface ProvenanceBannerProps {
-  readonly mode: H2DatasetMode
   readonly provenance: H2Provenance
   readonly sourceHints?: readonly string[]
 }
 
-export function ProvenanceBanner({ mode, provenance, sourceHints = [] }: ProvenanceBannerProps) {
+export function ProvenanceBanner({ provenance, sourceHints = [] }: ProvenanceBannerProps) {
   const { description, label } = getH2ProvenancePresentation(provenance, sourceHints)
+  const isFixture = provenance.mode === 'FIXTURE'
 
   return (
     <aside className="h2-provenance" aria-label="数据来源与限制">
@@ -25,8 +25,8 @@ export function ProvenanceBanner({ mode, provenance, sourceHints = [] }: Provena
           <div className="h2-provenance__title-row">
             <strong>来源与可追溯性</strong>
             <StatusBadge
-              icon={mode === 'FIXTURE' ? '◇' : '●'}
-              tone={mode === 'FIXTURE' ? 'fixture' : 'live'}
+              icon={isFixture ? '◇' : '●'}
+              tone={isFixture ? 'fixture' : 'live'}
             >
               {label}
             </StatusBadge>
