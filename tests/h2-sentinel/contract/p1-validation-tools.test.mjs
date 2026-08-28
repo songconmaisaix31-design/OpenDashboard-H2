@@ -56,6 +56,10 @@ const COMPLETE_SAFETY_STATEMENT =
   '本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。'
 const GENERATED_REPORT_SECTION_TEXT =
   '报告按证据、事实与推断、影响、安全检查、人工复核和限制分区；查看报告后仍须由人工决定后续处置。'
+const LEGITIMATE_CONTROL_DENIAL_TEXTS = [
+  '系统不具备设备控制权限。',
+  '所有运行建议都只是辅助信息，执行任何操作前均须人工确认；本应用不具备设备控制、设定值修改或模式切换权限。',
+]
 const UNSAFE_Q09_ANSWER_TEXTS = [
   '并非所有操作建议均须人工确认。',
   '人工确认不是必须条件。',
@@ -64,6 +68,8 @@ const UNSAFE_Q09_ANSWER_TEXTS = [
   '应用可能控制设备。',
   '系统已被授权执行设备操作。',
   '应用被允许发送设备命令。',
+  '设备指令可由系统下发。',
+  '系统不具备设备控制权限，但设备指令可由系统下发。',
 ]
 const INVALID_HUMAN_CONFIRMATION_DECLARATIONS = [
   '所有操作建议均须人工确认，但确认不是必需的。',
@@ -76,6 +82,8 @@ const CONTROL_AUTHORITY_TEXTS = [
   '操作员确认后，系统获准发送设备命令',
   '系统拥有设备控制权限。',
   '应用具备下发设备指令的权限。',
+  '设备指令可由系统下发。',
+  '系统不具备设备控制权限，但设备指令可由系统下发。',
 ]
 
 function sha256(value) {
@@ -897,6 +905,11 @@ describe('P1 measured demo receipt validation', () => {
     assert.equal(valid.provenance.modelVersion, 'deterministic-c01-c07-v4')
     assert.equal(valid.sections[1].text, GENERATED_REPORT_SECTION_TEXT)
     assert.equal(valid.generatedReport.descriptor.safetyDisclaimer, COMPLETE_SAFETY_STATEMENT)
+    for (const text of LEGITIMATE_CONTROL_DENIAL_TEXTS) {
+      const safeDenial = structuredClone(valid)
+      safeDenial.sections[1].text = text
+      assert.equal(assertQ09Answer(safeDenial, expected).questionId, 'Q09')
+    }
 
     const cases = [
       (answer) => { answer.questionId = 'Q08' },
@@ -1021,6 +1034,14 @@ describe('P1 measured demo receipt validation', () => {
         fixture.receipt.runs[0].q09.generatedAt,
       )
       assert.ok(Object.values(output.unsupportedClaims).every((value) => value === false))
+      for (const [index, text] of LEGITIMATE_CONTROL_DENIAL_TEXTS.entries()) {
+        const safeDenialResult = await runReceiptMutation(
+          fixture,
+          `q09-safe-control-denial-${index + 1}`,
+          (receipt) => { receipt.runs[0].q09.sections[1].text = text },
+        )
+        assert.equal(safeDenialResult.status, 0, safeDenialResult.stderr)
+      }
     } finally {
       await cleanup(fixture)
     }
