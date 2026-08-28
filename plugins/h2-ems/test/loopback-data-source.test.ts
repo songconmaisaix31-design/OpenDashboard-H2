@@ -219,16 +219,6 @@ describe('H2 EMS loopback adapter', () => {
       importCsv: 60_000,
       analysis: 180_000,
     })
-    assert.throws(
-      () => createLiveH2EmsDataSource({
-        enabled: true,
-        baseUrl: 'http://127.0.0.1:8123/',
-        requestTimeoutsMs: { analysis: H2_EMS_REQUEST_TIMEOUTS_MS.analysis + 1 },
-      }),
-      (error: unknown) =>
-        error instanceof H2EmsAdapterError && error.code === 'remote_response_invalid',
-    )
-
     const waitForAbort: typeof fetch = (_input, init) => new Promise((_, reject) => {
       init?.signal?.addEventListener(
         'abort',
@@ -257,5 +247,52 @@ describe('H2 EMS loopback adapter', () => {
       () => analysisTimedOut.runAnalysis('dataset-bounded'),
       (error: unknown) => error instanceof H2EmsAdapterError && error.code === 'request_timeout',
     )
+  })
+
+  it('routes series hydration through the closed analysis timeout', async () => {
+    assert.throws(
+      () => createLiveH2EmsDataSource({
+        enabled: true,
+        baseUrl: 'http://127.0.0.1:8123/',
+        requestTimeoutsMs: { analysis: H2_EMS_REQUEST_TIMEOUTS_MS.analysis + 1 },
+      }),
+      (error: unknown) =>
+        error instanceof H2EmsAdapterError && error.code === 'remote_response_invalid',
+    )
+
+    const request = {
+      runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+      variables: ['pcc_power_kw'],
+      startTime: '2026-01-05T10:20:00Z',
+      endTime: '2026-01-05T10:21:00Z',
+    }
+    const response = {
+      runId: request.runId,
+      variables: request.variables,
+      points: [{
+        timestamp: request.startTime,
+        values: { pcc_power_kw: 420 },
+      }],
+    }
+    const resolveAfterStandardTimeout: typeof fetch = (_input, init) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => resolve(envelope(response)), 20)
+        init?.signal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer)
+            reject(new Error('raw transport failure'))
+          },
+          { once: true },
+        )
+      })
+    const source = createLiveH2EmsDataSource({
+      enabled: true,
+      baseUrl: 'http://127.0.0.1:8123/',
+      requestTimeoutsMs: { standard: 1, analysis: 1_000 },
+      fetchFn: resolveAfterStandardTimeout,
+    })
+
+    assert.deepEqual(await source.getSeries(request), response)
   })
 })
