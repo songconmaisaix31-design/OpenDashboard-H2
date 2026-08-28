@@ -54,25 +54,28 @@ foreach ($markdownFile in $markdownFiles) {
 
 $requiredP1Phrases = @{
   'DEMO_SCRIPT.md' = @(
-    'not yet a timed pass',
+    'reproducible scripted local workflow',
     'prepare-validation-slice.mjs',
+    'validation/run-demo.mjs',
     'validate-demo-receipt.mjs',
+    'outside the measured window',
     'Fixture may be shown only as a separately labeled fallback'
   )
   'CLAIMS_LEDGER.md' = @(
-    'Unverified without an official package',
+    '21 of 24 total manifest entries',
+    'three top-level requirement/README Markdown or DOCX files differ',
     'organizer score',
     'Fixture and generic Local smoke do not become validation-slice evidence'
   )
   'JUDGE_CHECKLIST.md' = @(
     'publicLabelsUsedAsDetectorInput',
     'strictly below 180,000 ms',
-    'P1-W3 produced no such receipt'
+    'final receipt is claimed'
   )
   'RUNTIME_EVIDENCE_CHECKLIST.md' = @(
-    'Official package/slice: not supplied or generated in P1-W3',
-    'Timed receipt: not produced in P1-W3',
-    'Integrated automated pass; official slice not run'
+    'all data/material entries plus the workbook match',
+    'three top-level requirement/README Markdown or DOCX files differ',
+    'pending final-candidate rerun'
   )
 }
 foreach ($entry in $requiredP1Phrases.GetEnumerator()) {
@@ -86,9 +89,25 @@ foreach ($entry in $requiredP1Phrases.GetEnumerator()) {
   }
 }
 
+$forbiddenStalePhrases = @(
+  'No authorized official package was processed',
+  'No official package was processed',
+  'Official package/slice: not supplied or generated in P1-W3',
+  'P1-W3 produced no such receipt',
+  'Awaiting official package'
+)
+foreach ($markdownFile in $markdownFiles) {
+  $content = Get-Content -LiteralPath $markdownFile.FullName -Raw
+  foreach ($phrase in $forbiddenStalePhrases) {
+    if ($content.Contains($phrase)) {
+      $errors.Add("Stale evidence wording found in $($markdownFile.Name): $phrase")
+    }
+  }
+}
+
 if ($errors.Count -gt 0) {
   $errors | ForEach-Object { Write-Error $_ }
   exit 1
 }
 
-Write-Output "Submission package validation passed: $($requiredFiles.Count) required documents, 10 narrative pages, local links, placeholder scan, and P1 evidence boundaries."
+Write-Output "Submission package validation passed: $($requiredFiles.Count) required documents, 10 narrative pages, local links, placeholder scan, current evidence boundaries, and stale-claim scan."

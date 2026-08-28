@@ -73,9 +73,12 @@ also pass. Primary Fixture flows were inspected at desktop and 390x844 widths.
 
 The provenance correction preserves a prepared-slice filename alongside the
 analytics source so assembled Local QA renders
-LIVE_ANALYSIS · 验证集切片 rather than generic local input. No authorized
-official package was processed and no timed receipt was created, so this
-automated result is not a claim that the primary validation demo ran.
+LIVE_ANALYSIS · 验证集切片 rather than generic local input. The official
+package was inspected only through a bounded read-only integrity check: all
+data/material entries plus the workbook match, 21 of 24 total manifest
+entries, while three top-level requirement/README Markdown or DOCX files
+differ. No official runtime artifacts or timed receipt were generated, so
+this automated result is not a claim that the primary validation demo ran.
 
 ## Evidence sources
 

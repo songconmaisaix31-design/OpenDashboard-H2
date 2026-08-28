@@ -13,45 +13,27 @@ import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 
+import {
+  SUBMISSION_COLUMNS,
+  serializeSubmission,
+} from '../../../validation/lib/submission.mjs'
+
 const directory = resolve(fileURLToPath(new URL('.', import.meta.url)))
 const repositoryRoot = resolve(directory, '../../..')
 const generatedRoot = resolve(repositoryRoot, 'tests/h2-sentinel/reports/generated')
 const prepareScript = resolve(repositoryRoot, 'tests/h2-sentinel/scripts/prepare-validation-slice.mjs')
 const receiptScript = resolve(repositoryRoot, 'tests/h2-sentinel/scripts/validate-demo-receipt.mjs')
-
+const officialFieldFixture = JSON.parse(
+  await readFile(
+    resolve(repositoryRoot, 'tests/h2-sentinel/fixtures/official-timeseries-columns.json'),
+    'utf8',
+  ),
+)
 const timeseriesColumns = [
-  'timestamp',
-  'pv_actual_kw',
-  'bess_power_kw',
-  'pcc_power_kw',
-  'total_electrolyzer_power_kw',
-  'auxiliary_load_kw',
-  'bess_soc_percent',
-  'pcc_export_limit_kw',
-  'pcc_import_limit_kw',
-  'bess_dispatch_command_kw',
+  ...officialFieldFixture.fields,
   'ground_truth_label',
   'event_id',
   'anomaly_subtype',
-]
-
-const submissionColumns = [
-  'pred_event_id',
-  'start_time',
-  'end_time',
-  'anomaly_code',
-  'anomaly_subtype',
-  'severity',
-  'primary_control_object',
-  'affected_equipment',
-  'confidence',
-  'evidence_json',
-  'root_cause',
-  'recommended_action',
-  'primary_impact_metric',
-  'estimated_impact_value',
-  'first_detection_time',
-  'requires_human_confirmation',
 ]
 
 const diagnosisSections = [
@@ -75,17 +57,23 @@ function createTimeseries() {
   const rows = []
   for (let minute = 0; minute <= 120; minute += 10) {
     const timestamp = new Date(Date.UTC(2026, 0, 5, 9, minute)).toISOString()
-    rows.push([
+    const officialValues = Object.fromEntries(
+      officialFieldFixture.fields.map((field) => [field, '0']),
+    )
+    Object.assign(officialValues, {
       timestamp,
-      '1000',
-      '0',
-      minute >= 60 && minute <= 70 ? '720' : '450',
-      '300',
-      '20',
-      '50',
-      '500',
-      '600',
-      '0',
+      pv_forecast_kw: '1000',
+      pv_available_kw: '1000',
+      pv_actual_kw: '1000',
+      aux_load_kw: '20',
+      bess_soc_pct: '50',
+      pcc_power_actual_kw: minute >= 60 && minute <= 70 ? '720' : '450',
+      grid_export_power_limit_kw: '500',
+      grid_import_power_limit_kw: '600',
+      ems_total_elz_target_kw: '300',
+    })
+    rows.push([
+      ...officialFieldFixture.fields.map((field) => officialValues[field]),
       minute >= 60 && minute <= 70 ? 'C04' : '',
       minute >= 60 && minute <= 70 ? 'public-c04-earliest' : '',
       minute >= 60 && minute <= 70 ? 'EXPORT_POWER_LIMIT_NOT_TRACKED' : '',
@@ -188,26 +176,34 @@ async function writeRunArtifacts(root, sequence, runId, analyzedEventId) {
     exportKind: 'event_review_audit',
     runId,
     actorIdentityNotice: 'local_operator_labels_are_unverified',
-    events: [],
+    events: [{
+      event: { eventId: analyzedEventId },
+      review: {
+        currentState: 'confirmed',
+        revision: 1,
+        entries: [{ action: 'confirm' }],
+      },
+    }],
   })}\n`
-  const submission = `${submissionColumns.join(',')}\n${[
-    analyzedEventId,
-    '2026-01-05T10:00:00Z',
-    '2026-01-05T10:10:00Z',
-    'C04',
-    'EXPORT_POWER_LIMIT_NOT_TRACKED',
-    'high',
-    'pcc',
-    'pcc:PCC-01',
-    '0.9',
-    '[]',
-    'bounded cause',
-    'manual review',
-    'pcc_power_limit_violation_energy_kwh',
-    '1.0',
-    '2026-01-05T10:00:00Z',
-    'true',
-  ].join(',')}\n`
+  assert.equal(SUBMISSION_COLUMNS.length, 16)
+  const submission = serializeSubmission([{
+    pred_event_id: analyzedEventId,
+    start_time: '2026-01-05T10:00:00Z',
+    end_time: '2026-01-05T10:10:00Z',
+    anomaly_code: 'C04',
+    anomaly_subtype: 'EXPORT_POWER_LIMIT_NOT_TRACKED',
+    severity: '高',
+    primary_control_object: 'EMS并网点功率边界控制模块',
+    affected_equipment: 'PCC,BESS,ELZ,PV',
+    confidence: '0.9',
+    evidence_json: '[{"evidence_id":"EV-001"}]',
+    root_cause: 'Bounded evidence-grounded cause.',
+    recommended_action: 'Verify locally before human-confirmed action.',
+    primary_impact_metric: 'pcc_power_limit_violation_energy_kwh',
+    estimated_impact_value: '1.0',
+    first_detection_time: '2026-01-05T10:00:00Z',
+    requires_human_confirmation: 'true',
+  }])
   await Promise.all([
     writeFile(join(runDirectory, 'diagnosis.html'), diagnosis, 'utf8'),
     writeFile(join(runDirectory, 'review-audit.json'), audit, 'utf8'),
@@ -222,6 +218,7 @@ async function writeRunArtifacts(root, sequence, runId, analyzedEventId) {
 
 function measuredRun({ sequence, runId, analyzedEventId, startedAt, completedAt, totalDurationMs, artifacts }) {
   return {
+    executionId: `demo-execution-${sequence}`,
     sequence,
     status: 'passed',
     runId,
@@ -373,6 +370,9 @@ describe('P1 public-validation slice preparation', () => {
       assert.equal(fixture.manifest.slice.rowCount, 8)
       assert.equal(rows.length, 9)
       assert.doesNotMatch(rows[0], /ground_truth_label|event_id|anomaly_subtype/)
+      assert.deepEqual(rows[0].split(','), officialFieldFixture.fields)
+      assert.equal(fixture.manifest.slice.columns.length, 69)
+      assert.deepEqual(fixture.manifest.slice.columns, officialFieldFixture.fields)
       assert.deepEqual(fixture.manifest.slice.removedLabelColumns, [
         'ground_truth_label',
         'event_id',
@@ -387,6 +387,8 @@ describe('P1 public-validation slice preparation', () => {
       assert.equal(fixture.manifest.sources.labels.sha256, sha256(fixture.fixture.labels))
       assert.ok(!fixture.result.stdout.includes(fixture.fixture.packageRoot))
       assert.ok(!fixture.result.stdout.includes(fixture.outputDirectory))
+      assert.ok(!slice.includes(fixture.fixture.packageRoot))
+      assert.ok(!JSON.stringify(fixture.manifest).includes(fixture.fixture.packageRoot))
     } finally {
       await cleanup(fixture)
     }
@@ -438,7 +440,10 @@ describe('P1 public-validation slice preparation', () => {
     await mkdir(generatedRoot, { recursive: true })
     const caseRoot = await mkdtemp(join(generatedRoot, 'slice-numeric-failure-'))
     const fixture = await createPackage()
-    fixture.timeseries = fixture.timeseries.replace(',1000,0,450,', ',not-a-number,0,450,')
+    fixture.timeseries = fixture.timeseries.replace(
+      ',1000,1000,1000,',
+      ',not-a-number,1000,1000,',
+    )
     await writeFile(
       join(fixture.packageRoot, fixture.timeseriesRelativePath),
       fixture.timeseries,
@@ -505,6 +510,81 @@ describe('P1 measured demo receipt validation', () => {
       assert.equal(detectorDriftResult.status, 1)
       assert.match(detectorDriftResult.stderr, /Detector input SHA-256 does not match/)
       await writeFile(detectorInputPath, detectorInput)
+
+      const duplicateExecutionReceipt = structuredClone(fixture.receipt)
+      duplicateExecutionReceipt.runs[1].executionId =
+        duplicateExecutionReceipt.runs[0].executionId
+      const duplicateExecutionPath = join(
+        fixture.caseRoot,
+        'duplicate-execution-receipt.json',
+      )
+      await writeFile(
+        duplicateExecutionPath,
+        `${JSON.stringify(duplicateExecutionReceipt, null, 2)}\n`,
+        'utf8',
+      )
+      const duplicateExecutionResult = runReceiptValidator(
+        fixture,
+        duplicateExecutionPath,
+      )
+      assert.equal(duplicateExecutionResult.status, 1)
+      assert.match(duplicateExecutionResult.stderr, /distinct execution IDs/)
+
+      const auditPath = join(fixture.artifactsRoot, 'run-1/review-audit.json')
+      const audit = await readFile(auditPath, 'utf8')
+      const invalidAuditValue = JSON.parse(audit)
+      invalidAuditValue.events[0].review = {
+        currentState: 'open',
+        revision: 0,
+        entries: [],
+      }
+      const invalidAudit = `${JSON.stringify(invalidAuditValue)}\n`
+      await writeFile(auditPath, invalidAudit, 'utf8')
+      const invalidAuditReceipt = structuredClone(fixture.receipt)
+      invalidAuditReceipt.runs[0].artifacts.reviewAudit.sha256 = sha256(invalidAudit)
+      const invalidAuditReceiptPath = join(
+        fixture.caseRoot,
+        'invalid-audit-receipt.json',
+      )
+      await writeFile(
+        invalidAuditReceiptPath,
+        `${JSON.stringify(invalidAuditReceipt, null, 2)}\n`,
+        'utf8',
+      )
+      const invalidAuditResult = runReceiptValidator(
+        fixture,
+        invalidAuditReceiptPath,
+      )
+      assert.equal(invalidAuditResult.status, 1)
+      assert.match(invalidAuditResult.stderr, /confirmed revision 1/)
+      await writeFile(auditPath, audit, 'utf8')
+
+      const submissionPath = join(fixture.artifactsRoot, 'run-1/submission.csv')
+      const submission = await readFile(submissionPath, 'utf8')
+      const invalidSubmission = submission.replace(
+        'PCC,BESS,ELZ,PV',
+        'BESS01,PCC',
+      )
+      await writeFile(submissionPath, invalidSubmission, 'utf8')
+      const invalidSubmissionReceipt = structuredClone(fixture.receipt)
+      invalidSubmissionReceipt.runs[0].artifacts.submissionCsv.sha256 =
+        sha256(invalidSubmission)
+      const invalidSubmissionReceiptPath = join(
+        fixture.caseRoot,
+        'invalid-submission-receipt.json',
+      )
+      await writeFile(
+        invalidSubmissionReceiptPath,
+        `${JSON.stringify(invalidSubmissionReceipt, null, 2)}\n`,
+        'utf8',
+      )
+      const invalidSubmissionResult = runReceiptValidator(
+        fixture,
+        invalidSubmissionReceiptPath,
+      )
+      assert.equal(invalidSubmissionResult.status, 1)
+      assert.match(invalidSubmissionResult.stderr, /failed the official checker/)
+      await writeFile(submissionPath, submission, 'utf8')
 
       const driftReceipt = structuredClone(fixture.receipt)
       driftReceipt.runs[0].artifacts.diagnosisReport.sha256 = `sha256:${'0'.repeat(64)}`

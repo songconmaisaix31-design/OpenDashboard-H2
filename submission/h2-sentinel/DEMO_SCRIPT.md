@@ -2,73 +2,65 @@
 
 ## Evidence gate
 
-This is the operational script for the primary P1 demo. It is not yet a timed pass:
-P1-W3 did not receive an official-package path, did not generate an
-official validation slice, and did not produce two measured final-integrated
-runs. Do not call this a three-minute pass until
-validate-demo-receipt.mjs accepts the final receipt and artifacts for the exact
-integrated commit.
+This is a reproducible scripted local workflow, not a claimed timed pass. The
+coordinator may claim the three-minute target only after
+`validation/run-demo.mjs` completes two executions from one clean final
+integrated SHA and `validate-demo-receipt.mjs` accepts every referenced file.
 
-Services are started before timing. Installation and launcher startup are
-demonstrated separately and must remain listed as exclusions in the receipt.
+The script starts a fresh Local launcher before each execution. Launcher
+startup and dependency installation are outside the measured window and are
+listed as exclusions. The measured window covers only import, analysis,
+evidence read, human review, Q09 diagnosis, review-audit export, and submission
+export.
 
 ## Preparation outside the timed window
 
-1. Independently obtain the SHA-256 values of the public validation timeseries
-   and event-label CSV files.
-2. Run prepare-validation-slice.mjs with the explicit official-package
-   directory, package-relative source files, both expected hashes, and a new
-   directory below tests/h2-sentinel/reports/generated/.
-3. Inspect validation-slice-manifest.json: the selected event must be the
-   chronologically earliest public C04 event, the requested range must add 30
-   minutes on both sides, and validation-slice.csv must contain no label
-   columns.
-4. Start the final integrated Local launcher. Confirm the Web and analytics
-   endpoints are loopback-only before opening the timed route.
-5. Create distinct artifact directories for measured runs 1 and 2. Never
-   overwrite one run with the other.
+1. Independently obtain expected SHA-256 values for the public validation
+   timeseries and event-label CSV files.
+2. Run `prepare-validation-slice.mjs` with the explicit read-only package,
+   package-relative files, both expected hashes, and a new ignored output
+   directory.
+3. Inspect the manifest: it must select the earliest C04, add 30 minutes on
+   both sides, contain only relative paths, and keep public labels separate.
+4. Confirm `validation-slice.csv` has the exact official 69 detector fields and
+   no label column.
+5. Confirm the final candidate is clean and provide its exact SHA to the demo
+   runner. Never overwrite output from an earlier execution.
 
-The public labels stay in the ignored QA manifest. Only validation-slice.csv
-may be imported into analytics.
+The public labels stay in the ignored QA manifest. Only the detector CSV is
+sent to analytics.
 
-## Timed path — target under 180 seconds
+## Scripted path — target below 180 seconds
 
-| Budget | Judge action | Visible evidence and narration |
+| Stage | Scripted action | Evidence boundary |
 | --- | --- | --- |
-| 00:00–00:25 | Import validation-slice.csv. | Show LIVE_ANALYSIS · 验证集切片, dataset fingerprint, source range, row count, and quality state. State that this is a prepared public-validation slice, not full validation or an organizer score. |
-| 00:25–01:00 | Run deterministic analysis and open Event Center. | Select the detected C04 candidate without importing the public-label manifest. Show that analysis is local and independent of an LLM. |
-| 01:00–01:30 | Open diagnosis detail. | Show event timing, synchronized evidence, exact impact value/formula/unit/assumptions, safety checks, and provenance. Do not claim the public label proves the detector result. |
-| 01:30–01:55 | Perform human review. | Confirm or reject, add a note, and show the new revision. Explain that the local actor label is unverified attribution and that review does not mutate detector fields. |
-| 01:55–02:25 | Run official question Q09. | Show the deterministic Chinese answer, matching event/report citation, and generated 氢哨异常诊断报告. State that every recommendation still requires human confirmation. |
-| 02:25–02:45 | Export review audit and submission. | Download review_audit_json and submission.csv. Show that review history is in the audit export while the frozen 16 submission columns and event identity remain unchanged. |
-| 02:45–03:00 | Close with hashes and limits. | Show report, audit, submission, detector-input, manifest, and source hashes. State the validation-slice scope and the excluded startup/install time. |
+| import | Import the prepared detector CSV. | Require LIVE_ANALYSIS and validation-slice provenance, fingerprint, range, row count, and quality. |
+| analysis | Run deterministic analysis and select an overlapping C04 candidate. | Public labels are read only after analysis for comparison. |
+| evidence_review | Read the event evidence from the public loopback API. | Require timing, evidence, impact, safety, and provenance. |
+| human_review | Confirm the event with revision 0 and a unique request ID. | Require revision 1; local actor attribution remains unverified. |
+| q09_report | Request official Q09 and its deterministic Chinese diagnosis HTML. | Require matching event/report citations and human-confirmation wording. |
+| artifact_export | Export review audit and exact 16-column submission. | Require review only in audit, then run the exact submission checker. |
 
 ## Receipt gate
 
-Record these fields for each run without absolute local paths:
+Each run records a distinct runner-generated `executionId`. The deterministic
+analytics `runId` may repeat when identical detector bytes are analyzed in
+fresh service processes; it is therefore not used as execution identity. The
+receipt records sequences 1 and 2, positive stage durations, strict
+sub-180,000-ms measured totals, relative artifact paths, recomputed SHA-256
+values, exact candidate SHA, and explicit false claim flags.
 
-- distinct run ID and analyzed event ID;
-- start/end timestamps, total duration, and positive stage durations for
-  import, analysis, evidence_review, human_review, q09_report, and
-  artifact_export;
-- Live validation-slice provenance and
-  publicLabelsUsedAsDetectorInput: false;
-- relative artifact paths and SHA-256 values for the diagnosis HTML,
-  review-audit JSON, and submission.csv.
+Run the validator after both executions:
 
-After two consecutive successful runs, validate the receipt against the exact
-manifest, artifact root, and final integrated SHA:
-
-    node tests/h2-sentinel/scripts/validate-demo-receipt.mjs
-      --receipt tests/h2-sentinel/reports/generated/final/demo-receipt.json
-      --manifest tests/h2-sentinel/reports/generated/final/validation-slice-manifest.json
-      --artifacts-root tests/h2-sentinel/reports/generated/final/artifacts
+    node tests/h2-sentinel/scripts/validate-demo-receipt.mjs \
+      --receipt tests/h2-sentinel/reports/generated/final/demo-receipt.json \
+      --manifest tests/h2-sentinel/reports/generated/final/validation-slice-manifest.json \
+      --artifacts-root tests/h2-sentinel/reports/generated/final/artifacts \
       --expected-commit <40-character-final-integrated-sha>
 
-Only a successful validator result permits the wording “two consecutive
-validation-slice runs completed in under 180 seconds each.” It still does not
-permit an organizer-score, full-validation, hidden-test, deployment, or
-production claim.
+Only a passing final-candidate receipt permits the sub-180-second wording. It
+does not permit organizer-score, full-validation, hidden-test, deployment, or
+production claims.
 
 ## Fixture fallback
 
@@ -78,6 +70,6 @@ Fixture may be shown only as a separately labeled fallback:
 demonstrates the interaction model but does not replace the validation-slice
 run and is excluded from the timed receipt.”
 
-If either Live run fails, exceeds the budget, loses provenance, imports labels,
-or produces a hash mismatch, the timed demo is failed. Do not substitute
-Fixture, edit the receipt, or describe a partial run as passing.
+If either Live execution fails, exceeds the target, loses provenance, imports
+labels, or produces a hash mismatch, the demo gate fails. Do not substitute
+Fixture, edit the receipt, or describe a partial execution as passing.
