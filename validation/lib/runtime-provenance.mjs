@@ -5,12 +5,19 @@ export const REQUIRED_HUMAN_CONFIRMATION_STATEMENT =
   '本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。'
 
 const controlAuthorityModality = '(?:可以|可能|能够|将会|可|会|将|能)'
+const controlAuthoritySubject = '(?:系统|应用|服务|平台)'
+const controlAction = '(?:执行|控制|下发|发送|操作)'
+const controlTarget = '(?:设备|指令|命令|操作|控制)'
 const boundedControlDenials = [
   '事件证明存在越限，但不授权自动控制动作。',
   '本建议需人工确认后执行，服务不自动闭环下发。',
 ]
 const unsafeControlText = new RegExp(
   `(?:并非|不是|否认|无需|不需|不须|不必|免于|绕过).{0,12}(?:人工|确认)|(?:人工确认|确认).{0,8}(?:并非|不是|不再是).{0,8}(?:必需|必须|必要|条件)|(?:自动|直接).{0,12}(?:执行|控制|下发|发送|操作)|(?:系统|应用).{0,12}(?<![不未无])(?:${controlAuthorityModality}|有权|拥有|具备|获授权|被授权|获准|被允许|允许|获许可).{0,12}(?:执行|控制|下发|发送).{0,12}(?:设备|指令|命令|操作)?|(?:设备(?:指令|命令|操作|控制)|控制(?:指令|命令|操作)?).{0,8}(?<![不未无])${controlAuthorityModality}.{0,4}由(?:系统|应用).{0,8}(?:执行|控制|下发|发送)|(?:无需|不经|绕过)人工确认`,
+  'u',
+)
+const residualControlAuthorityText = new RegExp(
+  `(?:${controlAuthoritySubject}.{0,12}(?<![不未无])${controlAction}.{0,8}${controlTarget}|(?:设备(?:指令|命令|操作|控制)|控制(?:指令|命令|操作)?).{0,8}(?:${controlAuthorityModality}.{0,4})?(?:由|被)${controlAuthoritySubject}.{0,8}${controlAction}|${controlAuthoritySubject}.{0,12}(?:获得|得到|取得)(?:了)?授权.{0,12}${controlAction}.{0,8}${controlTarget})`,
   'u',
 )
 const standaloneStatement = new RegExp(
@@ -23,12 +30,13 @@ export function hasRequiredHumanConfirmation(value) {
 }
 
 export function hasUnsafeAnswerText(value) {
-  return typeof value !== 'string' || unsafeControlText.test(
-    boundedControlDenials.reduce(
-      (remaining, denial) => remaining.replaceAll(denial, ''),
-      value,
-    ),
+  if (typeof value !== 'string') return true
+  const residualText = boundedControlDenials.reduce(
+    (remaining, denial) => remaining.replaceAll(denial, ''),
+    value,
   )
+  return unsafeControlText.test(residualText) ||
+    residualControlAuthorityText.test(residualText)
 }
 
 export function documentHasRequiredHumanConfirmation(value) {

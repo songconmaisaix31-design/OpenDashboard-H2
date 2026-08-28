@@ -23,7 +23,11 @@ import {
   assertHumanReviewIdentity,
   assertQ09Answer,
 } from '../../../validation/run-demo.mjs'
-import { assertAnalysisRun } from '../../../validation/lib/runtime-provenance.mjs'
+import {
+  assertAnalysisRun,
+  documentHasRequiredHumanConfirmation,
+  hasUnsafeAnswerText,
+} from '../../../validation/lib/runtime-provenance.mjs'
 
 const directory = resolve(fileURLToPath(new URL('.', import.meta.url)))
 const repositoryRoot = resolve(directory, '../../..')
@@ -66,6 +70,7 @@ const LEGITIMATE_CONTROL_DENIAL_TEXTS = [
   '所有运行建议都只是辅助信息，执行任何操作前均须人工确认；本应用不具备设备控制、设定值修改或模式切换权限。',
 ]
 const CONTROL_AUTHORITY_MODALITIES = ['会', '将', '能', '可以', '可', '可能', '能够', '将会']
+const CONTROL_AUTHORITY_SUBJECTS = ['系统', '应用', '服务', '平台']
 const ACTIVE_CONTROL_AUTHORITY_TEXTS = CONTROL_AUTHORITY_MODALITIES.map(
   (modality) => `系统${modality}下发设备指令。`,
 )
@@ -76,6 +81,35 @@ const MODAL_CONTROL_AUTHORITY_TEXTS = [
   ...ACTIVE_CONTROL_AUTHORITY_TEXTS,
   ...PASSIVE_CONTROL_AUTHORITY_TEXTS,
 ]
+const RESIDUAL_CONTROL_AUTHORITY_TEXTS = [
+  ...CONTROL_AUTHORITY_SUBJECTS.flatMap((subject) => [
+    `${subject}下发设备指令。`,
+    ...CONTROL_AUTHORITY_MODALITIES.map(
+      (modality) => `${subject}${modality}下发设备指令。`,
+    ),
+    `设备指令由${subject}下发。`,
+    ...CONTROL_AUTHORITY_MODALITIES.map(
+      (modality) => `设备指令${modality}被${subject}下发。`,
+    ),
+    ...['获得', '得到', '取得'].map(
+      (authorization) => `${subject}此前${authorization}授权执行设备操作。`,
+    ),
+  ]),
+]
+const REQUIRED_REVIEW_CONTROL_AUTHORITY_TEXTS = [
+  '设备指令将被系统下发。',
+  '设备指令由系统下发。',
+  '系统此前获得授权执行设备操作。',
+  '服务可以下发设备指令。',
+]
+const REQUIRED_REVIEW_MIXED_UNSAFE_TEXTS = REAL_C04_CONTROL_DENIAL_TEXTS.flatMap(
+  (denial) => REQUIRED_REVIEW_CONTROL_AUTHORITY_TEXTS.map(
+    (claim) => `${denial}${claim}`,
+  ),
+)
+const RESIDUAL_MIXED_UNSAFE_TEXTS = REAL_C04_CONTROL_DENIAL_TEXTS.flatMap(
+  (denial) => RESIDUAL_CONTROL_AUTHORITY_TEXTS.map((claim) => `${denial}${claim}`),
+)
 const MIXED_REAL_C04_UNSAFE_TEXTS = REAL_C04_CONTROL_DENIAL_TEXTS.flatMap(
   (denial) => [
     ...MODAL_CONTROL_AUTHORITY_TEXTS.map((text) => `${denial}${text}`),
@@ -812,6 +846,27 @@ describe('P1 public-validation slice preparation', () => {
 })
 
 describe('P1 measured demo receipt validation', () => {
+  it('keeps exact C04 denials bounded and rejects residual control authority', () => {
+    for (const denial of REAL_C04_CONTROL_DENIAL_TEXTS) {
+      assert.equal(hasUnsafeAnswerText(denial), false)
+      const safeDocument = `<html><body><p>${denial}</p><p>${COMPLETE_SAFETY_STATEMENT}</p></body></html>`
+      assert.equal(documentHasRequiredHumanConfirmation(safeDocument), true)
+    }
+    assert.equal(hasUnsafeAnswerText(COMPLETE_SAFETY_STATEMENT), false)
+    assert.equal(
+      documentHasRequiredHumanConfirmation(
+        `<html><body><p>${COMPLETE_SAFETY_STATEMENT}</p></body></html>`,
+      ),
+      true,
+    )
+
+    for (const text of RESIDUAL_MIXED_UNSAFE_TEXTS) {
+      assert.equal(hasUnsafeAnswerText(text), true, text)
+      const unsafeDocument = `<html><body><p>${text}</p><p>${COMPLETE_SAFETY_STATEMENT}</p></body></html>`
+      assert.equal(documentHasRequiredHumanConfirmation(unsafeDocument), false, text)
+    }
+  })
+
   it('runner preserves the real completed Analytics lifecycle identity', () => {
     const fingerprint = `sha256:${'a'.repeat(64)}`
     const dataset = {
@@ -946,6 +1001,11 @@ describe('P1 measured demo receipt validation', () => {
       const safeDenial = structuredClone(valid)
       safeDenial.sections[1].text = text
       assert.equal(assertQ09Answer(safeDenial, expected).questionId, 'Q09')
+    }
+    for (const text of RESIDUAL_MIXED_UNSAFE_TEXTS) {
+      const unsafeResidual = structuredClone(valid)
+      unsafeResidual.sections[1].text = text
+      assert.throws(() => assertQ09Answer(unsafeResidual, expected), text)
     }
 
     const cases = [
@@ -1408,6 +1468,11 @@ describe('P1 measured demo receipt validation', () => {
         mutate: (receipt) => { receipt.runs[0].q09.sections[1].text = text },
         message: /unsafe safety or control language/,
       })),
+      ...REQUIRED_REVIEW_MIXED_UNSAFE_TEXTS.map((text, index) => ({
+        name: `q09-answer-residual-control-authority-${index + 1}`,
+        mutate: (receipt) => { receipt.runs[0].q09.sections[1].text = text },
+        message: /unsafe safety or control language/,
+      })),
       {
         name: 'q09-disclaimer-short-declaration',
         mutate: (receipt) => {
@@ -1481,6 +1546,11 @@ describe('P1 measured demo receipt validation', () => {
         },
         ...CONTROL_AUTHORITY_TEXTS.map((text, index) => ({
           name: `q09-report-control-authority-${index + 1}`,
+          content: diagnosis.replace('</body>', `<p>${text}</p></body>`),
+          message: /human-confirmation safety boundary/,
+        })),
+        ...REQUIRED_REVIEW_MIXED_UNSAFE_TEXTS.map((text, index) => ({
+          name: `q09-report-residual-control-authority-${index + 1}`,
           content: diagnosis.replace('</body>', `<p>${text}</p></body>`),
           message: /human-confirmation safety boundary/,
         })),
