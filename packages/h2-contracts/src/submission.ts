@@ -7,7 +7,7 @@ import type {
 } from './anomaly.ts'
 import {
   anomalyTaxonomyByCode,
-  submissionEquipmentTokensByCode,
+  submissionEquipmentTokensForEvent,
   type H2OfficialSeverity,
 } from './vocabulary.ts'
 
@@ -77,7 +77,10 @@ export function toH2SubmissionRow<TEvent extends H2AnomalyEvent>(
     anomaly_subtype: event.subtype,
     severity: taxonomy.severity,
     primary_control_object: taxonomy.primaryControlObject,
-    affected_equipment: submissionEquipmentTokensByCode(event.code).join(','),
+    affected_equipment: submissionEquipmentTokensForEvent(
+      event.code,
+      event.affectedEquipment,
+    ).join(','),
     confidence: event.confidence,
     evidence_json: JSON.stringify(
       event.evidence.map((item) => ({

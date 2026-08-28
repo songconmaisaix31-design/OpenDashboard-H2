@@ -85,7 +85,9 @@ def test_pipeline_outputs_validate_against_frozen_contract_schemas(
     Draft202012Validator(
         _schema(repository_root, "review-audit-export.schema.json")
     ).validate(json.loads(audit["content"]))
-    for row in submission_rows(run["events"]):
+    for event, row in zip(
+        run["events"], submission_rows(run["events"]), strict=True
+    ):
         Draft202012Validator(_schema(repository_root, "submission-row.schema.json")).validate(
             row
         )
@@ -95,7 +97,9 @@ def test_pipeline_outputs_validate_against_frozen_contract_schemas(
             vocabulary.primary_control_object_by_code()[code]
         )
         assert row["affected_equipment"] == ",".join(
-            vocabulary.affected_equipment_tokens_by_code()[code]
+            vocabulary.affected_equipment_tokens_for_event(
+                code, event["affectedEquipment"]
+            )
         )
 
 

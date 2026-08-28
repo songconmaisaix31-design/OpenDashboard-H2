@@ -200,8 +200,8 @@ class SafetyEvaluator:
     ) -> list[dict[str, Any]]:
         power_limit = self._constraints.bess_max_power_kw
         power_exceeded = any(
-            row.value("bess_power_actual_kw") is not None
-            and abs(row.value("bess_power_actual_kw")) > power_limit + 1e-6
+            (power := row.value("bess_power_actual_kw")) is not None
+            and abs(power) > power_limit + 1e-6
             for row in window.rows
         )
         return [
@@ -236,13 +236,13 @@ class SafetyEvaluator:
         reference_ids: tuple[str, ...],
         provenance: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        export_limit = _window_value(window, "grid_export_power_limit_kw")
-        import_limit = _window_value(window, "grid_import_power_limit_kw")
         violated = False
         for row in window.rows:
             pcc = row.value("pcc_power_actual_kw")
             if pcc is None:
                 continue
+            export_limit = row.value("grid_export_power_limit_kw")
+            import_limit = row.value("grid_import_power_limit_kw")
             if export_limit is not None and pcc > export_limit:
                 violated = True
             if import_limit is not None and pcc < -import_limit:
@@ -386,15 +386,6 @@ class SafetyEvaluator:
             self._soc(identity, window, reference_ids, provenance),
             self._human_confirmation(identity, reference_ids, provenance, ordinal=3),
         ]
-
-
-def _window_value(window: EventWindow, field: str) -> float | None:
-    for row in window.rows:
-        value = row.value(field)
-        if value is not None:
-            return value
-    return None
-
 
 def _quota_exhausted(window: EventWindow) -> bool:
     """True when any remaining daily energy quota hit or crossed zero.

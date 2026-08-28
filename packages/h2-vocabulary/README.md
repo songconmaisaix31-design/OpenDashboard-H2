@@ -16,10 +16,14 @@ train, validation, test, and label CSV files.
 - `detection-thresholds.json`: versioned engineering and aggregation thresholds
   used by the deterministic detector. Public label columns are evaluation-only
   and are rejected by the analytics import boundary.
+- `impact-formulas.json`: versioned empirical impact calibration derived only
+  from public TRAIN. It records that held-out validation is acceptance-only and
+  that its rates are not physical constraints.
 - `deprecated-field-map.json`: the explicit compatibility map from the former
   sanitized Fixture field names to canonical fields or a documented derived
   expression.
 
 Runtime code treats official field names as the source of truth. This package
-contains vocabulary and constraints only; it is not validation evidence, an
-organizer score, or authorization to issue equipment-control commands.
+contains vocabulary, constraints, and explicitly sourced calibration config;
+it is not validation evidence, an organizer score, or authorization to issue
+equipment-control commands.

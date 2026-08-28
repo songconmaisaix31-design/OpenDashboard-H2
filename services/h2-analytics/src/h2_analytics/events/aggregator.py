@@ -28,6 +28,7 @@ class EventWindow:
     first_detection_time: datetime
     confidence: float
     detector_version: str
+    implicated_equipment_ids: tuple[str, ...] = ()
 
 
 def _policy(code: str) -> AggregationPolicy:
@@ -100,6 +101,13 @@ class EventAggregator:
                     first_detection_time=segment[confirmation_index].timestamp,
                     confidence=confidence,
                     detector_version=segment[0].detector_version,
+                    implicated_equipment_ids=tuple(
+                        dict.fromkeys(
+                            equipment_id
+                            for candidate in segment
+                            for equipment_id in candidate.implicated_equipment_ids
+                        )
+                    ),
                 )
             )
         return tuple(output)

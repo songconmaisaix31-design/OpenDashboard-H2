@@ -34,10 +34,36 @@
       "fixtureCommandGapKw": 500.0
     },
     "C05": {
-      "aggregation": {"minimumRows": 3, "confirmationRow": 1, "maximumGapIntervals": 1, "daily": true},
+      "aggregation": {"minimumRows": 4, "confirmationRow": 4, "maximumGapIntervals": 1, "daily": true},
       "exportQuotaMinimumKwh": 4500.0,
       "importQuotaMinimumKwh": 20000.0,
-      "earlyOnsetHour": 10
+      "bessSignatureTargetMagnitudeKw": 300.0,
+      "bessSignatureToleranceKw": 1.0,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "eventCount": 40,
+        "subtypeEventCounts": {
+          "EXPORT_ENERGY_QUOTA_RISK": 20,
+          "IMPORT_ENERGY_QUOTA_RISK": 20
+        },
+        "finding": "All 40 labeled C05 intervals were exactly the sustained low-quota BESS command/actual runs at +300 kW for export or -300 kW for import; the immediately preceding and following rows were outside the signature.",
+        "toleranceRationale": "Public TRAIN command and actual values were exactly at the subtype target; the inclusive 1 kW band is a narrow numeric tolerance and was not tuned from validation.",
+        "minimumRowsRationale": {
+          "samplingIntervalMinutes": 1,
+          "requiresBessCommandAndActual": true,
+          "shortNonLabelSegmentCount": 15,
+          "shortNonLabelSegmentsByLengthMinutes": {
+            "1": 4,
+            "3": 11
+          },
+          "maximumShortNonLabelSegmentMinutes": 3,
+          "minimumNoFalsePositiveRows": 4,
+          "conclusion": "Four sustained one-minute samples are the minimum public-TRAIN confirmation with no false-positive segments under the frozen signature."
+        },
+        "limitation": "The public-v4.0 competition signature is an empirical rule calibrated on public TRAIN, not a universally established physical law.",
+        "heldOutPolicy": "Validation is acceptance-only and does not set C05 detection thresholds."
+      }
     },
     "C06": {
       "aggregation": {"minimumRows": 30, "confirmationRow": 10, "maximumGapIntervals": 1, "daily": false},

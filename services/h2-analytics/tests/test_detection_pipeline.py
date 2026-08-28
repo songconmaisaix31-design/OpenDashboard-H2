@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
+from datetime import timedelta
 
 import pytest
 
+from h2_analytics import vocabulary
 from h2_analytics.detection import LightGbmRowDetector, RuleRowDetector
+from h2_analytics.events import EventAggregator
+from h2_analytics.impact import ImpactCalculator
 from h2_analytics.ingestion import DatasetLoader
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.service import AnalyticsService
@@ -139,6 +143,7 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
             values={
                 **baseline.values,
                 "elz1_power_cmd_kw": 600.0 if index % 2 == 0 else 300.0,
+                "elz2_power_cmd_kw": 300.0 if index % 2 == 0 else 600.0,
                 "bess_power_actual_kw": 400.0 if index % 2 == 0 else -400.0,
             },
         )
@@ -147,19 +152,29 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
     scenarios: dict[str, tuple] = {
         "C01": c01_rows,
         "C02": single(
-            elz1_reported_available_capacity_kw=1000.0,
-            elz1_actual_available_capacity_kw=500.0,
-            elz1_power_cmd_kw=600.0,
-            elz1_power_actual_kw=300.0,
+            elz2_reported_available_capacity_kw=1000.0,
+            elz2_actual_available_capacity_kw=500.0,
+            elz2_power_cmd_kw=600.0,
+            elz2_power_actual_kw=300.0,
         ),
         # C03: BESS command at the 400 kW level, same sign as a strong PCC flow.
         "C03": single(bess_power_cmd_kw=400.0, pcc_power_actual_kw=500.0),
         # C04: BESS forced to the 450 kW level.
         "C04": single(bess_power_cmd_kw=450.0),
-        # C05: anomalous daily quota plus a quota breach.
-        "C05": single(
-            grid_export_energy_quota_kwh_day=2200.0,
-            grid_export_energy_quota_excess_kwh=15.0,
+        # C05: low export quota and its causal positive BESS signature agree.
+        "C05": (
+            replace(
+                baseline,
+                timestamp=baseline.timestamp.replace(hour=7, minute=7),
+                values={
+                    **baseline.values,
+                    "grid_export_energy_quota_kwh_day": 2200.0,
+                    "grid_import_energy_quota_kwh_day": 24000.0,
+                    "grid_export_energy_quota_excess_kwh": 0.0,
+                    "bess_power_cmd_kw": 300.0,
+                    "bess_power_actual_kw": 300.0,
+                },
+            ),
         ),
         # C06: all units running; the less-efficient unit carries the load while
         # the efficient unit has headroom.
@@ -183,6 +198,213 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
     }
     for code, rows in scenarios.items():
         assert any(item.code == code for item in detector.detect(rows)), code
+
+    c01 = next(item for item in detector.detect(c01_rows) if item.code == "C01")
+    assert c01.implicated_equipment_ids == ("ELZ01", "ELZ02")
+    c02 = next(item for item in detector.detect(scenarios["C02"]) if item.code == "C02")
+    assert c02.implicated_equipment_ids == ("ELZ02",)
+    c06 = next(item for item in detector.detect(scenarios["C06"]) if item.code == "C06")
+    assert c06.implicated_equipment_ids == ("ELZ01", "ELZ02")
+
+
+@pytest.mark.parametrize(
+    ("subtype", "target_kw", "export_quota", "import_quota", "excess_field"),
+    [
+        (
+            "EXPORT_ENERGY_QUOTA_RISK",
+            300.0,
+            2200.0,
+            24000.0,
+            "grid_export_energy_quota_excess_kwh",
+        ),
+        (
+            "IMPORT_ENERGY_QUOTA_RISK",
+            -300.0,
+            5200.0,
+            12500.0,
+            "grid_import_energy_quota_excess_kwh",
+        ),
+    ],
+)
+def test_c05_causal_signature_bounds_window_and_peak_impact(
+    valid_csv: str,
+    subtype: str,
+    target_kw: float,
+    export_quota: float,
+    import_quota: float,
+    excess_field: str,
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    first_signature = baseline.timestamp.replace(hour=6, minute=1)
+    excess_values = (900.0, 0.0, 3.0, 8.0, 13.0, 21.0, 999.0)
+    rows = tuple(
+        replace(
+            baseline,
+            index=index + 1,
+            timestamp=first_signature + timedelta(minutes=index - 1),
+            timestamp_text=(
+                first_signature + timedelta(minutes=index - 1)
+            ).isoformat(),
+            values={
+                **baseline.values,
+                "grid_export_energy_quota_kwh_day": export_quota,
+                "grid_import_energy_quota_kwh_day": import_quota,
+                "grid_export_energy_quota_excess_kwh": 0.0,
+                "grid_import_energy_quota_excess_kwh": 0.0,
+                "bess_power_cmd_kw": (
+                    target_kw if index >= 1 else target_kw + 2.0
+                ),
+                "bess_power_actual_kw": (
+                    target_kw if index <= 5 else target_kw + 2.0
+                ),
+                excess_field: excess_values[index],
+            },
+        )
+        for index in range(7)
+    )
+    candidates = tuple(
+        item for item in RuleRowDetector().detect(rows) if item.code == "C05"
+    )
+    windows = EventAggregator().aggregate(
+        rows=rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
+    )
+
+    assert [item.timestamp for item in candidates] == [
+        row.timestamp for row in rows[1:6]
+    ]
+    assert len(windows) == 1
+    window = windows[0]
+    impact = ImpactCalculator().calculate(
+        window=window,
+        sampling_interval_minutes=1.0,
+    )
+
+    assert window.start_time == rows[1].timestamp
+    assert window.end_time == rows[5].timestamp
+    assert window.first_detection_time == rows[4].timestamp
+    assert window.subtype == subtype
+    assert impact.value == pytest.approx(21.0)
+
+
+def test_c05_requires_four_sustained_signature_samples(valid_csv: str) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    rows = tuple(
+        replace(
+            baseline,
+            index=index + 1,
+            timestamp=baseline.timestamp + timedelta(minutes=index),
+            timestamp_text=(baseline.timestamp + timedelta(minutes=index)).isoformat(),
+            values={
+                **baseline.values,
+                "grid_export_energy_quota_kwh_day": 2200.0,
+                "grid_import_energy_quota_kwh_day": 24000.0,
+                "bess_power_cmd_kw": 300.0,
+                "bess_power_actual_kw": 300.0,
+            },
+        )
+        for index in range(4)
+    )
+    detector = RuleRowDetector()
+    aggregator = EventAggregator()
+    three_candidates = tuple(
+        item for item in detector.detect(rows[:3]) if item.code == "C05"
+    )
+    four_candidates = tuple(
+        item for item in detector.detect(rows) if item.code == "C05"
+    )
+
+    assert aggregator.aggregate(
+        rows=rows[:3],
+        candidates=three_candidates,
+        sampling_interval_minutes=1.0,
+    ) == ()
+    window = aggregator.aggregate(
+        rows=rows,
+        candidates=four_candidates,
+        sampling_interval_minutes=1.0,
+    )[0]
+    assert window.start_time == rows[0].timestamp
+    assert window.first_detection_time == rows[3].timestamp
+
+
+def test_c05_thresholds_record_train_only_causal_evidence() -> None:
+    config = vocabulary.detection_thresholds()["classes"]["C05"]
+    calibration = config["calibration"]
+    minimum_rows = calibration["minimumRowsRationale"]
+
+    assert config["aggregation"]["minimumRows"] == 4
+    assert config["aggregation"]["confirmationRow"] == 4
+    assert config["bessSignatureTargetMagnitudeKw"] == 300.0
+    assert config["bessSignatureToleranceKw"] == 1.0
+    assert calibration["split"] == "public_train"
+    assert calibration["competitionPackageVersion"] == "public-v4.0"
+    assert calibration["eventCount"] == 40
+    assert calibration["subtypeEventCounts"] == {
+        "EXPORT_ENERGY_QUOTA_RISK": 20,
+        "IMPORT_ENERGY_QUOTA_RISK": 20,
+    }
+    assert minimum_rows["samplingIntervalMinutes"] == 1
+    assert minimum_rows["requiresBessCommandAndActual"] is True
+    assert minimum_rows["shortNonLabelSegmentCount"] == 15
+    assert minimum_rows["shortNonLabelSegmentsByLengthMinutes"] == {
+        "1": 4,
+        "3": 11,
+    }
+    assert minimum_rows["maximumShortNonLabelSegmentMinutes"] == 3
+    assert minimum_rows["minimumNoFalsePositiveRows"] == 4
+    assert "minimum public-TRAIN confirmation" in minimum_rows["conclusion"]
+    assert "empirical rule" in calibration["limitation"]
+    assert "not a universally established physical law" in calibration["limitation"]
+    assert "acceptance-only" in calibration["heldOutPolicy"]
+    assert "does not set C05 detection thresholds" in calibration["heldOutPolicy"]
+
+
+def test_c07_continues_while_charge_reserve_is_short_after_soc_recovers(
+    valid_csv: str,
+) -> None:
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    rows = tuple(
+        replace(
+            baseline,
+            index=index + 1,
+            timestamp=baseline.timestamp + timedelta(minutes=index),
+            timestamp_text=(baseline.timestamp + timedelta(minutes=index)).isoformat(),
+            values={
+                **baseline.values,
+                "bess_soc_pct": 40.0 if index < 2 else 56.0,
+                "soc_target_pct": 60.0,
+                "bess_regulation_reserve_target_kwh": 350.0,
+                "bess_available_charge_energy_kwh": 10.526,
+                "bess_available_discharge_energy_kwh": 900.0,
+            },
+        )
+        for index in range(8)
+    )
+    candidates = tuple(
+        item for item in RuleRowDetector().detect(rows) if item.code == "C07"
+    )
+
+    window = EventAggregator().aggregate(
+        rows=rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
+    )[0]
+    impact = ImpactCalculator().calculate(
+        window=window,
+        sampling_interval_minutes=1.0,
+    )
+
+    assert window.subtype == "CHARGE_HEADROOM_SHORTFALL"
+    assert window.end_time == rows[-1].timestamp
+    assert impact.value == pytest.approx(339.474)
 
 
 class FakeBooster:

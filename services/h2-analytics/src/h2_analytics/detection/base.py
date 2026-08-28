@@ -15,6 +15,7 @@ class DetectionCandidate:
     subtype: str
     confidence: float
     detector_version: str
+    implicated_equipment_ids: tuple[str, ...] = ()
 
 
 class RowDetector(Protocol):

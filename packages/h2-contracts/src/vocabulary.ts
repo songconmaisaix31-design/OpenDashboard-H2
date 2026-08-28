@@ -1,4 +1,8 @@
-import type { H2AnomalyCode } from './anomaly.ts'
+import type {
+  H2AnomalyCode,
+  H2AnomalySubtypeForCode,
+  H2EquipmentRef,
+} from './anomaly.ts'
 import type { H2AssistantQuestion, H2AssistantQuestionId } from './assistant.ts'
 import { H2_ASSISTANT_QUESTIONS } from './assistant.ts'
 import type { H2DatasetField } from './dataset.ts'
@@ -8,6 +12,7 @@ import anomalyTaxonomyData from '../../h2-vocabulary/data/anomaly-taxonomy.json'
 import deprecatedFieldMapData from '../../h2-vocabulary/data/deprecated-field-map.json'
 import equipmentData from '../../h2-vocabulary/data/equipment.json'
 import fieldsData from '../../h2-vocabulary/data/fields.json'
+import impactFormulasData from '../../h2-vocabulary/data/impact-formulas.json'
 import submissionEquipmentTokensData from '../../h2-vocabulary/data/submission-equipment-tokens.json'
 
 export type H2OfficialSeverity = '中' | '高'
@@ -63,6 +68,27 @@ export interface H2DeprecatedFieldMapping {
   readonly note: string
 }
 
+export interface H2ImpactFormulaConfig {
+  readonly schemaVersion: 1
+  readonly formulaVersion: 'impact-c06-v3'
+  readonly source: {
+    readonly calibrationSplit: 'public_train'
+    readonly derivation: string
+    readonly heldOutPolicy: string
+  }
+  readonly classes: {
+    readonly C06: {
+      readonly targetField: 'ems_total_elz_target_kw'
+      readonly formula: string
+      readonly subtypeRates: Readonly<
+        Record<H2AnomalySubtypeForCode<'C06'>, number>
+      >
+      readonly roundingPolicy: string
+      readonly rationale: string
+    }
+  }
+}
+
 export const H2_OFFICIAL_FIELDS: readonly H2FieldDefinition[] =
   (fieldsData as { readonly fields: readonly H2FieldDefinition[] }).fields
 
@@ -77,11 +103,16 @@ export const H2_DEPRECATED_FIELD_MAPPINGS: readonly H2DeprecatedFieldMapping[] =
     readonly mappings: readonly H2DeprecatedFieldMapping[]
   }).mappings
 
+export const H2_IMPACT_FORMULAS =
+  impactFormulasData as H2ImpactFormulaConfig
+
 const SUBMISSION_EQUIPMENT_TOKENS_BY_CODE = (
   submissionEquipmentTokensData as {
     readonly tokensByCode: Readonly<Record<H2AnomalyCode, readonly string[]>>
   }
 ).tokensByCode
+
+const PER_EVENT_ELECTROLYZER_TOKENS = new Set(['ELZ1', 'ELZ2', 'ELZ3'])
 
 const FIELD_BY_NAME = new Map<string, H2FieldDefinition>(
   H2_OFFICIAL_FIELDS.map(
@@ -140,6 +171,56 @@ export function submissionEquipmentTokensByCode(
   code: H2AnomalyCode,
 ): readonly string[] {
   return SUBMISSION_EQUIPMENT_TOKENS_BY_CODE[code]
+}
+
+/** Resolves event-specific C01/C02 equipment within the official token rules. */
+export function submissionEquipmentTokensForEvent(
+  code: H2AnomalyCode,
+  affectedEquipment: readonly H2EquipmentRef[],
+): readonly string[] {
+  const eventTokens = [
+    ...new Set(
+      affectedEquipment
+        .map(submissionEquipmentToken)
+        .filter((token): token is string => token !== undefined),
+    ),
+  ]
+  return validSubmissionEquipmentTokens(code, eventTokens)
+    ? eventTokens
+    : submissionEquipmentTokensByCode(code)
+}
+
+/** Validates the official per-code token cardinality and exact token sets. */
+export function validSubmissionEquipmentTokens(
+  code: H2AnomalyCode,
+  tokens: readonly string[],
+): boolean {
+  if (new Set(tokens).size !== tokens.length) return false
+  if (code === 'C01') {
+    const electrolyzers = tokens.filter((token) => token.startsWith('ELZ'))
+    return (
+      tokens.length === 4 &&
+      electrolyzers.length === 2 &&
+      electrolyzers.every((token) => PER_EVENT_ELECTROLYZER_TOKENS.has(token)) &&
+      tokens.includes('BESS') &&
+      tokens.includes('PCC')
+    )
+  }
+  if (code === 'C02') {
+    return tokens.length === 1 && PER_EVENT_ELECTROLYZER_TOKENS.has(tokens[0] ?? '')
+  }
+  const expected = submissionEquipmentTokensByCode(code)
+  return (
+    tokens.length === expected.length &&
+    expected.every((token) => tokens.includes(token))
+  )
+}
+
+function submissionEquipmentToken(ref: H2EquipmentRef): string | undefined {
+  if (ref.kind === 'BESS' || ref.kind === 'PCC' || ref.kind === 'PV') {
+    return ref.kind
+  }
+  return /^ELZ0[1-3]$/.test(ref.id) ? `ELZ${ref.id.slice(-1)}` : undefined
 }
 
 function normalizeEquipmentKey(value: string): string {

@@ -111,6 +111,11 @@ def load_detection_thresholds() -> dict[str, Any]:
 
 
 @lru_cache(maxsize=1)
+def load_impact_formulas() -> dict[str, Any]:
+    return _load_json("impact-formulas.json")
+
+
+@lru_cache(maxsize=1)
 def load_submission_equipment_tokens() -> dict[str, Any]:
     return _load_json("submission-equipment-tokens.json")
 
@@ -246,6 +251,55 @@ def affected_equipment_tokens_by_code() -> dict[str, tuple[str, ...]]:
     return {code: tuple(values[code]) for code in anomaly_codes()}
 
 
+def affected_equipment_tokens_for_event(
+    code: str,
+    affected_equipment: list[dict[str, Any]] | tuple[dict[str, Any], ...],
+) -> tuple[str, ...]:
+    """Resolve per-event equipment without violating official token rules.
+
+    C01 and C02 carry event-specific electrolyzer identities. Other classes
+    require the exact official token set, including all three units for C06.
+    """
+    event_tokens = tuple(
+        dict.fromkeys(
+            token
+            for item in affected_equipment
+            if (token := _submission_equipment_token(item)) is not None
+        )
+    )
+    if valid_affected_equipment_tokens(code, event_tokens):
+        return event_tokens
+    return affected_equipment_tokens_by_code()[code]
+
+
+def valid_affected_equipment_tokens(code: str, tokens: tuple[str, ...]) -> bool:
+    if len(tokens) != len(set(tokens)):
+        return False
+    if code == "C01":
+        electrolyzers = tuple(token for token in tokens if token.startswith("ELZ"))
+        return (
+            len(tokens) == 4
+            and len(electrolyzers) == 2
+            and set(electrolyzers).issubset({"ELZ1", "ELZ2", "ELZ3"})
+            and "BESS" in tokens
+            and "PCC" in tokens
+        )
+    if code == "C02":
+        return len(tokens) == 1 and tokens[0] in {"ELZ1", "ELZ2", "ELZ3"}
+    expected = affected_equipment_tokens_by_code().get(code)
+    return expected is not None and len(tokens) == len(expected) and set(tokens) == set(expected)
+
+
+def _submission_equipment_token(item: dict[str, Any]) -> str | None:
+    kind = item.get("kind")
+    if kind in {"BESS", "PCC", "PV", "ELZ"}:
+        return str(kind)
+    equipment_id = item.get("id")
+    if isinstance(equipment_id, str) and equipment_id in {"ELZ01", "ELZ02", "ELZ03"}:
+        return f"ELZ{equipment_id[-1]}"
+    return None
+
+
 @lru_cache(maxsize=1)
 def control_object_type_by_code() -> dict[str, str]:
     return {
@@ -273,8 +327,14 @@ def control_object_id_by_code() -> dict[str, str]:
 
 
 def equipment_kind(equipment_id: str) -> str:
-    prefix = equipment_id[:3]
-    return _KIND_BY_EQUIPMENT_PREFIX.get(prefix, "METERING")
+    return next(
+        (
+            kind
+            for prefix, kind in _KIND_BY_EQUIPMENT_PREFIX.items()
+            if equipment_id.startswith(prefix)
+        ),
+        "METERING",
+    )
 
 
 @lru_cache(maxsize=1)
@@ -306,6 +366,21 @@ def detection_thresholds() -> dict[str, Any]:
     if thresholds.get("aggregationPolicyVersion") != "h2-events-v1":
         raise VocabularyError("Aggregation policy version does not match the service.")
     return thresholds
+
+
+@lru_cache(maxsize=1)
+def impact_formulas() -> dict[str, Any]:
+    formulas = load_impact_formulas()
+    if formulas.get("schemaVersion") != 1:
+        raise VocabularyError("Impact formula schema version is unsupported.")
+    if formulas.get("formulaVersion") != "impact-c06-v3":
+        raise VocabularyError("C06 impact formula version does not match the service.")
+    c06 = formulas.get("classes", {}).get("C06", {})
+    if c06.get("targetField") != "ems_total_elz_target_kw":
+        raise VocabularyError("C06 impact formula must use the canonical target field.")
+    if set(c06.get("subtypeRates", {})) != set(subtypes_by_code()["C06"]):
+        raise VocabularyError("C06 impact rates do not cover the official subtypes.")
+    return formulas
 
 
 @lru_cache(maxsize=1)

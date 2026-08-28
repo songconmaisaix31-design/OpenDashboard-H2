@@ -55,6 +55,67 @@ def test_safety_reports_passed_failed_and_warning(valid_csv: str) -> None:
     assert all(check["status"] != "unknown" for check in missing)
 
 
+def test_c04_safety_applies_dynamic_pcc_limits_from_each_row(valid_csv: str) -> None:
+    imported = DatasetLoader().import_csv(
+        filename="tiny-valid-timeseries.csv", text=valid_csv
+    )
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    rows = (
+        replace(
+            baseline,
+            values={
+                **baseline.values,
+                "pcc_power_actual_kw": 900.0,
+                "grid_export_power_limit_kw": 1000.0,
+                "grid_import_power_limit_kw": 1000.0,
+            },
+        ),
+        replace(
+            baseline,
+            index=baseline.index + 1,
+            values={
+                **baseline.values,
+                "pcc_power_actual_kw": 900.0,
+                "grid_export_power_limit_kw": 800.0,
+                "grid_import_power_limit_kw": 1000.0,
+            },
+        ),
+        replace(
+            baseline,
+            index=baseline.index + 2,
+            values={
+                **baseline.values,
+                "pcc_power_actual_kw": -900.0,
+                "grid_export_power_limit_kw": 1000.0,
+                "grid_import_power_limit_kw": 800.0,
+            },
+        ),
+    )
+    window = EventWindow(
+        event_id="C04-20260105-001",
+        code="C04",
+        subtype="EXPORT_POWER_LIMIT_NOT_TRACKED",
+        rows=rows,
+        start_time=baseline.timestamp,
+        end_time=baseline.timestamp,
+        first_detection_time=baseline.timestamp,
+        confidence=0.9,
+        detector_version="test-detector-v1",
+    )
+
+    checks = SafetyEvaluator().evaluate(
+        window=window,
+        evidence_ids=("C04-EV-001", "C04-EV-002"),
+        provenance=imported.manifest["provenance"],
+    )
+
+    boundary = next(
+        check for check in checks if check["constraintId"] == "pcc-boundary-v1"
+    )
+    assert boundary["status"] == "failed"
+
+
 def test_alarms_are_evidence_only_and_never_detection_criteria(
     valid_csv: str, tmp_path
 ) -> None:

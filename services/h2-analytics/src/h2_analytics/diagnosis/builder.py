@@ -47,8 +47,8 @@ _METADATA: dict[str, dict[str, Any]] = {
     "C03": {
         "title": "储能充放电方向异常",
         "rootCause": (
-            "储能功率指令方向与反馈符号或控制模式不一致，"
-            "储能实际充放电方向与EMS指令方向相反，导致并网点功率出现异常交换。"
+            "储能功率指令、实际反馈与PCC交换方向之间不符合预期控制关系，"
+            "可能存在接口符号、寄存器映射或控制模式冲突，导致并网点异常交换。"
         ),
         "recommendation": (
             "核查储能接口正负号、寄存器映射与控制模式，小功率验证方向后再恢复。"
@@ -341,14 +341,7 @@ class DiagnosisBuilder:
                 "id": _CONTROL_ID_BY_CODE[window.code],
                 "displayName": vocabulary.primary_control_object_by_code()[window.code],
             },
-            "affectedEquipment": [
-                {
-                    "kind": vocabulary.equipment_kind(item["equipmentId"]),
-                    "id": item["equipmentId"],
-                    "displayName": item["equipmentName"],
-                }
-                for item in vocabulary.affected_equipment_by_code()[window.code]
-            ],
+            "affectedEquipment": _affected_equipment(window),
             "evidence": evidence,
             "impact": {
                 "metric": calculation.metric,
@@ -392,14 +385,7 @@ class DiagnosisBuilder:
         impact_value: float,
         provenance: dict[str, Any],
     ) -> tuple[list[dict[str, Any]], str]:
-        detection_row = window.rows[
-            min(
-                range(len(window.rows)),
-                key=lambda index: _detection_distance(
-                    window.rows[index], window.first_detection_time
-                ),
-            )
-        ]
+        detection_row = _detection_row(window)
         plan = self._plan_for(window)
         evidence: list[dict[str, Any]] = []
         for index, item in enumerate(plan):
@@ -417,7 +403,7 @@ class DiagnosisBuilder:
                 )
             )
         impact_variable = vocabulary.primary_impact_metric_by_code()[window.code]
-        impact_evidence_id = _evidence_id(window, 3)
+        impact_evidence_id = _evidence_id(window, len(plan) + 1)
         evidence.append(
             _impact_evidence(
                 impact_evidence_id,
@@ -435,8 +421,47 @@ class DiagnosisBuilder:
         return evidence, impact_evidence_id
 
     def _plan_for(self, window: EventWindow) -> tuple[dict[str, Any], ...]:
-        plan = list(_EVIDENCE_PLAN[window.code])
-        if window.code == "C04":
+        plan = [dict(item) for item in _EVIDENCE_PLAN[window.code]]
+        implicated = window.implicated_equipment_ids
+        if window.code == "C01" and implicated:
+            command_template = plan[0]
+            plan = [
+                {
+                    **command_template,
+                    "variable": _elz_field(equipment_id, "power_cmd_kw"),
+                }
+                for equipment_id in implicated
+            ] + [plan[1]]
+        elif window.code == "C02" and implicated:
+            plan[0]["variable"] = _elz_field(
+                implicated[0], "reported_available_capacity_kw"
+            )
+            plan[1]["variable"] = _elz_field(implicated[0], "power_cmd_kw")
+        elif window.code == "C03":
+            detection_row = _detection_row(window)
+            command = detection_row.value("bess_power_cmd_kw")
+            actual = detection_row.value("bess_power_actual_kw")
+            if command is not None and (actual is None or command * actual >= 0):
+                comparator = "<" if command < 0 else ">"
+                plan = [
+                    {
+                        **plan[0],
+                        "reference": 0,
+                        "comparator": comparator,
+                        "conclusion": "储能功率指令记录了异常时段的请求方向。",
+                    },
+                    {
+                        **plan[1],
+                        "variable": "pcc_power_actual_kw",
+                        "reference": 0,
+                        "comparator": comparator,
+                        "conclusion": (
+                            "PCC交换功率与储能指令同向，控制关系需要人工复核；"
+                            "未据此判定储能指令与实际反馈存在方向冲突。"
+                        ),
+                    },
+                ]
+        elif window.code == "C04":
             if window.subtype == "IMPORT_POWER_LIMIT_NOT_TRACKED":
                 plan = [
                     {
@@ -472,6 +497,14 @@ class DiagnosisBuilder:
         elif window.code == "C07":
             if window.subtype == "DISCHARGE_RESERVE_SHORTFALL":
                 plan[0]["variable"] = "bess_available_discharge_energy_kwh"
+        if window.code == "C06" and implicated:
+            plan[0]["variable"] = _elz_field(
+                implicated[0], "specific_energy_kwh_per_kg"
+            )
+            comparison_equipment = implicated[1] if len(implicated) > 1 else implicated[0]
+            plan[1]["variable"] = _elz_field(
+                comparison_equipment, "power_actual_kw"
+            )
         return tuple(plan)
 
     def _context_evidence(
@@ -586,10 +619,7 @@ class DiagnosisBuilder:
                     unit="kWh/kg",
                 )
             )
-        affected_ids = {
-            item["equipmentId"]
-            for item in vocabulary.affected_equipment_by_code()[window.code]
-        }
+        affected_ids = {item["id"] for item in _affected_equipment(window)}
         for maintenance in _maintenance_records(context, affected_ids):
             items.append(
                 _knowledge_evidence(
@@ -608,6 +638,53 @@ class DiagnosisBuilder:
                 )
             )
         return items
+
+
+def _affected_equipment(window: EventWindow) -> list[dict[str, str]]:
+    if window.implicated_equipment_ids and window.code in {"C01", "C02", "C06"}:
+        equipment_ids = window.implicated_equipment_ids
+        if window.code == "C01":
+            equipment_ids = tuple(
+                dict.fromkeys((*equipment_ids, "BESS01", "PCC01"))
+            )
+        equipment = vocabulary.equipment_by_id()
+        return [
+            {
+                "kind": vocabulary.equipment_kind(equipment_id),
+                "id": equipment_id,
+                "displayName": str(
+                    equipment.get(equipment_id, {}).get(
+                        "equipment_name", equipment_id
+                    )
+                ),
+            }
+            for equipment_id in equipment_ids
+        ]
+    return [
+        {
+            "kind": vocabulary.equipment_kind(item["equipmentId"]),
+            "id": item["equipmentId"],
+            "displayName": item["equipmentName"],
+        }
+        for item in vocabulary.affected_equipment_by_code()[window.code]
+    ]
+
+
+def _elz_field(equipment_id: str, suffix: str) -> str:
+    if equipment_id not in {"ELZ01", "ELZ02", "ELZ03"}:
+        raise ValueError(f"Unsupported electrolyzer equipment id: {equipment_id}")
+    return f"elz{equipment_id[-1]}_{suffix}"
+
+
+def _detection_row(window: EventWindow) -> Any:
+    return window.rows[
+        min(
+            range(len(window.rows)),
+            key=lambda index: _detection_distance(
+                window.rows[index], window.first_detection_time
+            ),
+        )
+    ]
 
 
 def _evidence_item(
@@ -752,7 +829,11 @@ def _knowledge_evidence(
 
 
 def _reference_for(window: EventWindow, item: dict[str, Any]) -> str | float:
-    if window.code == "C03" and item["variable"] == "bess_power_cmd_kw":
+    if (
+        window.code == "C03"
+        and item["variable"] == "bess_power_cmd_kw"
+        and item["reference"] == "requested direction"
+    ):
         command = window.rows[0].value("bess_power_cmd_kw")
         return "charge" if (command or 0) < 0 else "discharge"
     if window.code == "C04" and item["variable"] == "pcc_power_actual_kw":

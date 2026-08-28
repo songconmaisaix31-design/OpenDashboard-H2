@@ -8,6 +8,7 @@ import {
   H2_ASSISTANT_QUESTIONS_ZH,
   H2_DEPRECATED_FIELD_MAPPINGS,
   H2_FIXTURE_DATASET,
+  H2_IMPACT_FORMULAS,
   H2_OFFICIAL_FIELDS,
   deprecatedFieldName,
   submissionEquipmentTokensByCode,
@@ -71,5 +72,16 @@ describe('official H2 vocabulary', () => {
       'ELZ2',
       'ELZ3',
     ])
+  })
+
+  it('versions C06 public-train calibration separately from physical constraints', () => {
+    assert.equal(H2_IMPACT_FORMULAS.formulaVersion, 'impact-c06-v3')
+    assert.equal(H2_IMPACT_FORMULAS.source.calibrationSplit, 'public_train')
+    assert.match(H2_IMPACT_FORMULAS.source.heldOutPolicy, /acceptance-only/)
+    assert.deepEqual(H2_IMPACT_FORMULAS.classes.C06.subtypeRates, {
+      AVOIDABLE_START_STOP: 0.018,
+      INEFFICIENT_POWER_ALLOCATION: 0.022,
+    })
+    assert.match(H2_IMPACT_FORMULAS.classes.C06.rationale, /not physical/)
   })
 })

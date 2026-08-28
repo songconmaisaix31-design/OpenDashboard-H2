@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from itertools import repeat
+
 import pytest
 
 from h2_analytics.ingestion import csv_loader
@@ -9,7 +11,7 @@ from h2_analytics.settings import (
     MAX_CSV_BYTES,
     MAX_CSV_ROWS,
     OFFICIAL_DATASET_ROW_COUNTS,
-    OFFICIAL_DATASET_SAFE_BYTES,
+    OFFICIAL_SINGLE_IMPORT_BYTES,
 )
 
 
@@ -83,18 +85,32 @@ def test_official_naive_timestamps_are_treated_as_utc(valid_csv: str) -> None:
     assert result.rows[0].timestamp_text == "2026-01-05T10:20:00Z"
 
 
-def test_official_dataset_sizes_fit_inside_declared_safe_limits() -> None:
-    assert max(OFFICIAL_DATASET_ROW_COUNTS.values()) <= MAX_CSV_ROWS
-    assert OFFICIAL_DATASET_SAFE_BYTES <= MAX_CSV_BYTES
+def test_validation_and_test_fit_single_import_while_train_requires_chunks() -> None:
+    assert MAX_CSV_BYTES == 96 * 1024 * 1024
+    assert MAX_CSV_ROWS == 180_000
+    assert max(
+        OFFICIAL_DATASET_ROW_COUNTS[split] for split in ("validation", "test")
+    ) <= MAX_CSV_ROWS
+    assert max(OFFICIAL_SINGLE_IMPORT_BYTES.values()) <= MAX_CSV_BYTES
+    assert OFFICIAL_DATASET_ROW_COUNTS["train"] > MAX_CSV_ROWS
 
 
 def test_row_and_byte_limits_reject_before_analysis(
     valid_csv: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    parsed_timestamps: list[str] = []
+    parse_timestamp = csv_loader._parse_timestamp
+
+    def recording_parse_timestamp(value: str):
+        parsed_timestamps.append(value)
+        return parse_timestamp(value)
+
+    monkeypatch.setattr(csv_loader, "_parse_timestamp", recording_parse_timestamp)
     monkeypatch.setattr(csv_loader, "MAX_CSV_ROWS", 1)
     with pytest.raises(CsvImportError) as row_error:
         DatasetLoader().import_csv(filename="too-many.csv", text=valid_csv)
     assert row_error.value.code == "import.too_many_rows"
+    assert parsed_timestamps == ["2026-01-05T10:20:00Z"]
 
     monkeypatch.setattr(csv_loader, "MAX_CSV_ROWS", MAX_CSV_ROWS)
     monkeypatch.setattr(csv_loader, "MAX_CSV_BYTES", 100)
@@ -103,15 +119,54 @@ def test_row_and_byte_limits_reject_before_analysis(
     assert byte_error.value.code == "import.too_large"
 
 
-def test_public_label_columns_are_rejected_at_import(valid_csv: str) -> None:
-    lines = valid_csv.splitlines()
-    labeled_csv = "\n".join(
-        [f"{lines[0]},is_anomaly"]
-        + [f"{line},0" for line in lines[1:]]
+def test_train_sized_iterator_stops_before_over_limit_rows_are_materialized(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parsed_timestamps = 0
+    retained_rows = 0
+
+    def recording_parse_timestamp(_value: str) -> None:
+        nonlocal parsed_timestamps
+        parsed_timestamps += 1
+
+    def lightweight_row(*_args: object, **_kwargs: object) -> None:
+        nonlocal retained_rows
+        retained_rows += 1
+
+    monkeypatch.setattr(csv_loader, "_parse_timestamp", recording_parse_timestamp)
+    monkeypatch.setattr(csv_loader, "DataRow", lightweight_row)
+    train_rows = repeat(
+        ("2026-01-05T10:20:00Z",),
+        OFFICIAL_DATASET_ROW_COUNTS["train"],
     )
 
+    with pytest.raises(CsvImportError) as error:
+        csv_loader._parse_rows(("timestamp",), train_rows)
+
+    assert error.value.code == "import.too_many_rows"
+    assert parsed_timestamps == MAX_CSV_ROWS
+    assert retained_rows == MAX_CSV_ROWS
+
+
+@pytest.mark.parametrize(
+    "label_header",
+    [
+        *sorted(csv_loader.FORBIDDEN_LABEL_FIELDS),
+        "Event Id",
+        "event-id",
+        "event/id",
+        "event.id",
+        "eventId",
+        "GROUND TRUTH LABEL",
+        "label_custom",
+        "custom_label",
+        "ground-truth-score",
+    ],
+)
+def test_every_public_label_alias_is_rejected_at_import(label_header: str) -> None:
+    labeled_csv = f"timestamp,{label_header}\n2026-01-05T10:20:00Z,0\n"
     with pytest.raises(CsvImportError) as error:
         DatasetLoader().import_csv(filename="labeled.csv", text=labeled_csv)
 
     assert error.value.code == "import.label_columns_forbidden"
-    assert error.value.details == ("is_anomaly",)
+    assert error.value.details == (label_header,)
