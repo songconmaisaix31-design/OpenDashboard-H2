@@ -1,6 +1,7 @@
 import {
   H2_ANOMALY_CODES,
   type H2AnomalyEvent,
+  type H2SentinelDataSource,
 } from '@opendashboard/h2-contracts'
 import type { H2NavigationTarget } from '../../routes.ts'
 import type { H2Workspace } from '../../model/view-state.ts'
@@ -17,22 +18,30 @@ import {
   H2_SEVERITY_LABELS,
 } from '../../model/presentation.ts'
 import { createPccChartOption, createSocChartOption } from '../../model/chart-options.ts'
+import {
+  createH2OverviewSeriesQuery,
+  useH2Series,
+} from '../../model/series-loader.ts'
 import { EChartsCanvas } from '../../components/charts/EChartsCanvas.tsx'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { SignConventionNote } from '../../components/common/SignConventionNote.tsx'
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
 
 export interface OverviewPageProps {
+  readonly dataSource: H2SentinelDataSource
   readonly onNavigate: (target: H2NavigationTarget) => void
   readonly workspace: H2Workspace
 }
 
-export function OverviewPage({ onNavigate, workspace }: OverviewPageProps) {
+export function OverviewPage({ dataSource, onNavigate, workspace }: OverviewPageProps) {
   const metrics = createOverviewMetrics(workspace.run)
-  const latestPcc = getLatestSeriesValue(workspace.series, 'pcc_power_actual_kw')
-    ?? getLatestSeriesValue(workspace.series, 'pcc_power_kw')
-  const latestSoc = getLatestSeriesValue(workspace.series, 'bess_soc_pct')
-    ?? getLatestSeriesValue(workspace.series, 'bess_soc_percent')
+  const seriesState = useH2Series(dataSource, createH2OverviewSeriesQuery(workspace.run))
+  const series = seriesState.status === 'ready' ? seriesState.series : null
+  const latestPcc = getLatestSeriesValue(series, 'pcc_power_actual_kw')
+    ?? getLatestSeriesValue(series, 'pcc_power_kw')
+  const latestSoc = getLatestSeriesValue(series, 'bess_soc_pct')
+    ?? getLatestSeriesValue(series, 'bess_soc_percent')
+  const seriesMessage = getOverviewSeriesMessage(seriesState.status)
   const representativeEvent = workspace.events[0]
   const qualityBlocked = workspace.run.quality.status === 'blocked'
   const judgePath = [
@@ -199,13 +208,13 @@ export function OverviewPage({ onNavigate, workspace }: OverviewPageProps) {
             </div>
             <strong>{latestPcc === null ? '当前值未知' : formatH2Number(latestPcc, 'kW')}</strong>
           </div>
-          {workspace.series ? (
+          {series ? (
             <EChartsCanvas
               ariaLabel="并网点实际功率、送出边界和受电边界时间序列图"
-              option={createPccChartOption(workspace.series)}
+              option={createPccChartOption(series)}
             />
           ) : (
-            <ChartUnavailable message={workspace.seriesError} />
+            <ChartUnavailable message={seriesMessage} />
           )}
         </section>
 
@@ -217,13 +226,13 @@ export function OverviewPage({ onNavigate, workspace }: OverviewPageProps) {
             </div>
             <strong>{latestSoc === null ? '当前值未知' : formatH2Number(latestSoc, '%')}</strong>
           </div>
-          {workspace.series ? (
+          {series ? (
             <EChartsCanvas
               ariaLabel="储能荷电状态时间序列图"
-              option={createSocChartOption(workspace.series)}
+              option={createSocChartOption(series)}
             />
           ) : (
-            <ChartUnavailable message={workspace.seriesError} />
+            <ChartUnavailable message={seriesMessage} />
           )}
         </section>
 
@@ -305,4 +314,11 @@ function ChartUnavailable({ message }: { readonly message: string | null }) {
       <p>{message ?? '数据源没有返回所需时间序列；事件证据仍可独立核验。'}</p>
     </div>
   )
+}
+
+function getOverviewSeriesMessage(status: 'idle' | 'loading' | 'ready' | 'error'): string | null {
+  if (status === 'loading') return '正在读取当前运行最近 24 小时的趋势。'
+  if (status === 'error') return '最近 24 小时趋势读取失败；未绘制旧运行或占位曲线。'
+  if (status === 'idle') return '当前字段清单没有概览图所需变量。'
+  return null
 }

@@ -67,30 +67,35 @@ const socSeriesDefinitions = [
   { variables: ['bess_soc_pct', 'bess_soc_percent'], label: '储能实际 SOC', color: COLORS[4], unit: '%' },
 ] as const satisfies readonly SeriesDefinition[]
 
-export function selectH2SeriesVariables(
+export function selectH2OverviewSeriesVariables(
   fields: readonly H2DatasetField[],
-  events: readonly H2AnomalyEvent[],
+): string[] {
+  return selectAvailableSeriesVariables(
+    fields,
+    [...pccSeriesDefinitions, ...socSeriesDefinitions],
+  )
+}
+
+export function selectH2EventSeriesVariables(
+  fields: readonly H2DatasetField[],
+  event: H2AnomalyEvent,
+): string[] {
+  return selectAvailableSeriesVariables(fields, getEventSeriesDefinitions(event))
+}
+
+function selectAvailableSeriesVariables(
+  fields: readonly H2DatasetField[],
+  definitions: readonly SeriesDefinition[],
 ): string[] {
   const availableVariables = new Set(
     fields
       .filter(({ role }) => role === 'measurement' || role === 'constraint')
       .map(({ name }) => name),
   )
-  const consumedVariables = new Set<string>()
-  const definitions = [
-    ...pccSeriesDefinitions,
-    ...socSeriesDefinitions,
-    ...events.flatMap((event) => getEventSeriesDefinitions(event)),
-  ]
-
+  const selectedVariables: string[] = []
   for (const definition of definitions) {
     const variable = definition.variables.find((candidate) => availableVariables.has(candidate))
-    if (variable) consumedVariables.add(variable)
-  }
-
-  const selectedVariables: string[] = []
-  for (const { name } of fields) {
-    if (consumedVariables.delete(name)) selectedVariables.push(name)
+    if (variable && !selectedVariables.includes(variable)) selectedVariables.push(variable)
   }
   return selectedVariables
 }

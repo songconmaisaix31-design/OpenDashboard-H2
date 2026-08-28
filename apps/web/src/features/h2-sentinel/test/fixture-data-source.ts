@@ -93,12 +93,17 @@ export function createH2WebFixtureDataSource(
       return {
         ...series,
         variables: request.variables,
-        points: series.points.map((point) => ({
-          timestamp: point.timestamp,
-          values: Object.fromEntries(
-            request.variables.map((variable) => [variable, point.values[variable] ?? null]),
-          ),
-        })),
+        points: series.points
+          .filter(({ timestamp }) =>
+            Date.parse(timestamp) >= Date.parse(request.startTime) &&
+            Date.parse(timestamp) <= Date.parse(request.endTime),
+          )
+          .map((point) => ({
+            timestamp: point.timestamp,
+            values: Object.fromEntries(
+              request.variables.map((variable) => [variable, point.values[variable] ?? null]),
+            ),
+          })),
       }
     },
     ask: p1Fixture.ask,

@@ -67,7 +67,7 @@ export function H2SentinelApp({
       : parseH2SentinelHash(window.location.hash)
   const [workspaceState, setWorkspaceState] = useState<H2WorkspaceState>({
     status: 'loading',
-    message: '正在通过注入的 H2SentinelDataSource 读取运行、事件与时间序列。',
+    message: '正在通过注入的 H2SentinelDataSource 读取运行与事件。',
   })
   const [commandState, setCommandState] = useState<H2CommandState>(INITIAL_H2_COMMAND_STATE)
   const [reviewState, setReviewState] = useState<H2ReviewCommandState>(INITIAL_H2_REVIEW_COMMAND_STATE)
@@ -88,7 +88,7 @@ export function H2SentinelApp({
     let disposed = false
     setWorkspaceState({
       status: 'loading',
-      message: '正在通过注入的 H2SentinelDataSource 读取运行、事件与时间序列。',
+      message: '正在通过注入的 H2SentinelDataSource 读取运行与事件。',
     })
     setCommandState(INITIAL_H2_COMMAND_STATE)
     setReviewState(INITIAL_H2_REVIEW_COMMAND_STATE)
@@ -364,6 +364,7 @@ export function H2SentinelApp({
   return (
     <H2SentinelView
       commandState={commandState}
+      dataSource={dataSource}
       navigation={navigation}
       onAsk={(questionId) => void ask(questionId)}
       onDownload={downloadArtifact}
