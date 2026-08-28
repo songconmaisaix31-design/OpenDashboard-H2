@@ -74,6 +74,7 @@ function evaluationReport() {
       boundaryErrorMinutes: 'prediction boundary minus corresponding ground-truth boundary',
       zeroDenominatorMetrics: 'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0',
       macroAveraging: 'unweighted arithmetic mean across C01-C07 precision, recall, and f1',
+      runtimeInputMapping: 'official 69-field row projected to the frozen 10-field loopback detector contract; no labels',
     },
     dataset: {
       source: { ...source.timeseries, fieldCount: 69 },
