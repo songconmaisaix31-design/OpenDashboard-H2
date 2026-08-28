@@ -113,7 +113,7 @@
   {% elif kind == "pcc_daily_compliance" %}
   <h2>日期、时间基准与动态边界</h2>
   <p>统计范围为 [{{ time_range.startTime }}, {{ time_range.endTime }})，按数据集声明的时间偏移解释。</p>
-  <p>PCC 实际功率使用 <code>pcc_power_kw</code>；动态边界使用 <code>pcc_export_limit_kw</code> 与 <code>pcc_import_limit_kw</code>。</p>
+  <p>PCC 实际功率使用 <code>pcc_power_actual_kw</code>；动态边界使用 <code>grid_export_power_limit_kw</code> 与 <code>grid_import_power_limit_kw</code>。</p>
 
   <h2>越限区间、时长与越限电量</h2>
   {% if pcc_events %}

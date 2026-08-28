@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "tokensByCode": {
+    "C01": ["ELZ1", "ELZ2", "BESS", "PCC"],
+    "C02": ["ELZ1"],
+    "C03": ["BESS", "PCC"],
+    "C04": ["PCC", "BESS", "ELZ", "PV"],
+    "C05": ["PCC", "BESS", "ELZ"],
+    "C06": ["ELZ1", "ELZ2", "ELZ3"],
+    "C07": ["BESS", "PCC", "PV", "ELZ"]
+  }
+}

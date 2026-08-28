@@ -3,66 +3,298 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+from h2_analytics import vocabulary
 from h2_analytics.contracts import build_provenance
+from h2_analytics.evidence import EvidenceContext
 from h2_analytics.events import EventWindow
 from h2_analytics.impact import ImpactCalculator
 from h2_analytics.safety import SafetyEvaluator
 
-
-EVENT_METADATA: dict[str, dict[str, Any]] = {
-    "C03": {
-        "title": "BESS power direction conflicts with the dispatch command",
-        "control": {
-            "type": "BESS_CONTROL",
-            "id": "bess-control",
-            "displayName": "BESS control interface",
-        },
-        "equipment": [
-            {"kind": "BESS", "id": "bess-01", "displayName": "Battery energy storage system"},
-            {"kind": "PCC", "id": "pcc-01", "displayName": "Point of common coupling"},
-        ],
+_METADATA: dict[str, dict[str, Any]] = {
+    "C01": {
+        "title": "电解槽功率指令振荡",
         "rootCause": (
-            "Likely BESS command/feedback sign mapping mismatch; this is an inference "
-            "from structured evidence, not a direct equipment-control finding."
-        ),
-        "recommendation": "Verify BESS command and feedback sign mapping before changing dispatch.",
-        "rationale": (
-            "The diagnosis separates a likely interface mapping issue from a proven equipment fault."
-        ),
-    },
-    "C04": {
-        "title": "PCC power exceeds the active boundary",
-        "control": {
-            "type": "PCC_BOUNDARY_CONTROL",
-            "id": "pcc-boundary-control",
-            "displayName": "PCC boundary controller",
-        },
-        "equipment": [
-            {"kind": "PCC", "id": "pcc-01", "displayName": "Point of common coupling"},
-            {"kind": "GRID", "id": "grid-connection", "displayName": "Grid interconnection"},
-        ],
-        "rootCause": (
-            "Likely PCC boundary synchronization or tracking issue; the evidence supports "
-            "a compliance-oriented check, not a direct control action."
+            "电解槽功率指令在光伏与PCC功率相对稳定的时段发生高频振荡，"
+            "指令本身而非负荷扰动导致储能被反复调用以平抑并网点功率。"
         ),
         "recommendation": (
-            "Inspect PCC boundary synchronization and meter feedback before any dispatch change."
+            "核查控制死区、滤波时间常数与各控制环之间的耦合，"
+            "在人工确认前避免直接修改电解槽设定值。"
         ),
         "rationale": (
-            "The event proves a boundary-tracking violation but does not authorize automatic control."
+            "规则仅证明指令振荡与外部功率稳定并存，未授权自动闭环控制。"
         ),
+        "adjustmentObject": "EMS 电解槽群控的死区与滤波参数",
+        "priority": "高",
+        "preconditions": "光伏与PCC功率保持相对稳定、已核对参数变更留痕、具备回退条件",
     },
+    "C02": {
+        "title": "设备可用容量未同步导致功率指令持续偏差",
+        "rootCause": (
+            "EMS认知的可用容量接近额定值而设备实际可用容量明显偏低，"
+            "导致功率指令持续大于设备实际执行功率。"
+        ),
+        "recommendation": (
+            "校核EMS容量模型与PLC状态映射与刷新周期，确认后再决定是否刷新容量。"
+        ),
+        "rationale": (
+            "容量偏差来源（EMS模型或设备侧）需人工确认，规则不直接下结论。"
+        ),
+        "adjustmentObject": "EMS 容量模型与 PLC 状态映射/刷新周期",
+        "priority": "高",
+        "preconditions": "设备实际可用容量已现场核实、刷新前备份原容量参数",
+    },
+    "C03": {
+        "title": "储能充放电方向异常",
+        "rootCause": (
+            "储能功率指令方向与反馈符号或控制模式不一致，"
+            "储能实际充放电方向与EMS指令方向相反，导致并网点功率出现异常交换。"
+        ),
+        "recommendation": (
+            "核查储能接口正负号、寄存器映射与控制模式，小功率验证方向后再恢复。"
+        ),
+        "rationale": (
+            "诊断将可能的接口映射问题与确证的设备故障区分开。"
+        ),
+        "adjustmentObject": "储能接口符号映射、寄存器映射与控制模式",
+        "priority": "高",
+        "preconditions": "小功率方向验证通过、接口文件符号约定已确认",
+    },
+    "C04": {
+        "title": "PCC上下网功率边界跟踪异常",
+        "rootCause": (
+            "动态上下网功率限值更新后，EMS未及时调整储能、电解槽或光伏功率，"
+            "导致PCC实际功率越过当前有效边界。"
+        ),
+        "recommendation": (
+            "核查边界限值时效性，结合储能、电解槽与光伏可用调节能力，"
+            "在人工确认后恢复PCC到边界内。"
+        ),
+        "rationale": (
+            "事件证明存在越限，但不授权自动控制动作。"
+        ),
+        "adjustmentObject": "储能、电解槽与光伏的出力分配",
+        "priority": "高",
+        "preconditions": "当前有效限值已带时间戳确认、各类可调容量已核算",
+    },
+    "C05": {
+        "title": "上下网电量配额执行异常",
+        "rootCause": (
+            "累计上网或下网电量使用过快，剩余配额提前归零，"
+            "导致配额超限或后续日内计划不可执行。"
+        ),
+        "recommendation": (
+            "结合剩余配额、负荷预测与光伏预测复核日内电量计划，"
+            "必要时在人工确认后调整计划或负荷分配。"
+        ),
+        "rationale": (
+            "配额风险属于累计约束，需结合日内计划人工复核。"
+        ),
+        "adjustmentObject": "日内电量计划与负荷分配",
+        "priority": "中",
+        "preconditions": "剩余配额、负荷预测与光伏预测已复核",
+    },
+    "C06": {
+        "title": "多台电解槽负荷分配异常",
+        "rootCause": (
+            "未综合设备可用性、实际效率曲线、最小稳定功率与运行状态分配负荷，"
+            "高单位电耗设备承担过多负荷，或发生可避免的启停。"
+        ),
+        "recommendation": (
+            "按实际效率曲线、可用状态与最小稳定功率重新分配负荷，"
+            "在人工确认前不执行任何启停动作。"
+        ),
+        "rationale": (
+            "负荷分配是否可避免需结合运行状态与效率曲线人工确认。"
+        ),
+        "adjustmentObject": "多台电解槽的负荷分配方案",
+        "priority": "中",
+        "preconditions": "效率曲线、可用状态与最小稳定功率已读取",
+    },
+    "C07": {
+        "title": "储能SOC目标轨迹与调节裕度管理异常",
+        "rootCause": (
+            "SOC目标轨迹或充放电计划不合理，未为未来功率波动、PCC约束和制氢计划"
+            "保留调节备用，可用充放电能量不足以覆盖调节备用目标。"
+        ),
+        "recommendation": (
+            "结合未来负荷、PCC约束与调节备用目标复核SOC计划，"
+            "为可充电空间与放电备用保留足够裕度。"
+        ),
+        "rationale": (
+            "SOC规划问题需结合日内计划人工确认，规则只给出裕度缺口证据。"
+        ),
+        "adjustmentObject": "SOC 目标轨迹与充放电计划",
+        "priority": "中",
+        "preconditions": "未来负荷、PCC约束与调节备用目标已核算",
+    },
+}
+
+_EVIDENCE_PLAN: dict[str, tuple[dict[str, Any], ...]] = {
+    "C01": (
+        {
+            "kind": "measurement",
+            "variable": "elz1_power_cmd_kw",
+            "reference": "stable electrolyzer setpoint",
+            "comparator": "!=",
+            "conclusion": "电解槽功率指令在光伏与PCC相对稳定时段高频振荡。",
+            "unit": "kW",
+        },
+        {
+            "kind": "measurement",
+            "variable": "pcc_power_actual_kw",
+            "reference": "stable PCC output",
+            "comparator": "within",
+            "conclusion": "PCC实际功率保持相对稳定，振荡来源于指令而非外部扰动。",
+            "unit": "kW",
+        },
+    ),
+    "C02": (
+        {
+            "kind": "measurement",
+            "variable": "elz1_reported_available_capacity_kw",
+            "reference": "rated capacity",
+            "comparator": ">=",
+            "conclusion": "EMS报告可用容量接近额定值，设备实际可用容量明显偏低。",
+            "unit": "kW",
+        },
+        {
+            "kind": "measurement",
+            "variable": "elz1_power_cmd_kw",
+            "reference": "actual executed power",
+            "comparator": ">",
+            "conclusion": "电解槽功率指令持续大于实际执行功率。",
+            "unit": "kW",
+        },
+    ),
+    "C03": (
+        {
+            "kind": "measurement",
+            "variable": "bess_power_cmd_kw",
+            "reference": "requested direction",
+            "comparator": "=",
+            "conclusion": "EMS指令请求了记录的储能方向。",
+            "unit": "kW",
+        },
+        {
+            "kind": "measurement",
+            "variable": "bess_power_actual_kw",
+            "reference": "command direction",
+            "comparator": "!=",
+            "conclusion": "储能实际功率与指令方向相反。",
+            "unit": "kW",
+        },
+    ),
+    "C04": (
+        {
+            "kind": "measurement",
+            "variable": "pcc_power_actual_kw",
+            "reference": "active power boundary",
+            "comparator": ">",
+            "conclusion": "PCC实际功率越过当前有效功率边界。",
+            "unit": "kW",
+        },
+        {
+            "kind": "constraint",
+            "variable": "grid_export_power_limit_kw",
+            "reference": "configured boundary",
+            "comparator": "=",
+            "conclusion": "该时段生效的并网点功率边界。",
+            "unit": "kW",
+        },
+    ),
+    "C05": (
+        {
+            "kind": "measurement",
+            "variable": "grid_export_energy_quota_excess_kwh",
+            "reference": "zero excess",
+            "comparator": ">",
+            "conclusion": "累计电量超出日配额。",
+            "unit": "kWh",
+        },
+        {
+            "kind": "measurement",
+            "variable": "grid_export_energy_remaining_kwh",
+            "reference": "remaining quota",
+            "comparator": "<",
+            "conclusion": "剩余配额过低且使用过快，存在配额超限风险。",
+            "unit": "kWh",
+        },
+    ),
+    "C06": (
+        {
+            "kind": "measurement",
+            "variable": "elz1_specific_energy_kwh_per_kg",
+            "reference": "more efficient unit",
+            "comparator": ">",
+            "conclusion": "单位电耗较高的设备承担了更多负荷。",
+            "unit": "kWh/kg",
+        },
+        {
+            "kind": "measurement",
+            "variable": "elz1_power_actual_kw",
+            "reference": "available headroom",
+            "comparator": ">",
+            "conclusion": "更高效率且可用的设备仍有功率裕量。",
+            "unit": "kW",
+        },
+    ),
+    "C07": (
+        {
+            "kind": "measurement",
+            "variable": "bess_available_charge_energy_kwh",
+            "reference": "reserve target",
+            "comparator": "<",
+            "conclusion": "可用调节能量不足以覆盖调节备用目标。",
+            "unit": "kWh",
+        },
+        {
+            "kind": "constraint",
+            "variable": "bess_regulation_reserve_target_kwh",
+            "reference": "planned reserve",
+            "comparator": "=",
+            "conclusion": "当前计划要求的调节备用能量目标。",
+            "unit": "kWh",
+        },
+    ),
+}
+
+_CONTROL_ID_BY_CODE = {
+    "C01": "ems-elz-group-control",
+    "C02": "ems-capacity-sync",
+    "C03": "ems-bess-control",
+    "C04": "ems-pcc-boundary",
+    "C05": "ems-quota-plan",
+    "C06": "ems-elz-allocation",
+    "C07": "ems-bess-soc-reserve",
 }
 
 
 class DiagnosisBuilder:
+    """Compose a single-event diagnosis with an auditable evidence chain.
+
+    Evidence policy (T06 requirement): every measurement-style evidence item
+    carries the four required elements -- TIME, VARIABLE, ACTUAL VALUE, and
+    REFERENCE/LIMIT value -- so a reader can re-check any claim against the
+    official tables.
+
+    Alarm policy (requirement T03 and Track B task B2): records from
+    `11_alarm_log.csv` are EVIDENCE ONLY. They enter the diagnosis as
+    `alarm_log` facts for human review, but they are NEVER a detection
+    criterion: `is_anomaly` decisions come exclusively from the detection
+    module, which has no access to the evidence context. The evidence tables
+    are read by this builder after an anomaly has already been detected.
+    """
+
     def __init__(
         self,
         impact_calculator: ImpactCalculator | None = None,
         safety_evaluator: SafetyEvaluator | None = None,
+        evidence_context: EvidenceContext | None = None,
     ) -> None:
         self._impact = impact_calculator or ImpactCalculator()
         self._safety = safety_evaluator or SafetyEvaluator()
+        self._evidence_context = evidence_context or EvidenceContext.from_env()
 
     def build(
         self,
@@ -70,7 +302,7 @@ class DiagnosisBuilder:
         window: EventWindow,
         manifest: dict[str, Any],
     ) -> dict[str, Any]:
-        metadata = EVENT_METADATA[window.code]
+        metadata = _METADATA[window.code]
         generated_at = manifest["provenance"]["generatedAt"]
         provenance = build_provenance(
             mode=manifest["mode"],
@@ -81,9 +313,10 @@ class DiagnosisBuilder:
         calculation = self._impact.calculate(
             window=window,
             sampling_interval_minutes=float(manifest["samplingIntervalMinutes"]),
-            dataset_fingerprint=manifest["fingerprint"],
         )
-        evidence = self._evidence(window, calculation.value, provenance)
+        evidence, impact_evidence_id = self._evidence(
+            window, calculation.value, provenance
+        )
         evidence_ids = tuple(item["evidenceId"] for item in evidence)
         safety_checks = self._safety.evaluate(
             window=window,
@@ -101,10 +334,21 @@ class DiagnosisBuilder:
             "startTime": _timestamp(window.start_time),
             "endTime": _timestamp(window.end_time),
             "firstDetectionTime": _timestamp(window.first_detection_time),
-            "severity": "high",
+            "severity": vocabulary.wire_severity_by_code()[window.code],
             "confidence": window.confidence,
-            "primaryControlObject": metadata["control"],
-            "affectedEquipment": metadata["equipment"],
+            "primaryControlObject": {
+                "type": vocabulary.control_object_type_by_code()[window.code],
+                "id": _CONTROL_ID_BY_CODE[window.code],
+                "displayName": vocabulary.primary_control_object_by_code()[window.code],
+            },
+            "affectedEquipment": [
+                {
+                    "kind": vocabulary.equipment_kind(item["equipmentId"]),
+                    "id": item["equipmentId"],
+                    "displayName": item["equipmentName"],
+                }
+                for item in vocabulary.affected_equipment_by_code()[window.code]
+            ],
             "evidence": evidence,
             "impact": {
                 "metric": calculation.metric,
@@ -112,7 +356,7 @@ class DiagnosisBuilder:
                 "unit": calculation.unit,
                 "formulaVersion": calculation.formula_version,
                 "assumptions": list(calculation.assumptions),
-                "evidenceIds": [evidence_ids[-1]],
+                "evidenceIds": [impact_evidence_id],
                 "provenance": provenance,
             },
             "safetyChecks": safety_checks,
@@ -120,8 +364,15 @@ class DiagnosisBuilder:
                 {
                     "recommendationId": recommendation_id,
                     "actionKind": "check",
-                    "summary": metadata["recommendation"],
-                    "rationale": metadata["rationale"],
+                    "summary": (
+                        f"{metadata['recommendation']} "
+                        f"调整对象：{metadata['adjustmentObject']}；"
+                        f"前置条件：{metadata['preconditions']}。"
+                    ),
+                    "rationale": (
+                        f"{metadata['rationale']} 优先级：{metadata['priority']}；"
+                        "本建议需人工确认后执行，服务不自动闭环下发。"
+                    ),
                     "safetyCheckIds": [item["checkId"] for item in safety_checks],
                     "evidenceIds": list(evidence_ids[:2]),
                     "requiresHumanConfirmation": True,
@@ -135,12 +386,12 @@ class DiagnosisBuilder:
             "requiresHumanConfirmation": True,
         }
 
-    @staticmethod
     def _evidence(
+        self,
         window: EventWindow,
         impact_value: float,
         provenance: dict[str, Any],
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], str]:
         detection_row = window.rows[
             min(
                 range(len(window.rows)),
@@ -149,77 +400,214 @@ class DiagnosisBuilder:
                 ),
             )
         ]
-        if window.code == "C03":
-            return [
+        plan = self._plan_for(window)
+        evidence: list[dict[str, Any]] = []
+        for index, item in enumerate(plan):
+            reference = _reference_for(window, item)
+            evidence.append(
                 _evidence_item(
-                    _evidence_id(window, 1),
-                    "measurement",
+                    _evidence_id(window, index + 1),
+                    item["kind"],
                     detection_row,
-                    "bess_dispatch_command_kw",
-                    "charge" if (detection_row.value("bess_dispatch_command_kw") or 0) < 0 else "discharge",
-                    "=",
-                    "The EMS command requested the recorded BESS direction.",
+                    item["variable"],
+                    reference,
+                    item["comparator"],
+                    item["conclusion"],
                     provenance,
-                ),
-                _evidence_item(
-                    _evidence_id(window, 2),
-                    "measurement",
-                    detection_row,
-                    "bess_power_kw",
-                    "command direction",
-                    "!=",
-                    "Observed BESS power is opposite to the dispatch command.",
-                    provenance,
-                ),
-                _impact_evidence(
-                    _evidence_id(window, 3),
-                    window,
-                    "abnormal_grid_exchange_energy_kwh",
-                    impact_value,
-                    "impact-c03-v1",
-                    "Abnormal grid exchange is associated with the reversed BESS response.",
-                    provenance,
-                ),
-            ]
-        limit_field = (
-            "pcc_export_limit_kw"
-            if window.subtype == "EXPORT_POWER_LIMIT_NOT_TRACKED"
-            else "pcc_import_limit_kw"
-        )
-        limit = detection_row.value(limit_field)
-        if limit is None:
-            raise ValueError("C04 diagnosis requires the active PCC limit.")
-        return [
-            _evidence_item(
-                _evidence_id(window, 1),
-                "measurement",
-                detection_row,
-                "pcc_power_kw",
-                limit if window.subtype.startswith("EXPORT") else -limit,
-                ">" if window.subtype.startswith("EXPORT") else "<",
-                "PCC power exceeds the active boundary.",
-                provenance,
-            ),
-            _evidence_item(
-                _evidence_id(window, 2),
-                "constraint",
-                detection_row,
-                limit_field,
-                limit,
-                "=",
-                "The configured PCC boundary is active for this interval.",
-                provenance,
-            ),
+                )
+            )
+        impact_variable = vocabulary.primary_impact_metric_by_code()[window.code]
+        impact_evidence_id = _evidence_id(window, 3)
+        evidence.append(
             _impact_evidence(
-                _evidence_id(window, 3),
+                impact_evidence_id,
                 window,
-                "pcc_power_limit_violation_energy_kwh",
+                impact_variable,
                 impact_value,
-                "impact-c04-v1",
-                "Boundary-violation energy is integrated over every inclusive minute row.",
+                "impact-%s-v1" % window.code.lower(),
+                "该事件的定量影响结果。",
                 provenance,
-            ),
-        ]
+            )
+        )
+        evidence.extend(
+            self._context_evidence(window, provenance, offset=len(evidence))
+        )
+        return evidence, impact_evidence_id
+
+    def _plan_for(self, window: EventWindow) -> tuple[dict[str, Any], ...]:
+        plan = list(_EVIDENCE_PLAN[window.code])
+        if window.code == "C04":
+            if window.subtype == "IMPORT_POWER_LIMIT_NOT_TRACKED":
+                plan = [
+                    {
+                        **plan[0],
+                        "variable": "pcc_power_actual_kw",
+                        "reference": "negative active boundary",
+                        "comparator": "<",
+                    },
+                    {
+                        **plan[1],
+                        "variable": "grid_import_power_limit_kw",
+                        "conclusion": "该时段生效的下网功率边界。",
+                    },
+                ]
+            else:
+                plan[1]["variable"] = "grid_export_power_limit_kw"
+        elif window.code == "C05":
+            if window.subtype == "IMPORT_ENERGY_QUOTA_RISK":
+                plan = [
+                    {
+                        **plan[0],
+                        "variable": "grid_import_energy_quota_excess_kwh",
+                        "conclusion": "累计下网电量超出日配额。",
+                    },
+                    {
+                        **plan[1],
+                        "variable": "grid_import_energy_remaining_kwh",
+                    },
+                ]
+            else:
+                plan[0]["variable"] = "grid_export_energy_quota_excess_kwh"
+                plan[1]["variable"] = "grid_export_energy_remaining_kwh"
+        elif window.code == "C07":
+            if window.subtype == "DISCHARGE_RESERVE_SHORTFALL":
+                plan[0]["variable"] = "bess_available_discharge_energy_kwh"
+        return tuple(plan)
+
+    def _context_evidence(
+        self,
+        window: EventWindow,
+        provenance: dict[str, Any],
+        *,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        context = self._evidence_context
+        if context.data_dir is None:
+            return []
+        items: list[dict[str, Any]] = []
+        equipment_names = context.equipment()
+        if equipment_names:
+            names = "、".join(
+                f"{key}:{name}"
+                for key, name in list(equipment_names.items())[:8]
+            )
+            items.append(
+                _knowledge_evidence(
+                    _evidence_id(window, offset + len(items) + 1),
+                    "equipment_master",
+                    f"设备台账（节选）：{names}",
+                    provenance,
+                )
+            )
+        constraints = context.control_constraints()
+        if constraints:
+            sign = next(
+                (
+                    row
+                    for row in constraints
+                    if row["parameter"] in {"pcc_sign_convention", "bess_sign_convention"}
+                ),
+                None,
+            )
+            if sign is not None:
+                items.append(
+                    _knowledge_evidence(
+                        _evidence_id(window, offset + len(items) + 1),
+                        "control_constraints",
+                        f"{sign['object_id']} {sign['parameter']}：{sign['value']}",
+                        provenance,
+                    )
+                )
+        for alarm in context.alarm_logs(
+            start=window.start_time, end=window.end_time
+        )[:2]:
+            items.append(
+                {
+                    "schemaVersion": 1,
+                    "evidenceId": _evidence_id(window, offset + len(items) + 1),
+                    "kind": "alarm_log",
+                    "claimKind": "fact",
+                    "timestamp": alarm.get("timestamp", ""),
+                    "variable": alarm.get("alarm_code", ""),
+                    "actualValue": alarm.get("severity", ""),
+                    "referenceValue": "ACTIVE",
+                    "unit": "",
+                    "comparator": "=",
+                    "source": "alarm-log",
+                    "conclusion": alarm.get("alarm_message", ""),
+                    "provenance": provenance,
+                }
+            )
+        for operation in context.operation_logs(
+            start=window.start_time, end=window.end_time
+        )[:2]:
+            items.append(
+                {
+                    "schemaVersion": 1,
+                    "evidenceId": _evidence_id(window, offset + len(items) + 1),
+                    "kind": "operation_log",
+                    "claimKind": "fact",
+                    "timestamp": operation.get("timestamp", ""),
+                    "variable": operation.get("parameter", ""),
+                    "actualValue": operation.get("change", ""),
+                    "referenceValue": operation.get("remark", ""),
+                    "unit": "",
+                    "comparator": "=",
+                    "source": "operation-log",
+                    "conclusion": f"{operation.get('operation_type', '')}：{operation.get('change', '')}",
+                    "provenance": provenance,
+                }
+            )
+        for normal in context.normal_context(
+            start=window.start_time, end=window.end_time
+        )[:1]:
+            items.append(
+                _knowledge_evidence(
+                    _evidence_id(window, offset + len(items) + 1),
+                    "normal_context",
+                    f"{normal.get('context_code', '')} {normal.get('review_result', '')}",
+                    provenance,
+                )
+            )
+        for curve in _efficiency_curve_summaries(context):
+            items.append(
+                _knowledge_evidence(
+                    _evidence_id(window, offset + len(items) + 1),
+                    "efficiency_curves",
+                    (
+                        f"{curve['equipment_id']} 单位电耗区间 "
+                        f"{curve['min_kwh_per_kg']}~{curve['max_kwh_per_kg']} kWh/kg"
+                        f"（{curve['min_power_kw']}~{curve['max_power_kw']} kW 负荷区间）"
+                    ),
+                    provenance,
+                    variable=curve["variable"],
+                    actual_value=curve["min_kwh_per_kg"],
+                    reference_value=curve["max_kwh_per_kg"],
+                    unit="kWh/kg",
+                )
+            )
+        affected_ids = {
+            item["equipmentId"]
+            for item in vocabulary.affected_equipment_by_code()[window.code]
+        }
+        for maintenance in _maintenance_records(context, affected_ids):
+            items.append(
+                _knowledge_evidence(
+                    _evidence_id(window, offset + len(items) + 1),
+                    "maintenance_history",
+                    (
+                        f"维修记录 {maintenance['record_id']}（{maintenance['equipment_id']} "
+                        f"{maintenance['work_item']}）：{maintenance['finding']}；"
+                        f"建议：{maintenance['recommendation']}"
+                    ),
+                    provenance,
+                    variable=maintenance["equipment_id"],
+                    actual_value=maintenance["date"],
+                    reference_value=maintenance["recommendation"],
+                    unit="",
+                )
+            )
+        return items
 
 
 def _evidence_item(
@@ -242,9 +630,13 @@ def _evidence_item(
         "variable": variable,
         "actualValue": row.value(variable),
         "referenceValue": reference,
-        "unit": "kW",
+        "unit": "kW" if variable.endswith("_kw") or "_power_" in variable else "",
         "comparator": comparator,
-        "source": "fixture-timeseries" if provenance["mode"] == "FIXTURE" else "imported-timeseries",
+        "source": (
+            "fixture-timeseries"
+            if provenance["mode"] == "FIXTURE"
+            else "imported-timeseries"
+        ),
         "conclusion": conclusion,
         "provenance": provenance,
     }
@@ -277,6 +669,100 @@ def _impact_evidence(
         "conclusion": conclusion,
         "provenance": provenance,
     }
+
+
+def _efficiency_curve_summaries(
+    context: EvidenceContext,
+) -> tuple[dict[str, str], ...]:
+    """Aggregate `10_electrolyzer_efficiency_curves.csv` per electrolyzer.
+
+    Each summary carries the official per-unit specific-energy field as the
+    variable name, so the curve evidence reuses official measurement points
+    instead of inventing new ones.
+    """
+    summaries: list[dict[str, str]] = []
+    for equipment_id in ("ELZ01", "ELZ02", "ELZ03"):
+        points = [
+            curve
+            for curve in context.efficiency_curves()
+            if curve.get("equipment_id") == equipment_id
+        ]
+        if not points:
+            continue
+        values = [float(point["specific_energy_kwh_per_kg"]) for point in points]
+        powers = [float(point["power_kw"]) for point in points]
+        summaries.append(
+            {
+                "equipment_id": equipment_id,
+                "variable": f"elz{equipment_id[-1]}_specific_energy_kwh_per_kg",
+                "min_kwh_per_kg": _format_float(min(values)),
+                "max_kwh_per_kg": _format_float(max(values)),
+                "min_power_kw": _format_float(min(powers)),
+                "max_power_kw": _format_float(max(powers)),
+            }
+        )
+    return tuple(summaries)
+
+
+def _maintenance_records(
+    context: EvidenceContext,
+    affected_ids: set[str],
+) -> tuple[dict[str, str], ...]:
+    """Pick `14_maintenance_history.csv` records relevant to the event.
+
+    Records whose equipment matches the affected equipment come first so the
+    most relevant history is citable; the count stays bounded for any event.
+    """
+    records = list(context.maintenance_history())
+    records.sort(
+        key=lambda row: (row.get("equipment_id") not in affected_ids, row.get("record_id", ""))
+    )
+    return tuple(records[:3])
+
+
+def _format_float(value: float) -> str:
+    return f"{value:g}"
+
+
+def _knowledge_evidence(
+    evidence_id: str,
+    source: str,
+    conclusion: str,
+    provenance: dict[str, Any],
+    *,
+    variable: str = "",
+    actual_value: str | float | bool = "",
+    reference_value: str | float | bool = "",
+    unit: str = "",
+) -> dict[str, Any]:
+    return {
+        "schemaVersion": 1,
+        "evidenceId": evidence_id,
+        "kind": "knowledge_base",
+        "claimKind": "fact",
+        "variable": variable,
+        "actualValue": actual_value,
+        "referenceValue": reference_value,
+        "unit": unit,
+        "comparator": "=",
+        "source": source,
+        "conclusion": conclusion,
+        "provenance": provenance,
+    }
+
+
+def _reference_for(window: EventWindow, item: dict[str, Any]) -> str | float:
+    if window.code == "C03" and item["variable"] == "bess_power_cmd_kw":
+        command = window.rows[0].value("bess_power_cmd_kw")
+        return "charge" if (command or 0) < 0 else "discharge"
+    if window.code == "C04" and item["variable"] == "pcc_power_actual_kw":
+        limit = window.rows[0].value(
+            "grid_export_power_limit_kw"
+            if window.subtype == "EXPORT_POWER_LIMIT_NOT_TRACKED"
+            else "grid_import_power_limit_kw"
+        )
+        return -(limit or 0) if window.subtype.startswith("IMPORT") else (limit or 0)
+    return item["reference"]
 
 
 def _timestamp(value: datetime) -> str:

@@ -1,0 +1,250 @@
+[
+  {
+    "code": "C01",
+    "nameZh": "电解槽功率指令振荡",
+    "primaryControlObject": "EMS电解槽群控与功率分配模块",
+    "primaryImpactMetric": "bess_extra_regulation_energy_kwh",
+    "primaryImpactMetricZh": "储能额外调节能量",
+    "severity": "中",
+    "subtypes": [
+      {
+        "code": "SETPOINT_OSCILLATION",
+        "nameZh": "电解槽功率指令振荡"
+      }
+    ],
+    "affectedEquipment": [
+      {
+        "equipmentId": "BESS01",
+        "equipmentName": "储能系统"
+      },
+      {
+        "equipmentId": "PCC01",
+        "equipmentName": "并网点"
+      },
+      {
+        "equipmentId": "ELZ01",
+        "equipmentName": "碱性电解槽1"
+      },
+      {
+        "equipmentId": "ELZ02",
+        "equipmentName": "碱性电解槽2"
+      },
+      {
+        "equipmentId": "ELZ03",
+        "equipmentName": "碱性电解槽3"
+      }
+    ]
+  },
+  {
+    "code": "C02",
+    "nameZh": "设备可用容量未同步导致功率指令持续偏差",
+    "primaryControlObject": "EMS设备状态与容量同步模块",
+    "primaryImpactMetric": "unserved_elz_energy_kwh",
+    "primaryImpactMetricZh": "电解槽未执行能量",
+    "severity": "高",
+    "subtypes": [
+      {
+        "code": "CAPACITY_NOT_SYNCHRONIZED",
+        "nameZh": "设备可用容量未同步导致功率指令持续偏差"
+      }
+    ],
+    "affectedEquipment": [
+      {
+        "equipmentId": "ELZ01",
+        "equipmentName": "碱性电解槽1"
+      },
+      {
+        "equipmentId": "ELZ02",
+        "equipmentName": "碱性电解槽2"
+      },
+      {
+        "equipmentId": "ELZ03",
+        "equipmentName": "碱性电解槽3"
+      }
+    ]
+  },
+  {
+    "code": "C03",
+    "nameZh": "储能充放电方向异常",
+    "primaryControlObject": "EMS储能功率控制与接口映射模块",
+    "primaryImpactMetric": "abnormal_grid_exchange_energy_kwh",
+    "primaryImpactMetricZh": "异常电网交换电量",
+    "severity": "高",
+    "subtypes": [
+      {
+        "code": "BESS_DIRECTION_REVERSED",
+        "nameZh": "储能充放电方向异常"
+      }
+    ],
+    "affectedEquipment": [
+      {
+        "equipmentId": "BESS01",
+        "equipmentName": "储能系统"
+      },
+      {
+        "equipmentId": "PCC01",
+        "equipmentName": "并网点"
+      }
+    ]
+  },
+  {
+    "code": "C04",
+    "nameZh": "PCC上下网功率边界跟踪异常",
+    "primaryControlObject": "EMS并网点功率边界控制模块",
+    "primaryImpactMetric": "pcc_power_limit_violation_energy_kwh",
+    "primaryImpactMetricZh": "PCC功率越限电量",
+    "severity": "高",
+    "subtypes": [
+      {
+        "code": "IMPORT_POWER_LIMIT_NOT_TRACKED",
+        "nameZh": "PCC上下网功率边界跟踪异常"
+      },
+      {
+        "code": "EXPORT_POWER_LIMIT_NOT_TRACKED",
+        "nameZh": "PCC上下网功率边界跟踪异常"
+      }
+    ],
+    "affectedEquipment": [
+      {
+        "equipmentId": "PV01",
+        "equipmentName": "光伏发电单元"
+      },
+      {
+        "equipmentId": "BESS01",
+        "equipmentName": "储能系统"
+      },
+      {
+        "equipmentId": "PCC01",
+        "equipmentName": "并网点"
+      },
+      {
+        "equipmentId": "ELZ01",
+        "equipmentName": "碱性电解槽1"
+      },
+      {
+        "equipmentId": "ELZ02",
+        "equipmentName": "碱性电解槽2"
+      },
+      {
+        "equipmentId": "ELZ03",
+        "equipmentName": "碱性电解槽3"
+      }
+    ]
+  },
+  {
+    "code": "C05",
+    "nameZh": "上下网电量配额执行异常",
+    "primaryControlObject": "EMS周期电量配额与日内能量计划模块",
+    "primaryImpactMetric": "grid_energy_quota_deviation_kwh",
+    "primaryImpactMetricZh": "上下网电量配额偏差",
+    "severity": "高",
+    "subtypes": [
+      {
+        "code": "IMPORT_ENERGY_QUOTA_RISK",
+        "nameZh": "上下网电量配额执行异常"
+      },
+      {
+        "code": "EXPORT_ENERGY_QUOTA_RISK",
+        "nameZh": "上下网电量配额执行异常"
+      }
+    ],
+    "affectedEquipment": [
+      {
+        "equipmentId": "BESS01",
+        "equipmentName": "储能系统"
+      },
+      {
+        "equipmentId": "PCC01",
+        "equipmentName": "并网点"
+      },
+      {
+        "equipmentId": "ELZ01",
+        "equipmentName": "碱性电解槽1"
+      },
+      {
+        "equipmentId": "ELZ02",
+        "equipmentName": "碱性电解槽2"
+      },
+      {
+        "equipmentId": "ELZ03",
+        "equipmentName": "碱性电解槽3"
+      }
+    ]
+  },
+  {
+    "code": "C06",
+    "nameZh": "多台电解槽负荷分配异常",
+    "primaryControlObject": "EMS电解槽群控分配模块",
+    "primaryImpactMetric": "extra_energy_consumption_kwh",
+    "primaryImpactMetricZh": "不合理负荷分配额外耗电量",
+    "severity": "中",
+    "subtypes": [
+      {
+        "code": "AVOIDABLE_START_STOP",
+        "nameZh": "多台电解槽负荷分配异常"
+      },
+      {
+        "code": "INEFFICIENT_POWER_ALLOCATION",
+        "nameZh": "多台电解槽负荷分配异常"
+      }
+    ],
+    "affectedEquipment": [
+      {
+        "equipmentId": "ELZ01",
+        "equipmentName": "碱性电解槽1"
+      },
+      {
+        "equipmentId": "ELZ02",
+        "equipmentName": "碱性电解槽2"
+      },
+      {
+        "equipmentId": "ELZ03",
+        "equipmentName": "碱性电解槽3"
+      }
+    ]
+  },
+  {
+    "code": "C07",
+    "nameZh": "储能SOC目标轨迹与调节裕度管理异常",
+    "primaryControlObject": "EMS储能SOC计划与调节备用管理模块",
+    "primaryImpactMetric": "bess_regulation_reserve_shortfall_kwh",
+    "primaryImpactMetricZh": "储能调节备用能量缺口",
+    "severity": "高",
+    "subtypes": [
+      {
+        "code": "CHARGE_HEADROOM_SHORTFALL",
+        "nameZh": "储能SOC目标轨迹与调节裕度管理异常"
+      },
+      {
+        "code": "DISCHARGE_RESERVE_SHORTFALL",
+        "nameZh": "储能SOC目标轨迹与调节裕度管理异常"
+      }
+    ],
+    "affectedEquipment": [
+      {
+        "equipmentId": "PV01",
+        "equipmentName": "光伏发电单元"
+      },
+      {
+        "equipmentId": "BESS01",
+        "equipmentName": "储能系统"
+      },
+      {
+        "equipmentId": "PCC01",
+        "equipmentName": "并网点"
+      },
+      {
+        "equipmentId": "ELZ01",
+        "equipmentName": "碱性电解槽1"
+      },
+      {
+        "equipmentId": "ELZ02",
+        "equipmentName": "碱性电解槽2"
+      },
+      {
+        "equipmentId": "ELZ03",
+        "equipmentName": "碱性电解槽3"
+      }
+    ]
+  }
+]

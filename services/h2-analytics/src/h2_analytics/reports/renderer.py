@@ -361,11 +361,11 @@ def _pcc_events(
     for event in events:
         if event["code"] not in {"C04", "C05"}:
             continue
-        actual = _evidence_value(event, "pcc_power_kw")
+        actual = _evidence_value(event, "pcc_power_actual_kw")
         limit_variable = (
-            "pcc_export_limit_kw"
+            "grid_export_power_limit_kw"
             if event["subtype"].startswith("EXPORT")
-            else "pcc_import_limit_kw"
+            else "grid_import_power_limit_kw"
         )
         limit = _evidence_value(event, limit_variable)
         review = reviews.get(event["eventId"])

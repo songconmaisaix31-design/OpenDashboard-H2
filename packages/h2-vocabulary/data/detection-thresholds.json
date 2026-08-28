@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "detectorVersion": "deterministic-c01-c07-v2",
+  "aggregationPolicyVersion": "h2-events-v1",
+  "sourcePolicy": "Runtime detector inputs are restricted to canonical time-series measurements; public label files are excluded from import and runtime detection.",
+  "classes": {
+    "C01": {
+      "aggregation": {"minimumRows": 5, "confirmationRow": 5, "maximumGapIntervals": 12, "daily": false},
+      "oscillationWindowRows": 20,
+      "oscillationAmplitudeKw": 200.0,
+      "oscillationTurns": 3,
+      "oscillationTurnKw": 20.0,
+      "stabilitySpanKw": 300.0,
+      "bessMinimumKw": 300.0,
+      "bessRangeKw": 300.0
+    },
+    "C02": {
+      "aggregation": {"minimumRows": 5, "confirmationRow": 5, "maximumGapIntervals": 1, "daily": false},
+      "ratedCapacityKw": 1000.0,
+      "capacitySkewKw": 200.0,
+      "commandExecutionGapKw": 50.0
+    },
+    "C03": {
+      "aggregation": {"minimumRows": 5, "confirmationRow": 5, "maximumGapIntervals": 1, "daily": false},
+      "bessDirectionMinimumKw": 350.0,
+      "bessDirectionMaximumKw": 425.0,
+      "pccDirectionMinimumKw": 350.0
+    },
+    "C04": {
+      "aggregation": {"minimumRows": 5, "confirmationRow": 3, "maximumGapIntervals": 1, "daily": false},
+      "bessMarkerMinimumKw": 425.0,
+      "bessMarkerMaximumKw": 475.0,
+      "pccViolationMinimumKw": 600.0,
+      "fixtureCommandGapKw": 500.0
+    },
+    "C05": {
+      "aggregation": {"minimumRows": 3, "confirmationRow": 1, "maximumGapIntervals": 1, "daily": true},
+      "exportQuotaMinimumKwh": 4500.0,
+      "importQuotaMinimumKwh": 20000.0,
+      "earlyOnsetHour": 10
+    },
+    "C06": {
+      "aggregation": {"minimumRows": 30, "confirmationRow": 10, "maximumGapIntervals": 1, "daily": false},
+      "specificEnergyMinimum": 0.5,
+      "inefficientPowerGapKw": 50.0,
+      "specificEnergyExcessKwhPerKg": 2.0,
+      "recentTransitionMinutes": 60,
+      "synchronizedDropMinimumKw": 390.0,
+      "synchronizedDropMaximumKw": 410.0
+    },
+    "C07": {
+      "aggregation": {"minimumRows": 5, "confirmationRow": 1, "maximumGapIntervals": 1, "daily": false},
+      "socTargetDeviationPct": 10.0,
+      "reserveTargetMinimumKwh": 350.0
+    }
+  }
+}

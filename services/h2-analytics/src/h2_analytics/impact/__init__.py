@@ -1,3 +1,3 @@
-from .calculators import ImpactCalculation, ImpactCalculator, ImpactUnavailable
+from .calculators import ImpactCalculation, ImpactCalculator
 
-__all__ = ["ImpactCalculation", "ImpactCalculator", "ImpactUnavailable"]
+__all__ = ["ImpactCalculation", "ImpactCalculator"]

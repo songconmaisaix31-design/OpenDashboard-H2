@@ -6,6 +6,7 @@ import type { H2Provenance } from './provenance.ts'
 import type { H2DataQualityReport } from './quality.ts'
 import type { H2ReportDescriptor } from './report.ts'
 import type { H2EventReview } from './review.ts'
+import { H2_OFFICIAL_FIELDS, toH2DatasetField } from './vocabulary.ts'
 
 const fixtureGeneratedAt = '2026-01-05T10:45:00Z'
 
@@ -14,8 +15,8 @@ export const H2_FIXTURE_PROVENANCE = {
   source: 'sanitized-golden-fixture',
   generatedAt: fixtureGeneratedAt,
   datasetFingerprint:
-    'sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca',
-  ruleVersion: 'h2-rules-v1',
+    'sha256:98373685e71cb8df828f5d5dcc108a7972c46f1e45ca564e36b26a22d9b4e6b1',
+  ruleVersion: 'h2-rules-v2',
   configurationVersion: 'official-constraints-v1',
   limitations: [
     'Synthetic, sanitized C03/C04 contract fixture only.',
@@ -30,84 +31,14 @@ export const H2_FIXTURE_DATASET = {
   mode: 'FIXTURE',
   sourceFilename: 'tiny-valid-timeseries.csv',
   fingerprint:
-    'sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca',
+    'sha256:98373685e71cb8df828f5d5dcc108a7972c46f1e45ca564e36b26a22d9b4e6b1',
   rowCount: 22,
   timeRange: {
     startTime: '2026-01-05T10:20:00Z',
     endTime: '2026-01-05T10:41:00Z',
   },
   samplingIntervalMinutes: 1,
-  fields: [
-    {
-      name: 'timestamp',
-      displayNameZh: '时间戳',
-      role: 'timestamp',
-      required: true,
-    },
-    {
-      name: 'bess_power_kw',
-      displayNameZh: '储能功率',
-      role: 'measurement',
-      required: true,
-      unit: 'kW',
-    },
-    {
-      name: 'pcc_power_kw',
-      displayNameZh: '并网点功率',
-      role: 'measurement',
-      required: true,
-      unit: 'kW',
-    },
-    {
-      name: 'pcc_export_limit_kw',
-      displayNameZh: '并网点送出上限',
-      role: 'constraint',
-      required: true,
-      unit: 'kW',
-    },
-    {
-      name: 'pv_actual_kw',
-      displayNameZh: '光伏实际功率',
-      role: 'measurement',
-      required: true,
-      unit: 'kW',
-    },
-    {
-      name: 'total_electrolyzer_power_kw',
-      displayNameZh: '电解槽总功率',
-      role: 'measurement',
-      required: true,
-      unit: 'kW',
-    },
-    {
-      name: 'auxiliary_load_kw',
-      displayNameZh: '辅助负荷',
-      role: 'measurement',
-      required: true,
-      unit: 'kW',
-    },
-    {
-      name: 'bess_soc_percent',
-      displayNameZh: '储能荷电状态',
-      role: 'measurement',
-      required: true,
-      unit: 'percent',
-    },
-    {
-      name: 'pcc_import_limit_kw',
-      displayNameZh: '并网点受电上限',
-      role: 'constraint',
-      required: true,
-      unit: 'kW',
-    },
-    {
-      name: 'bess_dispatch_command_kw',
-      displayNameZh: '储能调度指令',
-      role: 'measurement',
-      required: true,
-      unit: 'kW',
-    },
-  ],
+  fields: H2_OFFICIAL_FIELDS.map(toH2DatasetField),
   provenance: H2_FIXTURE_PROVENANCE,
 } as const satisfies H2DatasetManifest
 
@@ -125,7 +56,7 @@ export const H2_FIXTURE_QUALITY_REPORT = {
       code: 'field_mapping',
       status: 'passed',
       severity: 'info',
-      affectedFields: ['timestamp', 'bess_power_kw', 'pcc_power_kw'],
+      affectedFields: ['timestamp', 'bess_power_actual_kw', 'pcc_power_actual_kw'],
       message: 'Required fixture fields are present.',
       evidenceIds: [],
       provenance: H2_FIXTURE_PROVENANCE,
@@ -171,7 +102,7 @@ export const H2_GOLDEN_C03_EVENT = {
       kind: 'measurement',
       claimKind: 'fact',
       timestamp: '2026-01-05T10:24:00Z',
-      variable: 'bess_dispatch_command_kw',
+      variable: 'bess_power_cmd_kw',
       actualValue: -240,
       referenceValue: 'charge',
       unit: 'kW',
@@ -186,7 +117,7 @@ export const H2_GOLDEN_C03_EVENT = {
       kind: 'measurement',
       claimKind: 'fact',
       timestamp: '2026-01-05T10:24:00Z',
-      variable: 'bess_power_kw',
+      variable: 'bess_power_actual_kw',
       actualValue: 230,
       referenceValue: 'charge',
       unit: 'kW',
@@ -206,7 +137,7 @@ export const H2_GOLDEN_C03_EVENT = {
         endTime: '2026-01-05T10:41:00Z',
       },
       variable: 'abnormal_grid_exchange_energy_kwh',
-      actualValue: 112.4,
+      actualValue: 84.33333333333333,
       referenceValue: 0,
       unit: 'kWh',
       comparator: '>',
@@ -218,7 +149,7 @@ export const H2_GOLDEN_C03_EVENT = {
   ],
   impact: {
     metric: 'abnormal_grid_exchange_energy_kwh',
-    value: 112.4,
+    value: 84.33333333333333,
     unit: 'kWh',
     formulaVersion: 'impact-c03-v1',
     assumptions: [
@@ -305,8 +236,8 @@ export const H2_GOLDEN_C04_EVENT = {
       kind: 'measurement',
       claimKind: 'fact',
       timestamp: '2026-01-05T10:34:00Z',
-      variable: 'pcc_power_kw',
-      actualValue: 720,
+      variable: 'pcc_power_actual_kw',
+      actualValue: 1400,
       referenceValue: 500,
       unit: 'kW',
       comparator: '>',
@@ -320,7 +251,7 @@ export const H2_GOLDEN_C04_EVENT = {
       kind: 'constraint',
       claimKind: 'fact',
       timestamp: '2026-01-05T10:34:00Z',
-      variable: 'pcc_export_limit_kw',
+      variable: 'grid_export_power_limit_kw',
       actualValue: 500,
       referenceValue: 500,
       unit: 'kW',
@@ -339,7 +270,7 @@ export const H2_GOLDEN_C04_EVENT = {
         endTime: '2026-01-05T10:39:00Z',
       },
       variable: 'pcc_power_limit_violation_energy_kwh',
-      actualValue: 29.333333333333332,
+      actualValue: 120,
       referenceValue: 0,
       unit: 'kWh',
       comparator: '>',
@@ -351,7 +282,7 @@ export const H2_GOLDEN_C04_EVENT = {
   ],
   impact: {
     metric: 'pcc_power_limit_violation_energy_kwh',
-    value: 29.333333333333332,
+    value: 120,
     unit: 'kWh',
     formulaVersion: 'impact-c04-v1',
     assumptions: [

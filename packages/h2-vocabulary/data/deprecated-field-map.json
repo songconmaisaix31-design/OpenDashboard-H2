@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "mappings": [
+    {
+      "internal": "bess_power_kw",
+      "official": "bess_power_actual_kw",
+      "note": "储能实际功率"
+    },
+    {
+      "internal": "bess_dispatch_command_kw",
+      "official": "bess_power_cmd_kw",
+      "note": "储能功率指令"
+    },
+    {
+      "internal": "pcc_power_kw",
+      "official": "pcc_power_actual_kw",
+      "note": "PCC实际有功功率"
+    },
+    {
+      "internal": "pcc_export_limit_kw",
+      "official": "grid_export_power_limit_kw",
+      "note": "上网功率上限"
+    },
+    {
+      "internal": "pcc_import_limit_kw",
+      "official": "grid_import_power_limit_kw",
+      "note": "下网功率上限"
+    },
+    {
+      "internal": "bess_soc_percent",
+      "official": "bess_soc_pct",
+      "note": "储能实际SOC"
+    },
+    {
+      "internal": "auxiliary_load_kw",
+      "official": "aux_load_kw",
+      "note": "制氢辅助负荷功率"
+    },
+    {
+      "internal": "total_electrolyzer_power_kw",
+      "official": null,
+      "derived": "elz1_power_actual_kw + elz2_power_actual_kw + elz3_power_actual_kw",
+      "note": "电解槽实际总功率，官方无单列"
+    }
+  ]
+}

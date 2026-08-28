@@ -7,7 +7,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from h2_analytics.api import ROUTE_MAP, create_app
-from h2_analytics.settings import API_NAMESPACE
+from h2_analytics.settings import API_NAMESPACE, MAX_CSV_BYTES
 
 
 def test_fastapi_routes_exactly_match_exported_namespace_map() -> None:
@@ -60,13 +60,13 @@ def test_complete_api_golden_flow(valid_csv: str) -> None:
     ).json()
     assert analyzed["ok"] is True
     run_id = analyzed["data"]["runId"]
-    assert analyzed["data"]["events"][1]["impact"]["value"] == 29.333333333333332
+    assert analyzed["data"]["events"][1]["impact"]["value"] == 120.0
 
     series = client.post(
         f"{API_NAMESPACE}/runs/series",
         json={
             "runId": run_id,
-            "variables": ["pcc_power_kw", "pcc_export_limit_kw"],
+            "variables": ["pcc_power_actual_kw", "grid_export_power_limit_kw"],
             "startTime": "2026-01-05T10:32:00Z",
             "endTime": "2026-01-05T10:39:00Z",
         },
@@ -241,7 +241,7 @@ def test_api_rejects_paths_commands_and_non_loopback_boundaries(valid_csv: str) 
     oversized = client.post(
         f"{API_NAMESPACE}/datasets:import",
         content=b"{}",
-        headers={"content-length": str(6 * 1024 * 1024)},
+        headers={"content-length": str(MAX_CSV_BYTES + 65_537)},
     )
     assert oversized.status_code == 413
     assert oversized.json()["error"]["code"] == "request.too_large"

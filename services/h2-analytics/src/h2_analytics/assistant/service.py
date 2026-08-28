@@ -164,7 +164,7 @@ def _answer_content(
             "fact",
             "PCC 功率为正表示向电网送电，为负表示从电网受电；储能功率采用另一套设备方向约定，不能把两者的正负号直接等同。",
             [
-                ("variable", "pcc_power_kw", None),
+                ("variable", "pcc_power_actual_kw", None),
                 ("knowledge_base", "h2-sign-conventions-v1", None),
             ],
         )
@@ -174,7 +174,7 @@ def _answer_content(
             "fact",
             "C04 判断某一时段的 PCC 实际功率是否越过动态进/出功率边界，单位为 kW；C05 判断当日累计进/出电量是否接近或超过配额，单位为 kWh。前者是瞬时动态边界，后者是按日累积配额。",
             [
-                ("variable", "pcc_power_kw", None),
+                ("variable", "pcc_power_actual_kw", None),
                 ("constraint", "pcc-dynamic-power-limits-v1", None),
                 ("knowledge_base", "c04-c05-distinction-v1", None),
             ],
@@ -192,7 +192,7 @@ def _answer_content(
         add(
             "observed_mismatch",
             "fact",
-            f"事件 {event['eventId']} 在 {event['startTime']} 至 {event['endTime']} 出现储能指令与实际功率方向不一致。当前事件记录了储能指令和反馈；若需核对某一分钟的 PCC 实际功率，应回到同一运行的 pcc_power_kw 时序，不能仅凭异常标签推断。",
+            f"事件 {event['eventId']} 在 {event['startTime']} 至 {event['endTime']} 出现储能指令与实际功率方向不一致。当前事件记录了储能指令和反馈；若需核对某一分钟的 PCC 实际功率，应回到同一运行的 pcc_power_actual_kw 时序，不能仅凭异常标签推断。",
             [
                 ("event", event["eventId"], event["eventId"]),
                 *[
@@ -309,7 +309,7 @@ def _answer_content(
             "fact",
             "若当前数据没有累计电量变量或官方配额证据，日报必须写明“证据不足，未计算该项合规结论”，不得用零替代缺失值。",
             [
-                ("variable", "pcc_power_kw", None),
+                ("variable", "pcc_power_actual_kw", None),
                 ("constraint", "pcc-energy-quota-evidence-v1", None),
             ],
         )

@@ -39,6 +39,12 @@ describe('H2 submission mapping', () => {
     assert.equal(row.pred_event_id, H2_GOLDEN_C03_EVENT.eventId)
     assert.equal(row.anomaly_code, 'C03')
     assert.equal(row.anomaly_subtype, 'BESS_DIRECTION_REVERSED')
+    assert.equal(row.severity, '高')
+    assert.equal(
+      row.primary_control_object,
+      'EMS储能功率控制与接口映射模块',
+    )
+    assert.equal(row.affected_equipment, 'BESS,PCC')
     assert.equal(row.primary_impact_metric, 'abnormal_grid_exchange_energy_kwh')
     assert.equal(row.requires_human_confirmation, true)
     assert.deepEqual(toH2SubmissionCells(row), expectedColumns.map((key) => row[key]))

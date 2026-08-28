@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from h2_analytics import vocabulary
 from h2_analytics.detection import DetectionCandidate
 from h2_analytics.models import DataRow
 
@@ -13,6 +14,7 @@ class AggregationPolicy:
     minimum_rows: int
     confirmation_row: int
     maximum_gap_intervals: int = 1
+    daily: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,10 +30,17 @@ class EventWindow:
     detector_version: str
 
 
-POLICIES = {
-    "C03": AggregationPolicy(minimum_rows=5, confirmation_row=5),
-    "C04": AggregationPolicy(minimum_rows=3, confirmation_row=3),
-}
+def _policy(code: str) -> AggregationPolicy:
+    values = vocabulary.detection_thresholds()["classes"][code]["aggregation"]
+    return AggregationPolicy(
+        minimum_rows=int(values["minimumRows"]),
+        confirmation_row=int(values["confirmationRow"]),
+        maximum_gap_intervals=int(values["maximumGapIntervals"]),
+        daily=bool(values["daily"]),
+    )
+
+
+POLICIES = {code: _policy(code) for code in vocabulary.anomaly_codes()}
 DEFAULT_POLICY = AggregationPolicy(minimum_rows=3, confirmation_row=3)
 
 
@@ -59,6 +68,7 @@ class EventAggregator:
                 maximum_gap=timedelta(
                     minutes=sampling_interval_minutes * policy.maximum_gap_intervals
                 ),
+                daily=policy.daily,
             ):
                 if len(segment) < policy.minimum_rows:
                     continue
@@ -99,13 +109,15 @@ def _segments(
     candidates: list[DetectionCandidate],
     *,
     maximum_gap: timedelta,
+    daily: bool = False,
 ) -> tuple[tuple[DetectionCandidate, ...], ...]:
     if not candidates:
         return ()
     segments: list[list[DetectionCandidate]] = [[candidates[0]]]
     for candidate in candidates[1:]:
         previous = segments[-1][-1]
-        if candidate.timestamp - previous.timestamp <= maximum_gap:
+        crosses_day = daily and candidate.timestamp.date() != previous.timestamp.date()
+        if not crosses_day and candidate.timestamp - previous.timestamp <= maximum_gap:
             segments[-1].append(candidate)
         else:
             segments.append([candidate])
