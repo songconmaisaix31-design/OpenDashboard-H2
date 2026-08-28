@@ -139,6 +139,18 @@ function liveProvenanceMatches(value, fingerprint, runtime, expectedModelVersion
     value.limitations.every((entry) => typeof entry === 'string' && entry.trim() !== '')
 }
 
+function sameProvenanceBase(left, right) {
+  return (
+    left.mode === right.mode && left.source === right.source &&
+    left.generatedAt === right.generatedAt &&
+    left.datasetFingerprint === right.datasetFingerprint &&
+    left.ruleVersion === right.ruleVersion &&
+    left.configurationVersion === right.configurationVersion &&
+    left.limitations.length === right.limitations.length &&
+    left.limitations.every((entry, index) => entry === right.limitations[index])
+  )
+}
+
 function expectedUtcDays(source, window) {
   const firstDay = window.minimumUtcDay ?? source.timeseries.firstTimestamp.slice(0, 10)
   const count = window.rowCount / 1_440
@@ -224,7 +236,8 @@ function evaluationDatasetMatches(value, expectedSet, source, window) {
         chunk.fingerprint,
         runtime,
         runtime.modelVersion,
-      )
+      ) ||
+      !sameProvenanceBase(chunk.importProvenance, chunk.analysisProvenance)
     ) return false
     importedRows += chunk.rowCount
     rawPredictions += chunk.predictionCount
@@ -263,13 +276,17 @@ function evaluationMetricsMatch(metrics) {
       metrics.classification,
       [
         'matches', 'correctCode', 'detectionPrecision', 'detectionRecall',
-        'detectionF1', 'classificationAccuracy', 'eventAccuracy',
+        'detectionF1', 'classificationAccuracy', 'eventAccuracy', 'matchedPairs',
+        'unmatchedGroundTruth', 'unmatchedPredictions',
       ],
     ) ||
     !['matches', 'correctCode'].every(
       (key) => nonNegativeInteger(metrics.classification[key]),
     ) ||
     metrics.classification.correctCode > metrics.classification.matches ||
+    !Array.isArray(metrics.classification.matchedPairs) ||
+    !Array.isArray(metrics.classification.unmatchedGroundTruth) ||
+    !Array.isArray(metrics.classification.unmatchedPredictions) ||
     ![
       'detectionPrecision', 'detectionRecall', 'detectionF1',
       'classificationAccuracy', 'eventAccuracy',
@@ -298,25 +315,174 @@ function evaluationMetricsMatch(metrics) {
   )
 }
 
-function evaluationMetricCountsMatch(value) {
+function structuralEventIdentity(value) {
+  return hasExactKeys(value, ['id', 'code']) &&
+    typeof value.id === 'string' && value.id.trim() !== '' &&
+    ANOMALY_CODES.includes(value.code)
+}
+
+function uniqueStrings(values) {
+  return values.every((value) => typeof value === 'string' && value.trim() !== '') &&
+    new Set(values).size === values.length
+}
+
+function summarizedTiming(values) {
+  if (values.length === 0) {
+    return { count: 0, meanMinutes: null, meanAbsoluteMinutes: null }
+  }
+  return {
+    count: values.length,
+    meanMinutes: values.reduce((total, value) => total + value, 0) / values.length,
+    meanAbsoluteMinutes: values.reduce((total, value) => total + Math.abs(value), 0) /
+      values.length,
+  }
+}
+
+function sameTimingSummary(actual, expected) {
+  return actual.count === expected.count && actual.meanMinutes === expected.meanMinutes &&
+    actual.meanAbsoluteMinutes === expected.meanAbsoluteMinutes
+}
+
+function structuralEvaluationMatches(value) {
+  if (
+    !Array.isArray(value.matches) || !Array.isArray(value.unmatchedGroundTruth) ||
+    !Array.isArray(value.unmatchedPredictions) ||
+    !value.unmatchedGroundTruth.every(structuralEventIdentity) ||
+    !value.unmatchedPredictions.every(structuralEventIdentity)
+  ) return false
+
+  const matchKeys = [
+    'groundTruthId', 'predictionId', 'code', 'groundTruthStart', 'groundTruthEnd',
+    'predictionStart', 'predictionEnd', 'firstDetectionTime',
+    'firstDetectionDelayMinutes', 'startBoundaryErrorMinutes', 'endBoundaryErrorMinutes',
+  ]
+  const firstDetectionDelays = []
+  const startBoundaryErrors = []
+  const endBoundaryErrors = []
+  for (const match of value.matches) {
+    if (
+      !hasExactKeys(match, matchKeys) ||
+      typeof match.groundTruthId !== 'string' || match.groundTruthId.trim() === '' ||
+      typeof match.predictionId !== 'string' || match.predictionId.trim() === '' ||
+      !ANOMALY_CODES.includes(match.code)
+    ) return false
+    const groundTruthStart = toInstant(match.groundTruthStart)
+    const groundTruthEnd = toInstant(match.groundTruthEnd)
+    const predictionStart = toInstant(match.predictionStart)
+    const predictionEnd = toInstant(match.predictionEnd)
+    const graceMilliseconds = value.parameters.graceMinutes * 60_000
+    if (
+      ![groundTruthStart, groundTruthEnd, predictionStart, predictionEnd].every(Number.isFinite) ||
+      groundTruthStart > groundTruthEnd || predictionStart > predictionEnd ||
+      predictionStart > groundTruthEnd + graceMilliseconds ||
+      predictionEnd < groundTruthStart - graceMilliseconds ||
+      match.startBoundaryErrorMinutes !== (predictionStart - groundTruthStart) / 60_000 ||
+      match.endBoundaryErrorMinutes !== (predictionEnd - groundTruthEnd) / 60_000
+    ) return false
+    if (match.firstDetectionTime === null) {
+      if (match.firstDetectionDelayMinutes !== null) return false
+    } else {
+      const firstDetection = toInstant(match.firstDetectionTime)
+      if (
+        !Number.isFinite(firstDetection) || firstDetection > predictionEnd ||
+        match.firstDetectionDelayMinutes !== (firstDetection - groundTruthStart) / 60_000
+      ) return false
+      firstDetectionDelays.push(match.firstDetectionDelayMinutes)
+    }
+    startBoundaryErrors.push(match.startBoundaryErrorMinutes)
+    endBoundaryErrors.push(match.endBoundaryErrorMinutes)
+  }
+
+  const groundTruthIds = [
+    ...value.matches.map(({ groundTruthId }) => groundTruthId),
+    ...value.unmatchedGroundTruth.map(({ id }) => id),
+  ]
+  const predictionIds = [
+    ...value.matches.map(({ predictionId }) => predictionId),
+    ...value.unmatchedPredictions.map(({ id }) => id),
+  ]
+  if (!uniqueStrings(groundTruthIds) || !uniqueStrings(predictionIds)) return false
+
   const { overall, timing, classification, byCode } = value.metrics
+  if (
+    overall.tp !== value.matches.length ||
+    overall.fn !== value.unmatchedGroundTruth.length ||
+    overall.fp !== value.unmatchedPredictions.length ||
+    groundTruthIds.length !== value.groundTruth.count ||
+    predictionIds.length !== value.predictions.mergedCount ||
+    !sameTimingSummary(timing.firstDetectionDelay, summarizedTiming(firstDetectionDelays)) ||
+    !sameTimingSummary(timing.startBoundaryError, summarizedTiming(startBoundaryErrors)) ||
+    !sameTimingSummary(timing.endBoundaryError, summarizedTiming(endBoundaryErrors))
+  ) return false
+
+  const groundTruthById = new Map([
+    ...value.matches.map(({ groundTruthId, code }) => [groundTruthId, code]),
+    ...value.unmatchedGroundTruth.map(({ id, code }) => [id, code]),
+  ])
+  const predictionsById = new Map([
+    ...value.matches.map(({ predictionId, code }) => [predictionId, code]),
+    ...value.unmatchedPredictions.map(({ id, code }) => [id, code]),
+  ])
+  if (!ANOMALY_CODES.every((code) => {
+    const matched = value.matches.filter((entry) => entry.code === code).length
+    const unmatchedTruth = value.unmatchedGroundTruth.filter((entry) => entry.code === code).length
+    const unmatchedPredictions = value.unmatchedPredictions
+      .filter((entry) => entry.code === code).length
+    const derived = computeMetrics({ tp: matched, fp: unmatchedPredictions, fn: unmatchedTruth })
+    return byCode[code].code === code &&
+      byCode[code].groundTruth === matched + unmatchedTruth &&
+      byCode[code].predictions === matched + unmatchedPredictions &&
+      ['tp', 'fp', 'fn', 'precision', 'recall', 'f1']
+        .every((key) => byCode[code][key] === derived[key])
+  })) return false
+
+  if (
+    !classification.matchedPairs.every((pair) =>
+      hasExactKeys(
+        pair,
+        ['groundTruthId', 'predictionId', 'groundTruthCode', 'predictionCode'],
+      ) &&
+      groundTruthById.get(pair.groundTruthId) === pair.groundTruthCode &&
+      predictionsById.get(pair.predictionId) === pair.predictionCode) ||
+    !classification.unmatchedGroundTruth.every((entry) =>
+      structuralEventIdentity(entry) && groundTruthById.get(entry.id) === entry.code) ||
+    !classification.unmatchedPredictions.every((entry) =>
+      structuralEventIdentity(entry) && predictionsById.get(entry.id) === entry.code)
+  ) return false
+  const classifiedGroundTruthIds = [
+    ...classification.matchedPairs.map(({ groundTruthId }) => groundTruthId),
+    ...classification.unmatchedGroundTruth.map(({ id }) => id),
+  ]
+  const classifiedPredictionIds = [
+    ...classification.matchedPairs.map(({ predictionId }) => predictionId),
+    ...classification.unmatchedPredictions.map(({ id }) => id),
+  ]
+  if (
+    !uniqueStrings(classifiedGroundTruthIds) || !uniqueStrings(classifiedPredictionIds) ||
+    classifiedGroundTruthIds.length !== groundTruthIds.length ||
+    classifiedPredictionIds.length !== predictionIds.length ||
+    classifiedGroundTruthIds.some((id) => !groundTruthById.has(id)) ||
+    classifiedPredictionIds.some((id) => !predictionsById.has(id))
+  ) return false
+
+  const classificationMatches = classification.matchedPairs.length
+  const correctCode = classification.matchedPairs.filter(
+    ({ groundTruthCode, predictionCode }) => groundTruthCode === predictionCode,
+  ).length
   const classificationPrecision = value.predictions.mergedCount === 0
     ? 0
-    : classification.matches / value.predictions.mergedCount
+    : classificationMatches / value.predictions.mergedCount
   const classificationRecall = value.groundTruth.count === 0
     ? 0
-    : classification.matches / value.groundTruth.count
+    : classificationMatches / value.groundTruth.count
   const classificationF1 = classificationPrecision + classificationRecall === 0
     ? 0
     : (2 * classificationPrecision * classificationRecall) /
       (classificationPrecision + classificationRecall)
   return (
-    overall.tp + overall.fn === value.groundTruth.count &&
-    overall.tp + overall.fp === value.predictions.mergedCount &&
-    timing.firstDetectionDelay.count <= overall.tp &&
-    timing.startBoundaryError.count === overall.tp &&
-    timing.endBoundaryError.count === overall.tp &&
-    classification.matches <= Math.min(
+    classification.matches === classificationMatches &&
+    classification.correctCode === correctCode &&
+    classificationMatches <= Math.min(
       value.groundTruth.count,
       value.predictions.mergedCount,
     ) &&
@@ -324,16 +490,14 @@ function evaluationMetricCountsMatch(value) {
     classification.detectionRecall === classificationRecall &&
     classification.detectionF1 === classificationF1 &&
     classification.classificationAccuracy === (
-      classification.matches === 0 ? 0 : classification.correctCode / classification.matches
+      classificationMatches === 0 ? 0 : correctCode / classificationMatches
     ) &&
     classification.eventAccuracy === (
-      value.groundTruth.count === 0 ? 0 : classification.correctCode / value.groundTruth.count
+      value.groundTruth.count === 0 ? 0 : correctCode / value.groundTruth.count
     ) &&
     ANOMALY_CODES.every((code) =>
       byCode[code].groundTruth === value.groundTruth.byCode[code] &&
-      byCode[code].predictions === value.predictions.byCode[code] &&
-      byCode[code].tp + byCode[code].fn === byCode[code].groundTruth &&
-      byCode[code].tp + byCode[code].fp === byCode[code].predictions) &&
+      byCode[code].predictions === value.predictions.byCode[code]) &&
     ANOMALY_CODES.reduce((total, code) => total + byCode[code].tp, 0) === overall.tp &&
     ANOMALY_CODES.reduce((total, code) => total + byCode[code].fp, 0) === overall.fp &&
     ANOMALY_CODES.reduce((total, code) => total + byCode[code].fn, 0) === overall.fn
@@ -379,10 +543,10 @@ export function assertEvaluationIdentity(value, expectedSet, expectedCommit) {
     value.parameters.macroAveraging !==
       'unweighted arithmetic mean across C01-C07 precision, recall, and f1' ||
     value.parameters.runtimeInputMapping !==
-      'official 69-field row projected to the frozen 10-field loopback detector contract; no labels' ||
+      'verified official 69-field UTC-day chunk submitted unchanged; no labels' ||
     !evaluationDatasetMatches(value, expectedSet, source, window) ||
     !evaluationMetricsMatch(value.metrics) ||
-    !evaluationMetricCountsMatch(value) ||
+    !structuralEvaluationMatches(value) ||
     !hasExactKeys(value.provenance, ['generatedAt', 'tool', 'limitations']) ||
     !Number.isFinite(toInstant(value.provenance.generatedAt)) ||
     value.provenance.tool !== 'validation/evaluate.mjs' ||

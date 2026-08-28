@@ -65,6 +65,10 @@ export function computeMetrics({ tp, fp, fn }) {
 }
 
 function normalizedEvent(event, label) {
+  if (
+    typeof event?.id !== 'string' || event.id.trim() === '' ||
+    !ANOMALY_CODES.includes(event.code)
+  ) throw new Error(`${label} event identity is invalid.`)
   const start = toInstant(event.startTime)
   const end = toInstant(event.endTime)
   if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) {
@@ -77,6 +81,13 @@ function normalizedEvent(event, label) {
     throw new Error(`${label} event has an invalid first-detection time: ${event.id}`)
   }
   return { ...event, start, end, firstDetection }
+}
+
+function assertUniqueEventIds(events, label) {
+  const ids = events.map(({ id }) => id)
+  if (new Set(ids).size !== ids.length) {
+    throw new Error(`${label} event IDs must be unique.`)
+  }
 }
 
 function summarizeTiming(values) {
@@ -94,6 +105,8 @@ function greedyMatches({ groundTruth, predictions, graceMinutes, sameCode }) {
     .map((event) => normalizedEvent(event, 'Ground-truth'))
     .sort((left, right) => left.start - right.start || left.id.localeCompare(right.id))
   const predicted = predictions.map((event) => normalizedEvent(event, 'Predicted'))
+  assertUniqueEventIds(truth, 'Ground-truth')
+  assertUniqueEventIds(predicted, 'Predicted')
   const used = new Set()
   const matches = []
   for (const expected of truth) {
@@ -156,10 +169,10 @@ export function matchEvents({ groundTruth, predictions, graceMinutes = 10 }) {
     },
     unmatchedGroundTruth: truth
       .filter((event) => !matches.some(({ expected }) => expected.id === event.id))
-      .map(({ id }) => id),
+      .map(({ id, code }) => ({ id, code })),
     unmatchedPredictions: predicted
       .filter(({ id }) => !used.has(id))
-      .map(({ id }) => id),
+      .map(({ id, code }) => ({ id, code })),
     byCode: ANOMALY_CODES.map((code) => {
       const truthCount = truth.filter((event) => event.code === code).length
       const predictionCount = predicted.filter((event) => event.code === code).length
@@ -179,7 +192,7 @@ export function matchEvents({ groundTruth, predictions, graceMinutes = 10 }) {
 }
 
 export function classifyEvents({ groundTruth, predictions, graceMinutes = 10 }) {
-  const { truth, predicted, matches } = greedyMatches({
+  const { truth, predicted, matches, used } = greedyMatches({
     groundTruth,
     predictions,
     graceMinutes,
@@ -201,12 +214,28 @@ export function classifyEvents({ groundTruth, predictions, graceMinutes = 10 }) 
         (detectionPrecision + detectionRecall),
     classificationAccuracy: matches.length === 0 ? 0 : correctCode / matches.length,
     eventAccuracy: truth.length === 0 ? 0 : correctCode / truth.length,
+    matchedPairs: matches.map(({ expected, predicted: actual }) => ({
+      groundTruthId: expected.id,
+      predictionId: actual.id,
+      groundTruthCode: expected.code,
+      predictionCode: actual.code,
+    })),
+    unmatchedGroundTruth: truth
+      .filter((event) => !matches.some(({ expected }) => expected.id === event.id))
+      .map(({ id, code }) => ({ id, code })),
+    unmatchedPredictions: predicted
+      .filter(({ id }) => !used.has(id))
+      .map(({ id, code }) => ({ id, code })),
   }
 }
 
 export function mergePredictions(predictions, { gapMinutes = 2 } = {}) {
   const gapMs = gapMinutes * 60_000
   const merged = []
+  assertUniqueEventIds(
+    predictions.map((event) => normalizedEvent(event, 'Predicted')),
+    'Predicted',
+  )
   for (const code of ANOMALY_CODES) {
     const ordered = predictions
       .filter((event) => event.code === code)

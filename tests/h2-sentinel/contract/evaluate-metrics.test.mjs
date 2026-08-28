@@ -43,6 +43,8 @@ describe('H2 Sentinel event-matching contract', () => {
     assert.equal(result.tp, 1)
     assert.equal(result.fp, 0)
     assert.equal(result.fn, 1)
+    assert.deepEqual(result.unmatchedGroundTruth, [{ id: 'g2', code: 'C04' }])
+    assert.deepEqual(result.unmatchedPredictions, [])
   })
 
   it('applies the grace window without accepting a wrong anomaly code', () => {
@@ -157,5 +159,28 @@ describe('H2 Sentinel event-matching contract', () => {
     })
     assert.equal(result.detectionF1, 1)
     assert.equal(result.classificationAccuracy, 0)
+    assert.deepEqual(result.matchedPairs, [{
+      groundTruthId: 'g1',
+      predictionId: 'p1',
+      groundTruthCode: 'C03',
+      predictionCode: 'C04',
+    }])
+  })
+
+  it('rejects duplicate ground-truth and prediction identities before matching', () => {
+    const truth = event('duplicate', 'C03', '2026-01-05T10:00:00Z', '2026-01-05T11:00:00Z')
+    const prediction = event('duplicate', 'C03', '2026-01-05T10:00:00Z', '2026-01-05T11:00:00Z')
+    assert.throws(
+      () => matchEvents({ groundTruth: [truth, { ...truth }], predictions: [] }),
+      /Ground-truth event IDs must be unique/,
+    )
+    assert.throws(
+      () => matchEvents({ groundTruth: [], predictions: [prediction, { ...prediction }] }),
+      /Predicted event IDs must be unique/,
+    )
+    assert.throws(
+      () => mergePredictions([prediction, { ...prediction, code: 'C04' }]),
+      /Predicted event IDs must be unique/,
+    )
   })
 })
