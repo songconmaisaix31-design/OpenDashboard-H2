@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { createInterface } from 'node:readline'
 import { Transform } from 'node:stream'
+import { TextDecoder } from 'node:util'
 
 import { serializeCsv } from './csv.mjs'
 import {
@@ -14,10 +15,14 @@ import { toInstant } from './metrics.mjs'
 const DECIMAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
 const MAX_PHYSICAL_LINE_CHARACTERS = 1024 * 1024
 
-function fail(message) {
+function validationError(message) {
   const error = new Error(message)
   error.name = 'OfficialTimeseriesValidationError'
-  throw error
+  return error
+}
+
+function fail(message) {
+  throw validationError(message)
 }
 
 function parseCsvLine(line, rowNumber) {
@@ -108,6 +113,7 @@ async function scanOfficialTimeseries(
     selection = null,
     onChunk,
     onSelectedRow,
+    captureText = false,
     createReadStreamFn = createReadStream,
   } = {},
 ) {
@@ -119,6 +125,10 @@ async function scanOfficialTimeseries(
   ) fail('Official timeseries contract is incomplete.')
 
   const hash = createHash('sha256')
+  const decoder = captureText
+    ? new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
+    : null
+  let capturedText = captureText ? '' : null
   let source
   try {
     source = createReadStreamFn(path)
@@ -128,7 +138,26 @@ async function scanOfficialTimeseries(
   const hashingStream = new Transform({
     transform(chunk, _encoding, callback) {
       hash.update(chunk)
+      if (decoder !== null) {
+        try {
+          capturedText += decoder.decode(chunk, { stream: true })
+        } catch {
+          callback(validationError('Official timeseries must be valid UTF-8 without NUL bytes.'))
+          return
+        }
+      }
       callback(null, chunk)
+    },
+    flush(callback) {
+      if (decoder !== null) {
+        try {
+          capturedText += decoder.decode()
+        } catch {
+          callback(validationError('Official timeseries must be valid UTF-8 without NUL bytes.'))
+          return
+        }
+      }
+      callback()
     },
   })
   source.once('error', (error) => hashingStream.destroy(error))
@@ -282,11 +311,20 @@ async function scanOfficialTimeseries(
       firstUtcDay: selectedFirstUtcDay,
       lastUtcDay: selectedLastUtcDay,
     },
+    ...(capturedText === null ? {} : { text: capturedText }),
   }
 }
 
 export async function inspectOfficialTimeseries(path, contract, dependencies = {}) {
   return (await scanOfficialTimeseries(path, contract, dependencies)).identity
+}
+
+export async function snapshotOfficialTimeseries(path, contract, dependencies = {}) {
+  const result = await scanOfficialTimeseries(path, contract, {
+    ...dependencies,
+    captureText: true,
+  })
+  return { identity: result.identity, text: result.text }
 }
 
 export async function streamOfficialTimeseriesWindow(options, dependencies = {}) {

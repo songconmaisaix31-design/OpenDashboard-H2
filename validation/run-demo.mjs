@@ -194,6 +194,98 @@ function assertArtifactHash(artifact, label) {
   }
 }
 
+function assertRendererProvenance(provenance, fingerprint, rendererVersion, label) {
+  if (
+    provenance?.mode !== 'LIVE_ANALYSIS' ||
+    provenance.datasetFingerprint !== fingerprint ||
+    provenance.rendererVersion !== rendererVersion ||
+    typeof provenance.source !== 'string' || provenance.source.trim() === '' ||
+    typeof provenance.ruleVersion !== 'string' || provenance.ruleVersion.trim() === '' ||
+    typeof provenance.configurationVersion !== 'string' ||
+      provenance.configurationVersion.trim() === '' ||
+    !Array.isArray(provenance.limitations)
+  ) throw new Error(`${label} does not retain actual LIVE_ANALYSIS provenance.`)
+}
+
+export function assertQ09Answer(
+  answer,
+  { runId, eventId, sourceFilename, fingerprint, displayLabel },
+) {
+  const report = answer?.generatedReport
+  const descriptor = report?.descriptor
+  if (
+    answer?.schemaVersion !== 1 ||
+    answer.questionId !== 'Q09' ||
+    answer.runId !== runId ||
+    answer.eventId !== eventId ||
+    answer.mode !== 'DETERMINISTIC_TEMPLATE' ||
+    answer.refusedControlClaim !== true ||
+    descriptor?.schemaVersion !== 1 ||
+    descriptor.runId !== runId ||
+    descriptor.eventId !== eventId ||
+    descriptor.kind !== 'single_event_diagnosis' ||
+    descriptor.format !== 'html' ||
+    descriptor.status !== 'ready' ||
+    report.mediaType !== 'text/html' ||
+    typeof descriptor.reportId !== 'string' || descriptor.reportId.trim() === '' ||
+    typeof descriptor.filename !== 'string' || !descriptor.filename.endsWith('-diagnosis.html')
+  ) throw new Error('Q09 answer and single-event diagnosis identity do not match the measured run.')
+  assertArtifactHash(report, 'Q09 diagnosis report')
+  assertRendererProvenance(
+    answer.provenance,
+    fingerprint,
+    'deterministic-assistant-p1-v1',
+    'Q09 answer provenance',
+  )
+  assertRendererProvenance(
+    descriptor.provenance,
+    fingerprint,
+    'jinja-report-p1-v1',
+    'Q09 report provenance',
+  )
+  const reportCitations = Array.isArray(answer.citations)
+    ? answer.citations.filter(({ sourceType }) => sourceType === 'report')
+    : []
+  if (
+    reportCitations.length !== 1 ||
+    reportCitations[0].sourceId !== descriptor.reportId ||
+    reportCitations[0].eventId !== eventId ||
+    !Array.isArray(answer.sections) ||
+    !answer.sections.some((section) =>
+      Array.isArray(section.citationIds) &&
+      section.citationIds.includes(reportCitations[0].citationId))
+  ) throw new Error('Q09 must contain exactly one matching report citation.')
+  if (
+    !answer.sections.some(({ text }) =>
+      typeof text === 'string' && /人工(?:确认|决定)|人工.*(?:确认|决定)/.test(text)) ||
+    typeof descriptor.safetyDisclaimer !== 'string' ||
+    !descriptor.safetyDisclaimer.includes('所有操作建议均须人工确认') ||
+    !report.content.includes('所有操作建议均须人工确认')
+  ) throw new Error('Q09 must retain the required human-confirmation text.')
+  for (const requiredBinding of [eventId, sourceFilename, fingerprint, displayLabel]) {
+    if (!report.content.includes(requiredBinding)) {
+      throw new Error('Q09 diagnosis report does not bind the selected event and actual service provenance.')
+    }
+  }
+  return {
+    schemaVersion: answer.schemaVersion,
+    answerId: answer.answerId,
+    runId: answer.runId,
+    questionId: answer.questionId,
+    mode: answer.mode,
+    generatedAt: answer.generatedAt,
+    eventId: answer.eventId,
+    sections: answer.sections,
+    citations: answer.citations,
+    refusedControlClaim: answer.refusedControlClaim,
+    provenance: answer.provenance,
+    generatedReport: {
+      descriptor,
+      mediaType: report.mediaType,
+    },
+  }
+}
+
 function overlapsSelectedEvent(event, selectedEvent) {
   const eventStart = toInstant(event.startTime)
   const eventEnd = toInstant(event.endTime)
@@ -296,20 +388,13 @@ async function runOnce({ sequence, slice, outputDirectory }) {
         },
       ),
     )
-    if (answer.mode !== 'DETERMINISTIC_TEMPLATE' || answer.eventId !== candidate.eventId) {
-      throw new Error('Q09 did not return the deterministic selected-event answer.')
-    }
-    assertArtifactHash(answer.generatedReport, 'Q09 diagnosis report')
-    for (const requiredBinding of [
-      candidate.eventId,
-      importedDataset.sourceFilename,
-      analysisRun.fingerprint,
-      'LIVE_ANALYSIS · 验证集切片',
-    ]) {
-      if (!answer.generatedReport.content.includes(requiredBinding)) {
-        throw new Error('Q09 diagnosis report does not bind the selected event and actual service provenance.')
-      }
-    }
+    const q09 = assertQ09Answer(answer, {
+      runId: analysis.runId,
+      eventId: candidate.eventId,
+      sourceFilename: importedDataset.sourceFilename,
+      fingerprint: analysisRun.fingerprint,
+      displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+    })
 
     const artifacts = await measuredStage(stages, 'artifact_export', async () => {
       const audit = await requestEnvelope(
@@ -357,6 +442,7 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       stageDurations: stages,
       importedDataset,
       analysisRun,
+      q09,
       publicLabelsUsedAsDetectorInput: false,
       artifacts,
     }

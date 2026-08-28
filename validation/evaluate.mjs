@@ -116,7 +116,7 @@ function loadGroundTruth(officialData, contract) {
   return { bytes, events, identity }
 }
 
-function labelsInWindow(events, chunks) {
+export function labelsInWindow(events, chunks) {
   if (chunks.length === 0) return []
   const start = toInstant(`${chunks[0].day}T00:00:00Z`)
   const end = toInstant(`${chunks.at(-1).day}T23:59:59.999Z`)
@@ -217,6 +217,16 @@ function codeCounts(events) {
   )
 }
 
+function macroMetrics(byCode) {
+  return Object.fromEntries(
+    ['precision', 'recall', 'f1'].map((metric) => [
+      metric,
+      ANOMALY_CODES.reduce((total, code) => total + byCode[code][metric], 0) /
+        ANOMALY_CODES.length,
+    ]),
+  )
+}
+
 export async function evaluateOfficialData(options) {
   const candidate = currentCandidate()
   if (!candidate.trackedTreeClean) throw new Error('Official evaluation requires a clean working tree.')
@@ -270,6 +280,9 @@ export async function evaluateOfficialData(options) {
     predictions: merged,
     graceMinutes: options.graceMinutes,
   })
+  const byCodeMetrics = Object.fromEntries(
+    matching.byCode.map((entry) => [entry.code, entry]),
+  )
   const completedCandidate = currentCandidate()
   if (completedCandidate.commit !== candidate.commit || !completedCandidate.trackedTreeClean) {
     throw new Error('Candidate state changed during official evaluation.')
@@ -291,6 +304,8 @@ export async function evaluateOfficialData(options) {
       chunking: 'UTC calendar day; adjacent same-code predictions merge across boundaries',
       firstDetectionDelayMinutes: 'prediction first_detection_time minus ground-truth start; negative means early warning',
       boundaryErrorMinutes: 'prediction boundary minus corresponding ground-truth boundary',
+      zeroDenominatorMetrics: 'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0',
+      macroAveraging: 'unweighted arithmetic mean across C01-C07 precision, recall, and f1',
     },
     dataset: {
       source: timeseriesIdentity,
@@ -328,7 +343,8 @@ export async function evaluateOfficialData(options) {
       },
       timing: matching.timing,
       classification,
-      byCode: Object.fromEntries(matching.byCode.map((entry) => [entry.code, entry])),
+      macro: macroMetrics(byCodeMetrics),
+      byCode: byCodeMetrics,
     },
     matches: matching.matches,
     unmatchedGroundTruth: matching.unmatchedGroundTruth,

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { assertExactCleanCandidate, currentCandidate } from './lib/candidate.mjs'
 import { ANOMALY_CODES } from './lib/official-contract.mjs'
 import { EVALUATION_WINDOWS, OFFICIAL_SOURCES, sha256 } from './lib/official-sources.mjs'
-import { toInstant } from './lib/metrics.mjs'
+import { computeMetrics, toInstant } from './lib/metrics.mjs'
 import {
   createGeneratedRunDirectory,
   ensureIgnoredOutputPath,
@@ -236,10 +236,15 @@ function evaluationMetricsMatch(metrics) {
   const nonNegativeInteger = (value) => Number.isSafeInteger(value) && value >= 0
   const unitInterval = (value) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
-  const eventMetricsMatch = (value, keys) =>
-    hasExactKeys(value, keys) &&
-    ['tp', 'fp', 'fn'].every((key) => nonNegativeInteger(value[key])) &&
-    ['precision', 'recall', 'f1'].every((key) => unitInterval(value[key]))
+  const eventMetricsMatch = (value, keys) => {
+    if (
+      !hasExactKeys(value, keys) ||
+      !['tp', 'fp', 'fn'].every((key) => nonNegativeInteger(value[key])) ||
+      !['precision', 'recall', 'f1'].every((key) => unitInterval(value[key]))
+    ) return false
+    const derived = computeMetrics(value)
+    return ['precision', 'recall', 'f1'].every((key) => value[key] === derived[key])
+  }
   const timingSummaryMatches = (summary) => {
     if (!hasExactKeys(summary, ['count', 'meanMinutes', 'meanAbsoluteMinutes']) ||
       !nonNegativeInteger(summary.count)) return false
@@ -252,7 +257,7 @@ function evaluationMetricsMatch(metrics) {
       summary.meanAbsoluteMinutes >= Math.abs(summary.meanMinutes)
   }
   if (
-    !hasExactKeys(metrics, ['overall', 'timing', 'classification', 'byCode']) ||
+    !hasExactKeys(metrics, ['overall', 'timing', 'classification', 'macro', 'byCode']) ||
     !eventMetricsMatch(metrics.overall, ['tp', 'fp', 'fn', 'precision', 'recall', 'f1']) ||
     !hasExactKeys(
       metrics.classification,
@@ -273,21 +278,38 @@ function evaluationMetricsMatch(metrics) {
       metrics.timing,
       ['firstDetectionDelay', 'startBoundaryError', 'endBoundaryError'],
     ) ||
+    !hasExactKeys(metrics.macro, ['precision', 'recall', 'f1']) ||
+    !['precision', 'recall', 'f1'].every((key) => unitInterval(metrics.macro[key])) ||
     !hasCodeKeys(metrics.byCode)
   ) return false
-  return Object.values(metrics.timing).every(timingSummaryMatches) &&
-    ANOMALY_CODES.every((code) =>
+  const codeMetricsMatch = ANOMALY_CODES.every((code) =>
       eventMetricsMatch(
         metrics.byCode[code],
         ['code', 'groundTruth', 'predictions', 'tp', 'fp', 'fn', 'precision', 'recall', 'f1'],
       ) && metrics.byCode[code].code === code &&
       nonNegativeInteger(metrics.byCode[code].groundTruth) &&
-      nonNegativeInteger(metrics.byCode[code].predictions),
-    )
+      nonNegativeInteger(metrics.byCode[code].predictions))
+  if (!Object.values(metrics.timing).every(timingSummaryMatches) || !codeMetricsMatch) return false
+  return ['precision', 'recall', 'f1'].every((metric) =>
+    metrics.macro[metric] === ANOMALY_CODES.reduce(
+      (total, code) => total + metrics.byCode[code][metric],
+      0,
+    ) / ANOMALY_CODES.length,
+  )
 }
 
 function evaluationMetricCountsMatch(value) {
   const { overall, timing, classification, byCode } = value.metrics
+  const classificationPrecision = value.predictions.mergedCount === 0
+    ? 0
+    : classification.matches / value.predictions.mergedCount
+  const classificationRecall = value.groundTruth.count === 0
+    ? 0
+    : classification.matches / value.groundTruth.count
+  const classificationF1 = classificationPrecision + classificationRecall === 0
+    ? 0
+    : (2 * classificationPrecision * classificationRecall) /
+      (classificationPrecision + classificationRecall)
   return (
     overall.tp + overall.fn === value.groundTruth.count &&
     overall.tp + overall.fp === value.predictions.mergedCount &&
@@ -297,6 +319,15 @@ function evaluationMetricCountsMatch(value) {
     classification.matches <= Math.min(
       value.groundTruth.count,
       value.predictions.mergedCount,
+    ) &&
+    classification.detectionPrecision === classificationPrecision &&
+    classification.detectionRecall === classificationRecall &&
+    classification.detectionF1 === classificationF1 &&
+    classification.classificationAccuracy === (
+      classification.matches === 0 ? 0 : classification.correctCode / classification.matches
+    ) &&
+    classification.eventAccuracy === (
+      value.groundTruth.count === 0 ? 0 : classification.correctCode / value.groundTruth.count
     ) &&
     ANOMALY_CODES.every((code) =>
       byCode[code].groundTruth === value.groundTruth.byCode[code] &&
@@ -328,6 +359,7 @@ export function assertEvaluationIdentity(value, expectedSet, expectedCommit) {
       [
         'graceMinutes', 'mergeGapMinutes', 'limitDays', 'minimumUtcDay', 'matching',
         'chunking', 'firstDetectionDelayMinutes', 'boundaryErrorMinutes',
+        'zeroDenominatorMetrics', 'macroAveraging',
       ],
     ) ||
     !Number.isFinite(value.parameters.graceMinutes) ||
@@ -342,6 +374,10 @@ export function assertEvaluationIdentity(value, expectedSet, expectedCommit) {
       'prediction first_detection_time minus ground-truth start; negative means early warning' ||
     value.parameters.boundaryErrorMinutes !==
       'prediction boundary minus corresponding ground-truth boundary' ||
+    value.parameters.zeroDenominatorMetrics !==
+      'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0' ||
+    value.parameters.macroAveraging !==
+      'unweighted arithmetic mean across C01-C07 precision, recall, and f1' ||
     !evaluationDatasetMatches(value, expectedSet, source, window) ||
     !evaluationMetricsMatch(value.metrics) ||
     !evaluationMetricCountsMatch(value) ||

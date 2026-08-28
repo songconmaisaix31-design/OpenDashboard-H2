@@ -18,6 +18,7 @@ import {
 } from '../../../validation/lib/submission.mjs'
 import { prepareValidationSlice } from '../scripts/prepare-validation-slice.mjs'
 import { validateDemoReceipt } from '../scripts/validate-demo-receipt.mjs'
+import { assertQ09Answer } from '../../../validation/run-demo.mjs'
 
 const directory = resolve(fileURLToPath(new URL('.', import.meta.url)))
 const repositoryRoot = resolve(directory, '../../..')
@@ -270,6 +271,100 @@ function runtimeProvenance(fingerprint) {
   }
 }
 
+function rendererProvenance(fingerprint, rendererVersion) {
+  return {
+    mode: 'LIVE_ANALYSIS',
+    source: 'test-fixture-import',
+    generatedAt: '2026-01-05T10:40:00Z',
+    datasetFingerprint: fingerprint,
+    ruleVersion: 'test-rule-v1',
+    configurationVersion: 'test-configuration-v1',
+    rendererVersion,
+    limitations: ['Self-consistent test fixture only.'],
+  }
+}
+
+function q09Binding(runId, eventId, fingerprint, contentHash) {
+  const reportId = `report-single_event_diagnosis-${eventId}`
+  const reportCitationId = 'citation-Q09-generated_report-2'
+  return {
+    schemaVersion: 1,
+    answerId: `answer-Q09-${eventId}`,
+    runId,
+    questionId: 'Q09',
+    mode: 'DETERMINISTIC_TEMPLATE',
+    generatedAt: '2026-01-05T10:40:00Z',
+    eventId,
+    sections: [
+      {
+        sectionId: 'report_scope',
+        claimKind: 'fact',
+        text: `已针对当前运行事件 ${eventId} 生成单事件诊断报告。`,
+        citationIds: ['citation-Q09-report_scope-1'],
+      },
+      {
+        sectionId: 'generated_report',
+        claimKind: 'recommendation',
+        text: '查看报告后仍须由人工决定后续处置。',
+        citationIds: [reportCitationId],
+      },
+    ],
+    citations: [
+      {
+        citationId: 'citation-Q09-report_scope-1',
+        claimKind: 'fact',
+        sourceType: 'event',
+        sourceId: eventId,
+        eventId,
+      },
+      {
+        citationId: reportCitationId,
+        claimKind: 'recommendation',
+        sourceType: 'report',
+        sourceId: reportId,
+        eventId,
+      },
+    ],
+    refusedControlClaim: true,
+    provenance: rendererProvenance(fingerprint, 'deterministic-assistant-p1-v1'),
+    generatedReport: {
+      descriptor: {
+        schemaVersion: 1,
+        reportId,
+        runId,
+        kind: 'single_event_diagnosis',
+        format: 'html',
+        status: 'ready',
+        generatedAt: '2026-01-05T10:40:00Z',
+        filename: `${eventId}-diagnosis.html`,
+        contentHash,
+        eventId,
+        warnings: [],
+        safetyDisclaimer: '本应用不下发设备指令；所有操作建议均须人工确认。',
+        provenance: rendererProvenance(fingerprint, 'jinja-report-p1-v1'),
+      },
+      mediaType: 'text/html',
+    },
+  }
+}
+
+function runnerQ09Answer(runId, eventId, fingerprint, displayLabel) {
+  const content = [
+    '<!doctype html><html lang="zh-CN"><body>',
+    `<p>${eventId} · validation-slice.csv · ${fingerprint} · ${displayLabel}</p>`,
+    '<p>所有操作建议均须人工确认。</p>',
+    '</body></html>',
+  ].join('')
+  const answer = q09Binding(runId, eventId, fingerprint, sha256(content))
+  return {
+    ...answer,
+    generatedReport: {
+      ...answer.generatedReport,
+      content,
+    },
+  }
+}
+
 function measuredRun({
   sequence,
   runId,
@@ -318,6 +413,12 @@ function measuredRun({
       timeRange,
       provenance: runtimeProvenance(detectorFingerprint),
     },
+    q09: q09Binding(
+      runId,
+      analyzedEventId,
+      detectorFingerprint,
+      artifacts.diagnosisReport.sha256,
+    ),
     publicLabelsUsedAsDetectorInput: false,
     artifacts,
   }
@@ -427,6 +528,14 @@ async function runReceiptValidator(fixture, receiptPath = fixture.receiptPath) {
   } catch (error) {
     return { status: 1, stdout: '', stderr: error.message }
   }
+}
+
+async function runReceiptMutation(fixture, name, mutate) {
+  const receipt = structuredClone(fixture.receipt)
+  await mutate(receipt)
+  const path = join(fixture.artifactsRoot, `${name}.json`)
+  await writeFile(path, `${JSON.stringify(receipt, null, 2)}\n`, 'utf8')
+  return runReceiptValidator(fixture, path)
 }
 
 async function cleanup(fixture) {
@@ -583,6 +692,60 @@ describe('P1 public-validation slice preparation', () => {
 })
 
 describe('P1 measured demo receipt validation', () => {
+  it('runner rejects each Q09 identity, report, citation, provenance, and safety drift', () => {
+    const expected = {
+      runId: 'run-validation',
+      eventId: 'detected-c04',
+      sourceFilename: 'validation-slice.csv',
+      fingerprint: `sha256:${'a'.repeat(64)}`,
+      displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+    }
+    const valid = runnerQ09Answer(
+      expected.runId,
+      expected.eventId,
+      expected.fingerprint,
+      expected.displayLabel,
+    )
+    assert.equal(assertQ09Answer(valid, expected).questionId, 'Q09')
+
+    const cases = [
+      (answer) => { answer.questionId = 'Q08' },
+      (answer) => { answer.runId = 'different-run' },
+      (answer) => { answer.eventId = 'different-event' },
+      (answer) => { answer.generatedReport.descriptor.kind = 'period_summary' },
+      (answer) => { answer.generatedReport.mediaType = 'application/json' },
+      (answer) => { answer.generatedReport.descriptor.contentHash = `sha256:${'0'.repeat(64)}` },
+      (answer) => {
+        const citation = structuredClone(answer.citations[1])
+        citation.citationId = 'citation-Q09-extra-report'
+        answer.citations.push(citation)
+      },
+      (answer) => { answer.provenance.rendererVersion = 'different-renderer' },
+      (answer) => { answer.generatedReport.descriptor.provenance.rendererVersion = 'different-renderer' },
+      (answer) => {
+        answer.sections[1].text = '报告已生成。'
+        answer.generatedReport.descriptor.safetyDisclaimer = '建议仅供参考。'
+        answer.generatedReport.content = answer.generatedReport.content.replace(
+          '所有操作建议均须人工确认',
+          '建议仅供参考',
+        )
+        answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
+      },
+      (answer) => {
+        answer.generatedReport.content = answer.generatedReport.content.replace(
+          expected.displayLabel,
+          'unverified-scope',
+        )
+        answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
+      },
+    ]
+    for (const mutate of cases) {
+      const answer = structuredClone(valid)
+      mutate(answer)
+      assert.throws(() => assertQ09Answer(answer, expected))
+    }
+  })
+
   it('accepts two consecutive self-consistent fixture-contract runs under 180 seconds', async () => {
     const fixture = await createReceiptFixture('receipt-success')
     try {
@@ -691,8 +854,10 @@ describe('P1 measured demo receipt validation', () => {
       )
       await writeFile(diagnosisPath, unboundDiagnosis, 'utf8')
       const unboundDiagnosisReceipt = structuredClone(fixture.receipt)
-      unboundDiagnosisReceipt.runs[0].artifacts.diagnosisReport.sha256 =
-        sha256(unboundDiagnosis)
+      const unboundDiagnosisHash = sha256(unboundDiagnosis)
+      unboundDiagnosisReceipt.runs[0].artifacts.diagnosisReport.sha256 = unboundDiagnosisHash
+      unboundDiagnosisReceipt.runs[0].q09.generatedReport.descriptor.contentHash =
+        unboundDiagnosisHash
       const unboundDiagnosisReceiptPath = join(
         fixture.artifactsRoot,
         'unbound-diagnosis-receipt.json',
@@ -743,6 +908,172 @@ describe('P1 measured demo receipt validation', () => {
       const driftResult = await runReceiptValidator(fixture, driftPath)
       assert.equal(driftResult.status, 1)
       assert.match(driftResult.stderr, /does not match the artifact bytes/)
+    } finally {
+      await cleanup(fixture)
+    }
+  })
+
+  it('rejects each Q09 answer, report, citation, provenance, and safety-text drift', async () => {
+    const fixture = await createReceiptFixture('receipt-q09-failure')
+    const receiptOnlyCases = [
+      {
+        name: 'q09-question-drift',
+        mutate: (receipt) => { receipt.runs[0].q09.questionId = 'Q08' },
+        message: /exact Q09, runId, eventId/,
+      },
+      {
+        name: 'q09-run-drift',
+        mutate: (receipt) => { receipt.runs[0].q09.runId = 'different-run' },
+        message: /exact Q09, runId, eventId/,
+      },
+      {
+        name: 'q09-event-drift',
+        mutate: (receipt) => { receipt.runs[0].q09.eventId = 'different-event' },
+        message: /exact Q09, runId, eventId/,
+      },
+      {
+        name: 'q09-descriptor-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.descriptor.kind = 'period_summary'
+        },
+        message: /report descriptor or content hash/,
+      },
+      {
+        name: 'q09-media-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.mediaType = 'application/json'
+        },
+        message: /mediaType must be text\/html/,
+      },
+      {
+        name: 'q09-content-hash-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.descriptor.contentHash =
+            `sha256:${'0'.repeat(64)}`
+        },
+        message: /report descriptor or content hash/,
+      },
+      {
+        name: 'q09-extra-report-citation',
+        mutate: (receipt) => {
+          const citation = structuredClone(receipt.runs[0].q09.citations[1])
+          citation.citationId = 'citation-Q09-generated_report-extra'
+          receipt.runs[0].q09.citations.push(citation)
+          receipt.runs[0].q09.sections[1].citationIds.push(citation.citationId)
+        },
+        message: /exactly one matching report citation/,
+      },
+      {
+        name: 'q09-report-citation-mismatch',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.citations[1].sourceId = 'different-report'
+        },
+        message: /exactly one matching report citation/,
+      },
+      {
+        name: 'q09-answer-provenance-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.provenance.datasetFingerprint = `sha256:${'1'.repeat(64)}`
+        },
+        message: /LIVE_ANALYSIS renderer provenance/,
+      },
+      {
+        name: 'q09-report-provenance-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.descriptor.provenance.rendererVersion =
+            'different-renderer'
+        },
+        message: /LIVE_ANALYSIS renderer provenance/,
+      },
+      {
+        name: 'q09-answer-safety-text-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.sections[1].text = '报告已生成。'
+        },
+        message: /human-confirmation answer text/,
+      },
+    ]
+    try {
+      for (const testCase of receiptOnlyCases) {
+        const result = await runReceiptMutation(fixture, testCase.name, testCase.mutate)
+        assert.equal(result.status, 1, testCase.name)
+        assert.match(result.stderr, testCase.message, testCase.name)
+      }
+
+      const diagnosisPath = join(fixture.artifactsRoot, 'run-1/diagnosis.html')
+      const diagnosis = await readFile(diagnosisPath, 'utf8')
+      for (const testCase of [
+        {
+          name: 'q09-report-provenance-text-drift',
+          content: diagnosis.replace(
+            fixture.sourceContract.verifiedScope.displayLabel,
+            'unverified-scope',
+          ),
+          message: /selected event and actual source provenance/,
+        },
+        {
+          name: 'q09-report-safety-text-drift',
+          content: diagnosis.replace('所有操作建议均须人工确认', '建议仅供参考'),
+          message: /human-confirmation safety boundary/,
+        },
+      ]) {
+        await writeFile(diagnosisPath, testCase.content, 'utf8')
+        const result = await runReceiptMutation(fixture, testCase.name, (receipt) => {
+          const contentHash = sha256(testCase.content)
+          receipt.runs[0].artifacts.diagnosisReport.sha256 = contentHash
+          receipt.runs[0].q09.generatedReport.descriptor.contentHash = contentHash
+        })
+        assert.equal(result.status, 1, testCase.name)
+        assert.match(result.stderr, testCase.message, testCase.name)
+        await writeFile(diagnosisPath, diagnosis, 'utf8')
+      }
+    } finally {
+      await cleanup(fixture)
+    }
+  })
+
+  it('rejects non-canonical, reversed, and manifest-mismatched runtime ranges', async () => {
+    const fixture = await createReceiptFixture('receipt-range-failure')
+    const cases = [
+      {
+        name: 'import-noncanonical-range',
+        mutate: (receipt) => {
+          receipt.runs[0].importedDataset.timeRange.startTime =
+            '2026-01-05T09:30:00+00:00'
+        },
+        message: /canonical ISO UTC calendar timestamp/,
+      },
+      {
+        name: 'import-reversed-range',
+        mutate: (receipt) => {
+          receipt.runs[0].importedDataset.timeRange.startTime =
+            '2026-01-05T10:41:00Z'
+        },
+        message: /startTime must not follow endTime/,
+      },
+      {
+        name: 'import-manifest-range-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].importedDataset.timeRange.startTime =
+            '2026-01-05T09:31:00Z'
+        },
+        message: /manifest observed and verified source ranges/,
+      },
+      {
+        name: 'analysis-manifest-range-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].analysisRun.timeRange.endTime =
+            '2026-01-05T10:39:00Z'
+        },
+        message: /manifest observed and verified source ranges/,
+      },
+    ]
+    try {
+      for (const testCase of cases) {
+        const result = await runReceiptMutation(fixture, testCase.name, testCase.mutate)
+        assert.equal(result.status, 1, testCase.name)
+        assert.match(result.stderr, testCase.message, testCase.name)
+      }
     } finally {
       await cleanup(fixture)
     }

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { validateSubmissionText } from '../../../validation/check-submission.mjs'
 import { assertOfficialTimeseriesColumns } from '../../../validation/lib/official-contract.mjs'
 import { OFFICIAL_SOURCES } from '../../../validation/lib/official-sources.mjs'
-import { toInstant } from '../../../validation/lib/metrics.mjs'
+import { toCanonicalUtcInstant, toInstant } from '../../../validation/lib/metrics.mjs'
 import {
   REQUIRED_TIMESERIES_COLUMNS,
   isLabelColumn,
@@ -90,10 +90,10 @@ function parseArguments(argv) {
 function printUsage() {
   console.log([
     'Usage:',
-    '  node tests/h2-sentinel/scripts/validate-demo-receipt.mjs \\',
-    '    --receipt <demo-receipt.json> \\',
-    '    --manifest <validation-slice-manifest.json> \\',
-    '    --artifacts-root <run-artifact-directory> \\',
+    '  node tests/h2-sentinel/scripts/validate-demo-receipt.mjs `',
+    '    --receipt <demo-receipt.json> `',
+    '    --manifest <validation-slice-manifest.json> `',
+    '    --artifacts-root <run-artifact-directory> `',
     '    --expected-commit <40-character-commit-sha>',
   ].join('\n'))
 }
@@ -143,6 +143,23 @@ function parseTimestamp(value, label) {
   const milliseconds = toInstant(value)
   if (!Number.isFinite(milliseconds)) fail(`${label} must be a valid ISO-8601 timestamp.`)
   return milliseconds
+}
+
+function parseCanonicalTimestamp(value, label) {
+  assertString(value, label)
+  const milliseconds = toCanonicalUtcInstant(value)
+  if (!Number.isFinite(milliseconds)) {
+    fail(`${label} must be a canonical ISO UTC calendar timestamp.`)
+  }
+  return milliseconds
+}
+
+function validateCanonicalRange(range, label) {
+  assertExactKeys(range, ['startTime', 'endTime'], label)
+  const start = parseCanonicalTimestamp(range.startTime, `${label} startTime`)
+  const end = parseCanonicalTimestamp(range.endTime, `${label} endTime`)
+  if (start > end) fail(`${label} startTime must not follow endTime.`)
+  return { start, end }
 }
 
 function isWithin(parent, candidate) {
@@ -287,14 +304,22 @@ function validateManifest(manifest, sourceContract) {
       ([code, count]) => manifest.sources.labels.byCode?.[code] !== count,
     )
   ) fail('Slice manifest does not match the verified source identity.')
+  const sourceRange = validateCanonicalRange({
+    startTime: manifest.sources.timeseries.firstTimestamp,
+    endTime: manifest.sources.timeseries.lastTimestamp,
+  }, 'Slice timeseries source range')
+  validateCanonicalRange({
+    startTime: manifest.sources.labels.firstStart,
+    endTime: manifest.sources.labels.lastEnd,
+  }, 'Slice label source range')
   assertExactKeys(manifest.selectedEvent, ['eventId', 'code', 'startTime', 'endTime'], 'Slice selected event')
   assertString(manifest.selectedEvent.eventId, 'Slice selected event ID')
   if (manifest.selectedEvent.code !== 'C04') fail('Slice selected event must be C04.')
-  const selectedStart = parseTimestamp(
+  const selectedStart = parseCanonicalTimestamp(
     manifest.selectedEvent.startTime,
     'Slice selected event startTime',
   )
-  const selectedEnd = parseTimestamp(
+  const selectedEnd = parseCanonicalTimestamp(
     manifest.selectedEvent.endTime,
     'Slice selected event endTime',
   )
@@ -315,37 +340,23 @@ function validateManifest(manifest, sourceContract) {
   if (manifest.slice.filename !== 'validation-slice.csv') {
     fail('Slice filename must be validation-slice.csv.')
   }
-  assertExactKeys(
+  const { start: requestedStart, end: requestedEnd } = validateCanonicalRange(
     manifest.slice.requestedTimeRange,
-    ['startTime', 'endTime'],
     'Slice requested time range',
   )
-  assertExactKeys(
+  const observedRange = validateCanonicalRange(
     manifest.slice.observedTimeRange,
-    ['startTime', 'endTime'],
     'Slice observed time range',
   )
-  const requestedStart = parseTimestamp(
-    manifest.slice.requestedTimeRange.startTime,
-    'Slice requested startTime',
-  )
-  const requestedEnd = parseTimestamp(
-    manifest.slice.requestedTimeRange.endTime,
-    'Slice requested endTime',
-  )
-  const observedStart = parseTimestamp(
-    manifest.slice.observedTimeRange.startTime,
-    'Slice observed startTime',
-  )
-  const observedEnd = parseTimestamp(
-    manifest.slice.observedTimeRange.endTime,
-    'Slice observed endTime',
-  )
+  const { start: observedStart, end: observedEnd } = observedRange
   if (requestedStart !== selectedStart - PADDING_MS || requestedEnd !== selectedEnd + PADDING_MS) {
     fail('Slice requested time range must pad the selected event by exactly 30 minutes.')
   }
   if (observedStart < requestedStart || observedEnd > requestedEnd || observedEnd < observedStart) {
     fail('Slice observed time range must be ordered and remain inside the requested range.')
+  }
+  if (observedStart < sourceRange.start || observedEnd > sourceRange.end) {
+    fail('Slice observed time range must remain inside the verified source range.')
   }
   if (!Number.isInteger(manifest.slice.rowCount) || manifest.slice.rowCount < 2) {
     fail('Slice manifest rowCount must be an integer of at least two.')
@@ -376,6 +387,7 @@ function validateManifest(manifest, sourceContract) {
     JSON.stringify(overlappingIdentities) !==
       JSON.stringify(sourceContract.directedDemo?.overlappingLabels)
   ) fail('Selected event and overlapping labels do not match the independent source contract.')
+  return { sourceRange, observedRange }
 }
 
 function validateDetectorInput(bytes, manifest) {
@@ -496,8 +508,10 @@ function validateReceiptShape(receipt, verifiedScope) {
   assertExactKeys(receipt.selectedEvent, ['eventId', 'code', 'startTime', 'endTime'], 'Demo selected event')
   if (receipt.selectedEvent.code !== 'C04') fail('Demo selected event must be C04.')
   assertString(receipt.selectedEvent.eventId, 'Demo selected event ID')
-  parseTimestamp(receipt.selectedEvent.startTime, 'Demo selected event startTime')
-  parseTimestamp(receipt.selectedEvent.endTime, 'Demo selected event endTime')
+  validateCanonicalRange({
+    startTime: receipt.selectedEvent.startTime,
+    endTime: receipt.selectedEvent.endTime,
+  }, 'Demo selected event range')
   assertExactKeys(
     receipt.claims,
     [
@@ -632,6 +646,159 @@ function validateLiveProvenance(provenance, label, fingerprint) {
   if (provenance.modelVersion !== null) assertString(provenance.modelVersion, `${label} modelVersion`)
 }
 
+function validateRendererProvenance(provenance, label, fingerprint, rendererVersion) {
+  assertExactKeys(
+    provenance,
+    [
+      'mode', 'source', 'generatedAt', 'datasetFingerprint', 'ruleVersion',
+      'configurationVersion', 'rendererVersion', 'limitations',
+    ],
+    label,
+  )
+  if (
+    provenance.mode !== 'LIVE_ANALYSIS' ||
+    provenance.datasetFingerprint !== fingerprint ||
+    provenance.rendererVersion !== rendererVersion
+  ) fail(`${label} must retain complete actual LIVE_ANALYSIS renderer provenance.`)
+  assertString(provenance.source, `${label} source`)
+  assertString(provenance.ruleVersion, `${label} ruleVersion`)
+  assertString(provenance.configurationVersion, `${label} configurationVersion`)
+  parseTimestamp(provenance.generatedAt, `${label} generatedAt`)
+  if (!Array.isArray(provenance.limitations) || provenance.limitations.length === 0) {
+    fail(`${label} must retain non-empty limitations.`)
+  }
+  provenance.limitations.forEach((entry) => assertString(entry, `${label} limitation`, 512))
+}
+
+function validateQ09Binding(q09, expected, label) {
+  assertExactKeys(
+    q09,
+    [
+      'schemaVersion', 'answerId', 'runId', 'questionId', 'mode', 'generatedAt',
+      'eventId', 'sections', 'citations', 'refusedControlClaim', 'provenance',
+      'generatedReport',
+    ],
+    label,
+  )
+  if (
+    q09.schemaVersion !== 1 || q09.questionId !== 'Q09' ||
+    q09.runId !== expected.runId || q09.eventId !== expected.eventId ||
+    q09.mode !== 'DETERMINISTIC_TEMPLATE' || q09.refusedControlClaim !== true
+  ) fail(`${label} must bind exact Q09, runId, eventId, and deterministic mode.`)
+  assertString(q09.answerId, `${label} answerId`)
+  parseTimestamp(q09.generatedAt, `${label} generatedAt`)
+  validateRendererProvenance(
+    q09.provenance,
+    `${label} answer provenance`,
+    expected.fingerprint,
+    'deterministic-assistant-p1-v1',
+  )
+
+  if (!Array.isArray(q09.sections) || q09.sections.length === 0) {
+    fail(`${label} must retain answer sections.`)
+  }
+  if (!Array.isArray(q09.citations) || q09.citations.length === 0) {
+    fail(`${label} must retain answer citations.`)
+  }
+  const citationById = new Map()
+  for (const citation of q09.citations) {
+    const keys = citation?.eventId === undefined
+      ? ['citationId', 'claimKind', 'sourceType', 'sourceId']
+      : ['citationId', 'claimKind', 'sourceType', 'sourceId', 'eventId']
+    assertExactKeys(citation, keys, `${label} citation`)
+    assertString(citation.citationId, `${label} citationId`)
+    assertString(citation.sourceId, `${label} citation sourceId`)
+    if (
+      !['fact', 'calculation', 'inference', 'recommendation'].includes(citation.claimKind) ||
+      ![
+        'event', 'evidence', 'constraint', 'variable', 'knowledge_base', 'report',
+      ].includes(citation.sourceType)
+    ) fail(`${label} citation vocabulary is invalid.`)
+    if (citationById.has(citation.citationId)) fail(`${label} citation IDs must be unique.`)
+    citationById.set(citation.citationId, citation)
+  }
+  const referencedCitationIds = new Set()
+  for (const section of q09.sections) {
+    assertExactKeys(
+      section,
+      ['sectionId', 'claimKind', 'text', 'citationIds'],
+      `${label} section`,
+    )
+    assertString(section.sectionId, `${label} sectionId`)
+    assertString(section.text, `${label} section text`, 1_024)
+    if (!['fact', 'calculation', 'inference', 'recommendation'].includes(section.claimKind)) {
+      fail(`${label} section claim kind is invalid.`)
+    }
+    if (!Array.isArray(section.citationIds) || section.citationIds.length === 0) {
+      fail(`${label} sections must cite their sources.`)
+    }
+    if (new Set(section.citationIds).size !== section.citationIds.length) {
+      fail(`${label} section citation IDs must be unique.`)
+    }
+    for (const citationId of section.citationIds) {
+      assertString(citationId, `${label} section citationId`)
+      if (!citationById.has(citationId)) fail(`${label} contains a dangling citation.`)
+      if (citationById.get(citationId).claimKind !== section.claimKind) {
+        fail(`${label} citation claim kind does not match its section.`)
+      }
+      referencedCitationIds.add(citationId)
+    }
+  }
+  if (
+    referencedCitationIds.size !== citationById.size ||
+    [...citationById.keys()].some((citationId) => !referencedCitationIds.has(citationId))
+  ) fail(`${label} must bind every citation to an answer section.`)
+
+  assertExactKeys(q09.generatedReport, ['descriptor', 'mediaType'], `${label} report`)
+  if (q09.generatedReport.mediaType !== 'text/html') {
+    fail(`${label} report mediaType must be text/html.`)
+  }
+  const descriptor = q09.generatedReport.descriptor
+  assertExactKeys(
+    descriptor,
+    [
+      'schemaVersion', 'reportId', 'runId', 'kind', 'format', 'status',
+      'generatedAt', 'filename', 'contentHash', 'eventId', 'warnings',
+      'safetyDisclaimer', 'provenance',
+    ],
+    `${label} report descriptor`,
+  )
+  if (
+    descriptor.schemaVersion !== 1 || descriptor.runId !== expected.runId ||
+    descriptor.eventId !== expected.eventId ||
+    descriptor.kind !== 'single_event_diagnosis' || descriptor.format !== 'html' ||
+    descriptor.status !== 'ready' || descriptor.contentHash !== expected.diagnosisHash
+  ) fail(`${label} report descriptor or content hash does not match the measured artifact.`)
+  assertString(descriptor.reportId, `${label} reportId`)
+  assertString(descriptor.filename, `${label} report filename`)
+  if (!/^[^\\/]+-diagnosis\.html$/.test(descriptor.filename)) {
+    fail(`${label} report filename must identify a diagnosis HTML artifact.`)
+  }
+  assertHash(descriptor.contentHash, `${label} report content hash`)
+  parseTimestamp(descriptor.generatedAt, `${label} report generatedAt`)
+  if (!Array.isArray(descriptor.warnings)) fail(`${label} report warnings must be an array.`)
+  descriptor.warnings.forEach((warning) => assertString(warning, `${label} report warning`, 512))
+  assertString(descriptor.safetyDisclaimer, `${label} safety disclaimer`, 512)
+  if (!descriptor.safetyDisclaimer.includes('所有操作建议均须人工确认')) {
+    fail(`${label} must retain the required human-confirmation disclaimer.`)
+  }
+  validateRendererProvenance(
+    descriptor.provenance,
+    `${label} report provenance`,
+    expected.fingerprint,
+    'jinja-report-p1-v1',
+  )
+  const reportCitations = q09.citations.filter(({ sourceType }) => sourceType === 'report')
+  if (
+    reportCitations.length !== 1 ||
+    reportCitations[0].sourceId !== descriptor.reportId ||
+    reportCitations[0].eventId !== expected.eventId
+  ) fail(`${label} must retain exactly one matching report citation.`)
+  if (!q09.sections.some(({ text }) => /人工(?:确认|决定)|人工.*(?:确认|决定)/.test(text))) {
+    fail(`${label} must retain required human-confirmation answer text.`)
+  }
+}
+
 function validateRuntimeIdentity(identity, kind, detector, label) {
   const idField = kind === 'import' ? 'datasetId' : 'runId'
   assertExactKeys(
@@ -645,10 +812,15 @@ function validateRuntimeIdentity(identity, kind, detector, label) {
     identity.rowCount !== detector.rowCount ||
     identity.fingerprint !== detector.fingerprint
   ) fail(`${label} does not match the verified detector input identity.`)
-  assertExactKeys(identity.timeRange, ['startTime', 'endTime'], `${label} timeRange`)
-  parseTimestamp(identity.timeRange.startTime, `${label} startTime`)
-  parseTimestamp(identity.timeRange.endTime, `${label} endTime`)
+  const timeRange = validateCanonicalRange(identity.timeRange, `${label} timeRange`)
+  if (
+    timeRange.start !== detector.observedRange.start ||
+    timeRange.end !== detector.observedRange.end ||
+    timeRange.start < detector.sourceRange.start ||
+    timeRange.end > detector.sourceRange.end
+  ) fail(`${label} range does not match the manifest observed and verified source ranges.`)
   validateLiveProvenance(identity.provenance, `${label} provenance`, detector.fingerprint)
+  return timeRange
 }
 
 async function validateRun(
@@ -673,6 +845,7 @@ async function validateRun(
       'stageDurations',
       'importedDataset',
       'analysisRun',
+      'q09',
       'publicLabelsUsedAsDetectorInput',
       'artifacts',
     ],
@@ -699,13 +872,24 @@ async function validateRun(
   if (run.publicLabelsUsedAsDetectorInput !== false) {
     fail(`${runLabel} must use Live analysis without passing public labels to the detector.`)
   }
-  validateRuntimeIdentity(run.importedDataset, 'import', detector, `${runLabel} import`)
-  validateRuntimeIdentity(run.analysisRun, 'analysis', detector, `${runLabel} analysis`)
+  const importRange = validateRuntimeIdentity(
+    run.importedDataset,
+    'import',
+    detector,
+    `${runLabel} import`,
+  )
+  const analysisRange = validateRuntimeIdentity(
+    run.analysisRun,
+    'analysis',
+    detector,
+    `${runLabel} analysis`,
+  )
   if (
     run.runId !== run.analysisRun.runId ||
     run.importedDataset.sourceFilename !== run.analysisRun.sourceFilename ||
     run.importedDataset.rowCount !== run.analysisRun.rowCount ||
-    run.importedDataset.fingerprint !== run.analysisRun.fingerprint
+    run.importedDataset.fingerprint !== run.analysisRun.fingerprint ||
+    importRange.start !== analysisRange.start || importRange.end !== analysisRange.end
   ) fail(`${runLabel} import and analysis identities do not match.`)
   assertExactKeys(run.artifacts, ['diagnosisReport', 'reviewAudit', 'submissionCsv'], `${runLabel} artifacts`)
 
@@ -734,6 +918,12 @@ async function validateRun(
       displayLabel: detector.displayLabel,
     },
   )
+  validateQ09Binding(run.q09, {
+    runId: run.runId,
+    eventId: run.analyzedEventId,
+    fingerprint: run.analysisRun.fingerprint,
+    diagnosisHash: run.artifacts.diagnosisReport.sha256,
+  }, `${runLabel} Q09`)
   validateAudit(
     decodeUtf8(artifactBytes.reviewAudit, `${runLabel} review audit`),
     run.runId,
@@ -803,7 +993,7 @@ export async function validateDemoReceipt(
   ])
   const receipt = parseJson(receiptBytes, 'Demo receipt')
   const manifest = parseJson(manifestBytes, 'Slice manifest')
-  validateManifest(manifest, sourceContract)
+  const manifestIdentity = validateManifest(manifest, sourceContract)
   validateReceiptShape(receipt, expectedVerifiedScope(sourceContract))
   const detectorInputBytes = await artifactFile(
     dirname(manifestPath),
@@ -838,6 +1028,8 @@ export async function validateDemoReceipt(
     rowCount: manifest.slice.rowCount,
     fingerprint: manifest.slice.sha256,
     displayLabel: receipt.verifiedManifestScope.displayLabel,
+    sourceRange: manifestIdentity.sourceRange,
+    observedRange: manifestIdentity.observedRange,
   }
   const first = await validateRun(
     receipt.runs[0], 1, artifactsRoot, usedArtifactPaths, detector,
