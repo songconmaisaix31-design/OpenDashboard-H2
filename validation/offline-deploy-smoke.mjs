@@ -61,7 +61,7 @@ export async function runOfflineDeploySmoke(options) {
   if (!existsSync(sourcePath)) throw new Error(`Required official file is missing: ${sourceContract.filename}`)
   const { identity: sourceIdentity, text: sourceText } =
     await snapshotOfficialTimeseries(sourcePath, sourceContract)
-  const submittedFingerprint = sha256(Buffer.from(sourceText, 'utf8'))
+  const submittedFingerprint = sourceIdentity.sha256
   if (
     submittedFingerprint !== sourceContract.sha256 ||
     submittedFingerprint !== sourceIdentity.sha256

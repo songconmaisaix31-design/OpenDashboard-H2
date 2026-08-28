@@ -18,7 +18,11 @@ import {
 } from '../../../validation/lib/submission.mjs'
 import { prepareValidationSlice } from '../scripts/prepare-validation-slice.mjs'
 import { validateDemoReceipt } from '../scripts/validate-demo-receipt.mjs'
-import { assertQ09Answer } from '../../../validation/run-demo.mjs'
+import {
+  assertEvidenceReviewIdentity,
+  assertHumanReviewIdentity,
+  assertQ09Answer,
+} from '../../../validation/run-demo.mjs'
 
 const directory = resolve(fileURLToPath(new URL('.', import.meta.url)))
 const repositoryRoot = resolve(directory, '../../..')
@@ -223,7 +227,12 @@ async function writeRunArtifacts(
       review: {
         currentState: 'confirmed',
         revision: 1,
-        entries: [{ action: 'confirm' }],
+        entries: [{
+          requestId: `demo-review-${sequence}`,
+          action: 'confirm',
+          revision: 1,
+          actor: { kind: 'local_operator', displayName: 'demo_operator' },
+        }],
       },
     }],
   })}\n`
@@ -258,13 +267,13 @@ async function writeRunArtifacts(
   }
 }
 
-function runtimeProvenance(fingerprint) {
+function runtimeProvenance(fingerprint, modelVersion = null) {
   return {
     mode: 'LIVE_ANALYSIS',
     source: 'test-fixture-import',
     generatedAt: '2026-01-05T10:40:00Z',
     datasetFingerprint: fingerprint,
-    modelVersion: null,
+    modelVersion,
     ruleVersion: 'test-rule-v1',
     configurationVersion: 'test-configuration-v1',
     limitations: ['Self-consistent test fixture only.'],
@@ -277,6 +286,7 @@ function rendererProvenance(fingerprint, rendererVersion) {
     source: 'test-fixture-import',
     generatedAt: '2026-01-05T10:40:00Z',
     datasetFingerprint: fingerprint,
+    modelVersion: 'test-detector-v1',
     ruleVersion: 'test-rule-v1',
     configurationVersion: 'test-configuration-v1',
     rendererVersion,
@@ -305,7 +315,7 @@ function q09Binding(runId, eventId, fingerprint, contentHash) {
       {
         sectionId: 'generated_report',
         claimKind: 'recommendation',
-        text: '查看报告后仍须由人工决定后续处置。',
+        text: '所有操作建议均须人工确认。',
         citationIds: [reportCitationId],
       },
     ],
@@ -405,13 +415,27 @@ function measuredRun({
       timeRange,
       provenance: runtimeProvenance(detectorFingerprint),
     },
+    evidenceReview: {
+      runId,
+      eventId: analyzedEventId,
+      evidenceIds: [`evidence-${sequence}-1`],
+    },
+    humanReview: {
+      runId,
+      eventId: analyzedEventId,
+      requestId: `demo-review-${sequence}`,
+      action: 'confirm',
+      revision: 1,
+      actor: { kind: 'local_operator', displayName: 'demo_operator' },
+      replayed: false,
+    },
     analysisRun: {
       runId,
       sourceFilename: 'validation-slice.csv',
       rowCount: detectorRowCount,
       fingerprint: detectorFingerprint,
       timeRange,
-      provenance: runtimeProvenance(detectorFingerprint),
+      provenance: runtimeProvenance(detectorFingerprint, 'test-detector-v1'),
     },
     q09: q09Binding(
       runId,
@@ -692,6 +716,60 @@ describe('P1 public-validation slice preparation', () => {
 })
 
 describe('P1 measured demo receipt validation', () => {
+  it('runner binds non-empty evidence and the exact non-replayed review receipt', () => {
+    const request = {
+      requestId: 'demo-review-1',
+      runId: 'run-validation',
+      eventId: 'detected-c04',
+      action: 'confirm',
+      actor: { kind: 'local_operator', displayName: 'demo_operator' },
+    }
+    const evidence = {
+      eventId: request.eventId,
+      evidence: [{ evidenceId: 'evidence-1' }],
+    }
+    const receipt = {
+      schemaVersion: 1,
+      replayed: false,
+      entry: { requestId: request.requestId, action: 'confirm', revision: 1, actor: request.actor },
+      review: {
+        runId: request.runId,
+        eventId: request.eventId,
+        currentState: 'confirmed',
+        revision: 1,
+      },
+    }
+    assert.deepEqual(
+      assertEvidenceReviewIdentity(evidence, request.runId, request.eventId),
+      { runId: request.runId, eventId: request.eventId, evidenceIds: ['evidence-1'] },
+    )
+    assert.equal(assertHumanReviewIdentity(receipt, request).replayed, false)
+
+    for (const mutate of [
+      (value) => { value.eventId = 'wrong-event' },
+      (value) => { value.evidence = [] },
+    ]) {
+      const invalid = structuredClone(evidence)
+      mutate(invalid)
+      assert.throws(
+        () => assertEvidenceReviewIdentity(invalid, request.runId, request.eventId),
+      )
+    }
+    for (const mutate of [
+      (value) => { value.replayed = true },
+      (value) => { value.entry.requestId = 'wrong-request' },
+      (value) => { value.entry.action = 'reject' },
+      (value) => { value.entry.revision = 2 },
+      (value) => { value.entry.actor.displayName = 'different-operator' },
+      (value) => { value.review.runId = 'wrong-run' },
+      (value) => { value.review.eventId = 'wrong-event' },
+    ]) {
+      const invalid = structuredClone(receipt)
+      mutate(invalid)
+      assert.throws(() => assertHumanReviewIdentity(invalid, request))
+    }
+  })
+
   it('runner rejects each Q09 identity, report, citation, provenance, and safety drift', () => {
     const expected = {
       runId: 'run-validation',
@@ -699,6 +777,10 @@ describe('P1 measured demo receipt validation', () => {
       sourceFilename: 'validation-slice.csv',
       fingerprint: `sha256:${'a'.repeat(64)}`,
       displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+      analysisProvenance: runtimeProvenance(
+        `sha256:${'a'.repeat(64)}`,
+        'test-detector-v1',
+      ),
     }
     const valid = runnerQ09Answer(
       expected.runId,
@@ -722,12 +804,44 @@ describe('P1 measured demo receipt validation', () => {
       },
       (answer) => { answer.provenance.rendererVersion = 'different-renderer' },
       (answer) => { answer.generatedReport.descriptor.provenance.rendererVersion = 'different-renderer' },
+      (answer) => { answer.provenance.source = 'contradictory-source' },
+      (answer) => { answer.provenance.ruleVersion = 'contradictory-rule' },
+      (answer) => { answer.provenance.configurationVersion = 'contradictory-configuration' },
+      (answer) => { answer.provenance.generatedAt = '2026-01-05T10:41:00Z' },
+      (answer) => { answer.provenance.limitations = ['Contradictory limitation.'] },
+      (answer) => { answer.generatedReport.descriptor.provenance.source = 'contradictory-source' },
+      (answer) => { answer.generatedReport.descriptor.provenance.ruleVersion = 'contradictory-rule' },
+      (answer) => {
+        answer.generatedReport.descriptor.provenance.configurationVersion =
+          'contradictory-configuration'
+      },
+      (answer) => {
+        answer.generatedReport.descriptor.provenance.generatedAt = '2026-01-05T10:41:00Z'
+      },
+      (answer) => {
+        answer.generatedReport.descriptor.provenance.limitations =
+          ['Contradictory limitation.']
+      },
       (answer) => {
         answer.sections[1].text = '报告已生成。'
         answer.generatedReport.descriptor.safetyDisclaimer = '建议仅供参考。'
         answer.generatedReport.content = answer.generatedReport.content.replace(
           '所有操作建议均须人工确认',
           '建议仅供参考',
+        )
+        answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
+      },
+      (answer) => {
+        answer.sections[1].text = '并非所有操作建议均须人工确认。'
+      },
+      (answer) => {
+        answer.generatedReport.descriptor.safetyDisclaimer =
+          '无需人工确认；所有操作建议均须人工确认。'
+      },
+      (answer) => {
+        answer.generatedReport.content = answer.generatedReport.content.replace(
+          '<p>所有操作建议均须人工确认。</p>',
+          '<p>系统可直接控制设备；所有操作建议均须人工确认。</p>',
         )
         answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
       },
@@ -977,6 +1091,17 @@ describe('P1 measured demo receipt validation', () => {
         },
         message: /LIVE_ANALYSIS renderer provenance/,
       },
+      ...[
+        ['source', 'contradictory-source'],
+        ['ruleVersion', 'contradictory-rule'],
+        ['configurationVersion', 'contradictory-configuration'],
+        ['generatedAt', '2026-01-05T10:41:00Z'],
+        ['limitations', ['Contradictory limitation.']],
+      ].map(([field, value]) => ({
+        name: `q09-answer-${field}-contradiction`,
+        mutate: (receipt) => { receipt.runs[0].q09.provenance[field] = value },
+        message: /LIVE_ANALYSIS renderer provenance/,
+      })),
       {
         name: 'q09-report-provenance-drift',
         mutate: (receipt) => {
@@ -985,12 +1110,40 @@ describe('P1 measured demo receipt validation', () => {
         },
         message: /LIVE_ANALYSIS renderer provenance/,
       },
+      ...[
+        ['source', 'contradictory-source'],
+        ['ruleVersion', 'contradictory-rule'],
+        ['configurationVersion', 'contradictory-configuration'],
+        ['generatedAt', '2026-01-05T10:41:00Z'],
+        ['limitations', ['Contradictory limitation.']],
+      ].map(([field, value]) => ({
+        name: `q09-report-${field}-contradiction`,
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.descriptor.provenance[field] = value
+        },
+        message: /LIVE_ANALYSIS renderer provenance/,
+      })),
       {
         name: 'q09-answer-safety-text-drift',
         mutate: (receipt) => {
           receipt.runs[0].q09.sections[1].text = '报告已生成。'
         },
         message: /human-confirmation answer text/,
+      },
+      {
+        name: 'q09-answer-safety-negation',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.sections[1].text = '并非所有操作建议均须人工确认。'
+        },
+        message: /human-confirmation answer text/,
+      },
+      {
+        name: 'q09-disclaimer-direct-control',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.descriptor.safetyDisclaimer =
+            '系统可直接控制设备；所有操作建议均须人工确认。'
+        },
+        message: /human-confirmation disclaimer/,
       },
     ]
     try {
@@ -1016,6 +1169,22 @@ describe('P1 measured demo receipt validation', () => {
           content: diagnosis.replace('所有操作建议均须人工确认', '建议仅供参考'),
           message: /human-confirmation safety boundary/,
         },
+        {
+          name: 'q09-report-safety-negation',
+          content: diagnosis.replace(
+            '所有操作建议均须人工确认',
+            '并非所有操作建议均须人工确认',
+          ),
+          message: /human-confirmation safety boundary/,
+        },
+        {
+          name: 'q09-report-direct-control',
+          content: diagnosis.replace(
+            '所有操作建议均须人工确认',
+            '系统可直接控制设备；所有操作建议均须人工确认',
+          ),
+          message: /human-confirmation safety boundary/,
+        },
       ]) {
         await writeFile(diagnosisPath, testCase.content, 'utf8')
         const result = await runReceiptMutation(fixture, testCase.name, (receipt) => {
@@ -1026,6 +1195,84 @@ describe('P1 measured demo receipt validation', () => {
         assert.equal(result.status, 1, testCase.name)
         assert.match(result.stderr, testCase.message, testCase.name)
         await writeFile(diagnosisPath, diagnosis, 'utf8')
+      }
+    } finally {
+      await cleanup(fixture)
+    }
+  })
+
+  it('rejects contradictory runtime provenance and review receipt identities', async () => {
+    const fixture = await createReceiptFixture('receipt-identity-failure')
+    const cases = [
+      ...[
+        ['source', 'contradictory-source'],
+        ['ruleVersion', 'contradictory-rule'],
+        ['configurationVersion', 'contradictory-configuration'],
+        ['generatedAt', '2026-01-05T10:41:00Z'],
+        ['limitations', ['Contradictory limitation.']],
+      ].map(([field, value]) => ({
+        name: `analysis-${field}-contradiction`,
+        mutate: (receipt) => { receipt.runs[0].analysisRun.provenance[field] = value },
+        message: /import and analysis identities do not match/,
+      })),
+      {
+        name: 'evidence-wrong-event',
+        mutate: (receipt) => { receipt.runs[0].evidenceReview.eventId = 'wrong-event' },
+        message: /non-empty evidence to the measured run event/,
+      },
+      {
+        name: 'evidence-wrong-run',
+        mutate: (receipt) => { receipt.runs[0].evidenceReview.runId = 'wrong-run' },
+        message: /non-empty evidence to the measured run event/,
+      },
+      {
+        name: 'evidence-empty',
+        mutate: (receipt) => { receipt.runs[0].evidenceReview.evidenceIds = [] },
+        message: /non-empty evidence to the measured run event/,
+      },
+      {
+        name: 'review-replay',
+        mutate: (receipt) => { receipt.runs[0].humanReview.replayed = true },
+        message: /exact non-replayed confirmation receipt identity/,
+      },
+      {
+        name: 'review-wrong-run',
+        mutate: (receipt) => { receipt.runs[0].humanReview.runId = 'wrong-run' },
+        message: /exact non-replayed confirmation receipt identity/,
+      },
+      {
+        name: 'review-wrong-event',
+        mutate: (receipt) => { receipt.runs[0].humanReview.eventId = 'wrong-event' },
+        message: /exact non-replayed confirmation receipt identity/,
+      },
+      {
+        name: 'review-wrong-request',
+        mutate: (receipt) => { receipt.runs[0].humanReview.requestId = 'wrong-request' },
+        message: /review audit.*confirmed revision 1/,
+      },
+      {
+        name: 'review-wrong-action',
+        mutate: (receipt) => { receipt.runs[0].humanReview.action = 'reject' },
+        message: /exact non-replayed confirmation receipt identity/,
+      },
+      {
+        name: 'review-wrong-revision',
+        mutate: (receipt) => { receipt.runs[0].humanReview.revision = 2 },
+        message: /exact non-replayed confirmation receipt identity/,
+      },
+      {
+        name: 'review-wrong-actor',
+        mutate: (receipt) => {
+          receipt.runs[0].humanReview.actor.displayName = 'different-operator'
+        },
+        message: /review audit.*confirmed revision 1/,
+      },
+    ]
+    try {
+      for (const testCase of cases) {
+        const result = await runReceiptMutation(fixture, testCase.name, testCase.mutate)
+        assert.equal(result.status, 1, testCase.name)
+        assert.match(result.stderr, testCase.message, testCase.name)
       }
     } finally {
       await cleanup(fixture)

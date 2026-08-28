@@ -181,16 +181,25 @@ describe('H2 Sentinel streamed official timeseries', () => {
       resolve(repositoryRoot, 'tests/h2-sentinel/scripts/prepare-validation-slice.mjs'),
       'utf8',
     )
+    const timeseries = readFileSync(
+      resolve(repositoryRoot, 'validation/lib/official-timeseries.mjs'),
+      'utf8',
+    )
 
     assert.match(evaluator, /streamOfficialTimeseriesWindow/)
     assert.doesNotMatch(evaluator, /timeseriesBytes|timeseriesText|chunkRowsByUtcDay/)
     assert.equal((evaluator.match(/\breadFileSync\s*\(/g) ?? []).length, 1)
-    assert.equal((evaluator.match(/\bparseCsvText\s*\(/g) ?? []).length, 2)
-    assert.match(evaluator, /projectOfficialChunkForRuntime\(chunk\.text\)/)
+    assert.equal((evaluator.match(/\bparseCsvText\s*\(/g) ?? []).length, 1)
+    assert.match(evaluator, /\{ filename, text: chunk\.text \}/)
+    assert.doesNotMatch(evaluator, /projectOfficialChunkForRuntime|EVALUATION_RUNTIME_FIELDS/)
     assert.match(evaluator, /decodeUtf8Strict\(bytes, 'Official labels'\)/)
     assert.match(offline, /snapshotOfficialTimeseries/)
     assert.doesNotMatch(offline, /inspectOfficialTimeseries|readFileSync/)
     assert.doesNotMatch(offline, /normalizeOfficialCsv|parseCsvText|parsed\.rows/)
+    assert.doesNotMatch(offline, /Buffer\.from\(sourceText,\s*['"]utf8['"]\)/)
+    assert.match(offline, /submittedFingerprint = sourceIdentity\.sha256/)
+    assert.doesNotMatch(timeseries, /Buffer\.concat|readFileSync|readFile\s*\(/)
+    assert.match(timeseries, /captureText: true/)
     assert.match(slice, /streamOfficialTimeseriesWindow/)
     assert.doesNotMatch(slice, /timeseriesBytes|timeseriesCsv|validateTimeseries/)
   })

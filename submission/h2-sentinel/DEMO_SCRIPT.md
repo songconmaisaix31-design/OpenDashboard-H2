@@ -46,9 +46,9 @@ the 69-field detector CSV is sent to analytics.
 | --- | --- | --- |
 | import | Import the prepared detector CSV. | Require the actual LIVE_ANALYSIS source, source filename, fingerprint, range, row count, and quality. |
 | analysis | Run deterministic analysis and select an overlapping C04 candidate. | Bind actual run provenance to the verified import; labels are absent from the request. |
-| evidence_review | Read the event evidence from the public loopback API. | Require timing, evidence, impact, safety, and provenance. |
-| human_review | Confirm the event with revision 0 and a unique request ID. | Require revision 1; local actor attribution remains unverified. |
-| q09_report | Request official Q09 and its deterministic Chinese diagnosis HTML. | Require matching event/report citations and human-confirmation wording. |
+| evidence_review | Read the event evidence from the public loopback API. | Persist the exact run/event target and non-empty unique evidence IDs. |
+| human_review | Confirm the event with revision 0 and a unique request ID. | Bind run, event, request, confirm action, revision 1, local actor, and `replayed=false`; actor attribution remains unverified. |
+| q09_report | Request official Q09 and its deterministic Chinese diagnosis HTML. | Require matching event/report citations and exact positive `所有操作建议均须人工确认` wording. |
 | artifact_export | Export review audit and exact 16-column submission. | Require review only in audit, then run the exact submission checker. |
 
 ## Receipt gate
@@ -83,6 +83,12 @@ before issuing the receipt. The manifest scope is a verified QA selection;
 each run separately records actual import and analysis provenance. A
 self-consistent synthetic test fixture uses
 `self_consistent_fixture_contract`, never `VALIDATION_SLICE`.
+
+Import provenance is the base identity. Analysis must inherit it without drift
+and may add only `modelVersion`; Q09 and its report must inherit that analysis
+identity and add only their fixed renderer versions. Contradictory source,
+generation time, fingerprint, rule, configuration, or limitations invalidate
+the receipt.
 
 Each run also retains the exact Q09 answer/run/event identity, deterministic
 mode, answer and report provenance, `single_event_diagnosis` HTML descriptor,

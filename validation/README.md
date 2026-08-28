@@ -27,10 +27,11 @@ The evaluator streams the complete named source to verify its SHA-256, exact
 timestamps before selecting any rows. A second verified streaming pass retains
 only one UTC calendar-day chunk at a time for the deterministic loopback
 pipeline; it never materializes the full cell matrix. Each verified 69-field
-chunk is projected into the analytics service's frozen 10-field detector
-contract using documented direct aliases plus the sum of the three
-electrolyzer actual-power fields. This projection contains no label fields,
-and its actual submitted fingerprint is recorded for import/run provenance.
+chunk is submitted unchanged to the analytics import contract, and the exact
+submitted fingerprint is recorded for import/run provenance. There is no
+legacy 10-field projection or derived electrolyzer aggregate. An isolated
+backend that still accepts only the legacy shape is intentionally incompatible;
+the final integrated Analytics contract must accept the strict raw 69 fields.
 Adjacent same-code
 predictions are merged across day boundaries, and public labels are opened only
 after every detector prediction finishes. Labels are held out from runtime
@@ -40,8 +41,9 @@ grace window. It emits overall and C01-C07 precision, recall, and F1 plus
 their unweighted macro averages, signed first-detection delay, and start/end
 boundary errors. Precision is zero when `tp + fp` is zero, recall is zero when
 `tp + fn` is zero, and F1 is zero when precision plus recall is zero; evaluator
-reports record this rule and the overfit gate recomputes every derived value
-from integer counts. Negative
+reports record this rule and the overfit gate recomputes every claimed count,
+per-code metric, classification metric, and timing summary from unique matched
+and unmatched event identities. Negative
 first-detection delay denotes an early warning. These are local contract
 metrics, not an organizer score.
 
@@ -80,10 +82,10 @@ array of objects with non-empty `evidence_id` values.
 
 The offline smoke first streams the complete public test source through the
 same identity checks. It then retains only the one raw source string required
-for the local import request in that same streaming pass, fingerprints the
-exact submitted text against the frozen official SHA, and never reopens the
-source between verification and submission. It does not build a full row
-matrix or normalized duplicate. It analyzes the import,
+for the local import request in that same streaming pass, reuses the verified
+raw-stream SHA as the submitted fingerprint, and never reopens or re-encodes
+the source between verification and submission. It does not build a full row
+matrix, normalized duplicate, or second UTF-8 byte copy. It analyzes the import,
 exports the user-facing submission through the Web proxy, and applies the
 checker. Its result is local pipeline evidence only; it is not deployment,
 network-isolation, hidden-test, production, or organizer evidence.
@@ -109,14 +111,22 @@ receipt validator itself. Deterministic analytics may reuse the same content-
 derived `runId`, so the receipt uses a distinct `executionId` to prove two
 separate executions. Q09 is bound to the exact question/run/event, deterministic
 answer and report provenance, one matching report citation, the diagnosis
-descriptor/media contract, and the diagnosis bytes.
+descriptor/media contract, and the diagnosis bytes. The import defines the
+base provenance identity; analysis may add only its model version, and Q09 plus
+the report may add only their fixed renderer versions. Every layer preserves
+the same source, generation time, fingerprint, rule, configuration, and
+limitations.
 
 The supplied `--output` is the artifacts root itself. It must be fresh and
 separate from the slice-manifest directory; do not append another `/artifacts`
 component. Each run records actual LIVE_ANALYSIS import/run provenance, and
 the runner rechecks the candidate SHA after each run and before receipt
-issuance. Public labels may select the directed demo before analysis but are
-never included in detector input.
+issuance. The receipt also binds the non-empty evidence target and exact
+non-replayed human-review request, run, event, action, revision, and actor.
+The required positive safety declaration is `所有操作建议均须人工确认`; negation,
+no-confirmation wording, and direct-control claims fail closed. Public labels
+may select the directed demo before analysis but are never included in detector
+input.
 
 The recorded duration is a scripted local workflow measurement. Installation
 and launcher startup are excluded and disclosed. It is not human judge timing,

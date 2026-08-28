@@ -1,8 +1,47 @@
 import { toInstant } from './metrics.mjs'
 
+export const REQUIRED_HUMAN_CONFIRMATION_DECLARATION = '所有操作建议均须人工确认'
+
+const unsafeControlText = /(?:并非|不是|否认|无需|不需|不须|不必|免于|绕过).{0,12}(?:人工|确认)|(?:自动|直接).{0,12}(?:执行|控制|下发|操作)|(?:无需|不经|绕过)人工确认/u
+const exactPositiveDeclaration = new RegExp(
+  `(?:^|[\\s>；。！？:：])${REQUIRED_HUMAN_CONFIRMATION_DECLARATION}(?=$|[\\s<；。！？,，])`,
+  'u',
+)
+
+export function hasRequiredHumanConfirmation(value) {
+  return typeof value === 'string' && !unsafeControlText.test(value) &&
+    exactPositiveDeclaration.test(value)
+}
+
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim() !== ''
 }
+
+function sameArray(left, right) {
+  return Array.isArray(left) && Array.isArray(right) &&
+    left.length === right.length && left.every((entry, index) => entry === right[index])
+}
+
+function sameBaseProvenance(left, right) {
+  return (
+    left.mode === right.mode && left.source === right.source &&
+    left.generatedAt === right.generatedAt &&
+    left.datasetFingerprint === right.datasetFingerprint &&
+    left.ruleVersion === right.ruleVersion &&
+    left.configurationVersion === right.configurationVersion &&
+    sameArray(left.limitations, right.limitations)
+  )
+}
+
+function hasOnlyKeys(value, allowedKeys) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).every((key) => allowedKeys.includes(key))
+}
+
+const BASE_PROVENANCE_KEYS = [
+  'mode', 'source', 'generatedAt', 'datasetFingerprint', 'ruleVersion',
+  'configurationVersion', 'limitations',
+]
 
 function snapshotTimeRange(value, label) {
   const start = toInstant(value?.startTime)
@@ -44,16 +83,21 @@ export function assertImportedDataset(imported, { filename, rowCount, fingerprin
     dataset?.mode !== 'LIVE_ANALYSIS' || !nonEmptyString(dataset.datasetId) ||
     dataset.sourceFilename !== filename ||
     dataset.rowCount !== rowCount || dataset.fingerprint !== fingerprint ||
-    dataset.provenance?.datasetFingerprint !== fingerprint
+    dataset.provenance?.datasetFingerprint !== fingerprint ||
+    !hasOnlyKeys(dataset.provenance, [...BASE_PROVENANCE_KEYS, 'modelVersion'])
   ) throw new Error('Imported dataset identity does not match the submitted detector rows.')
   const timeRange = snapshotTimeRange(dataset.timeRange, 'Imported dataset')
+  const provenance = snapshotLiveProvenance(dataset.provenance, 'Import')
+  if (provenance.modelVersion !== null) {
+    throw new Error('Import provenance must define the base identity before model execution.')
+  }
   return {
     datasetId: dataset.datasetId,
     sourceFilename: dataset.sourceFilename,
     rowCount: dataset.rowCount,
     fingerprint: dataset.fingerprint,
     timeRange,
-    provenance: snapshotLiveProvenance(dataset.provenance, 'Import'),
+    provenance,
   }
 }
 
@@ -67,15 +111,42 @@ export function assertAnalysisRun(run, imported) {
     run.dataset.fingerprint !== dataset.fingerprint ||
     run.provenance?.datasetFingerprint !== dataset.fingerprint ||
     run.dataset.timeRange?.startTime !== dataset.timeRange?.startTime ||
-    run.dataset.timeRange?.endTime !== dataset.timeRange?.endTime
+    run.dataset.timeRange?.endTime !== dataset.timeRange?.endTime ||
+    !hasOnlyKeys(run.provenance, [...BASE_PROVENANCE_KEYS, 'modelVersion'])
   ) throw new Error('Analysis run identity does not match the verified import.')
   const timeRange = snapshotTimeRange(run.dataset.timeRange, 'Analysis run')
+  const importProvenance = snapshotLiveProvenance(dataset.provenance, 'Import')
+  const analysisProvenance = snapshotLiveProvenance(run.provenance, 'Analysis')
+  if (
+    importProvenance.modelVersion !== null ||
+    !nonEmptyString(analysisProvenance.modelVersion) ||
+    !sameBaseProvenance(importProvenance, analysisProvenance)
+  ) throw new Error('Analysis provenance must inherit the exact verified import identity.')
   return {
     runId: run.runId,
     sourceFilename: run.dataset.sourceFilename,
     rowCount: run.dataset.rowCount,
     fingerprint: run.dataset.fingerprint,
     timeRange,
-    provenance: snapshotLiveProvenance(run.provenance, 'Analysis'),
+    provenance: analysisProvenance,
   }
+}
+
+export function assertRendererProvenance(value, analysisProvenance, rendererVersion, label) {
+  const expectedKeys = [
+    'mode', 'source', 'generatedAt', 'datasetFingerprint', 'modelVersion',
+    'ruleVersion', 'configurationVersion', 'rendererVersion', 'limitations',
+  ].sort()
+  const actualKeys = value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? Object.keys(value).sort()
+    : []
+  const renderer = snapshotLiveProvenance(value, label)
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    actualKeys.some((key, index) => key !== expectedKeys[index]) ||
+    value.rendererVersion !== rendererVersion ||
+    renderer.modelVersion !== analysisProvenance.modelVersion ||
+    !sameBaseProvenance(renderer, analysisProvenance)
+  ) throw new Error(`${label} must inherit the exact analysis provenance and renderer identity.`)
+  return { ...renderer, rendererVersion }
 }

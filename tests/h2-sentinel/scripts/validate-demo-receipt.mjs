@@ -6,6 +6,7 @@ import { validateSubmissionText } from '../../../validation/check-submission.mjs
 import { assertOfficialTimeseriesColumns } from '../../../validation/lib/official-contract.mjs'
 import { OFFICIAL_SOURCES } from '../../../validation/lib/official-sources.mjs'
 import { toCanonicalUtcInstant, toInstant } from '../../../validation/lib/metrics.mjs'
+import { hasRequiredHumanConfirmation } from '../../../validation/lib/runtime-provenance.mjs'
 import {
   REQUIRED_TIMESERIES_COLUMNS,
   isLabelColumn,
@@ -563,7 +564,7 @@ function validateHtml(content, label, bindings) {
     if (position <= previous) fail(`${label} is missing the required ordered Chinese sections.`)
     previous = position
   }
-  if (!content.includes('所有操作建议均须人工确认')) {
+  if (!hasRequiredHumanConfirmation(content)) {
     fail(`${label} must retain the human-confirmation safety boundary.`)
   }
   if (/<script\b|https?:\/\//i.test(content)) {
@@ -581,7 +582,7 @@ function validateHtml(content, label, bindings) {
   }
 }
 
-function validateAudit(content, runId, analyzedEventId, label) {
+function validateAudit(content, runId, analyzedEventId, humanReview, label) {
   let value
   try {
     value = JSON.parse(content)
@@ -603,7 +604,11 @@ function validateAudit(content, runId, analyzedEventId, label) {
     reviewed?.review?.currentState !== 'confirmed' ||
     reviewed.review.revision !== 1 ||
     !Array.isArray(reviewed.review.entries) ||
-    !reviewed.review.entries.some((entry) => entry?.action === 'confirm')
+    !reviewed.review.entries.some((entry) =>
+      entry?.requestId === humanReview.requestId &&
+      entry.action === humanReview.action &&
+      entry.revision === humanReview.revision &&
+      JSON.stringify(entry.actor) === JSON.stringify(humanReview.actor))
   ) {
     fail(`${label} must retain the analyzed event at confirmed revision 1.`)
   }
@@ -624,7 +629,7 @@ function validateSubmission(content, analyzedEventId, label) {
   }
 }
 
-function validateLiveProvenance(provenance, label, fingerprint) {
+function validateLiveProvenance(provenance, label, fingerprint, kind) {
   assertExactKeys(
     provenance,
     [
@@ -643,22 +648,41 @@ function validateLiveProvenance(provenance, label, fingerprint) {
     !Array.isArray(provenance.limitations)
   ) fail(`${label} must retain complete actual LIVE_ANALYSIS provenance.`)
   parseTimestamp(provenance.generatedAt, `${label} generatedAt`)
-  if (provenance.modelVersion !== null) assertString(provenance.modelVersion, `${label} modelVersion`)
+  if (kind === 'import') {
+    if (provenance.modelVersion !== null) fail(`${label} must define the import base identity.`)
+  } else {
+    assertString(provenance.modelVersion, `${label} modelVersion`)
+  }
+  provenance.limitations.forEach((entry) => assertString(entry, `${label} limitation`, 512))
+  return provenance
 }
 
-function validateRendererProvenance(provenance, label, fingerprint, rendererVersion) {
+function sameBaseProvenance(left, right) {
+  return (
+    left.mode === right.mode && left.source === right.source &&
+    left.generatedAt === right.generatedAt &&
+    left.datasetFingerprint === right.datasetFingerprint &&
+    left.modelVersion === right.modelVersion &&
+    left.ruleVersion === right.ruleVersion &&
+    left.configurationVersion === right.configurationVersion &&
+    left.limitations.length === right.limitations.length &&
+    left.limitations.every((entry, index) => entry === right.limitations[index])
+  )
+}
+
+function validateRendererProvenance(provenance, label, analysisProvenance, rendererVersion) {
   assertExactKeys(
     provenance,
     [
-      'mode', 'source', 'generatedAt', 'datasetFingerprint', 'ruleVersion',
-      'configurationVersion', 'rendererVersion', 'limitations',
+      'mode', 'source', 'generatedAt', 'datasetFingerprint', 'modelVersion',
+      'ruleVersion', 'configurationVersion', 'rendererVersion', 'limitations',
     ],
     label,
   )
   if (
     provenance.mode !== 'LIVE_ANALYSIS' ||
-    provenance.datasetFingerprint !== fingerprint ||
-    provenance.rendererVersion !== rendererVersion
+    provenance.rendererVersion !== rendererVersion ||
+    !sameBaseProvenance(provenance, analysisProvenance)
   ) fail(`${label} must retain complete actual LIVE_ANALYSIS renderer provenance.`)
   assertString(provenance.source, `${label} source`)
   assertString(provenance.ruleVersion, `${label} ruleVersion`)
@@ -690,7 +714,7 @@ function validateQ09Binding(q09, expected, label) {
   validateRendererProvenance(
     q09.provenance,
     `${label} answer provenance`,
-    expected.fingerprint,
+    expected.analysisProvenance,
     'deterministic-assistant-p1-v1',
   )
 
@@ -779,13 +803,13 @@ function validateQ09Binding(q09, expected, label) {
   if (!Array.isArray(descriptor.warnings)) fail(`${label} report warnings must be an array.`)
   descriptor.warnings.forEach((warning) => assertString(warning, `${label} report warning`, 512))
   assertString(descriptor.safetyDisclaimer, `${label} safety disclaimer`, 512)
-  if (!descriptor.safetyDisclaimer.includes('所有操作建议均须人工确认')) {
+  if (!hasRequiredHumanConfirmation(descriptor.safetyDisclaimer)) {
     fail(`${label} must retain the required human-confirmation disclaimer.`)
   }
   validateRendererProvenance(
     descriptor.provenance,
     `${label} report provenance`,
-    expected.fingerprint,
+    expected.analysisProvenance,
     'jinja-report-p1-v1',
   )
   const reportCitations = q09.citations.filter(({ sourceType }) => sourceType === 'report')
@@ -794,7 +818,7 @@ function validateQ09Binding(q09, expected, label) {
     reportCitations[0].sourceId !== descriptor.reportId ||
     reportCitations[0].eventId !== expected.eventId
   ) fail(`${label} must retain exactly one matching report citation.`)
-  if (!q09.sections.some(({ text }) => /人工(?:确认|决定)|人工.*(?:确认|决定)/.test(text))) {
+  if (!q09.sections.some(({ text }) => hasRequiredHumanConfirmation(text))) {
     fail(`${label} must retain required human-confirmation answer text.`)
   }
 }
@@ -819,8 +843,40 @@ function validateRuntimeIdentity(identity, kind, detector, label) {
     timeRange.start < detector.sourceRange.start ||
     timeRange.end > detector.sourceRange.end
   ) fail(`${label} range does not match the manifest observed and verified source ranges.`)
-  validateLiveProvenance(identity.provenance, `${label} provenance`, detector.fingerprint)
-  return timeRange
+  const provenance = validateLiveProvenance(
+    identity.provenance,
+    `${label} provenance`,
+    detector.fingerprint,
+    kind,
+  )
+  return { ...timeRange, provenance }
+}
+
+function validateEvidenceReview(identity, runId, eventId, label) {
+  assertExactKeys(identity, ['runId', 'eventId', 'evidenceIds'], label)
+  if (
+    identity.runId !== runId || identity.eventId !== eventId ||
+    !Array.isArray(identity.evidenceIds) || identity.evidenceIds.length === 0 ||
+    identity.evidenceIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
+    new Set(identity.evidenceIds).size !== identity.evidenceIds.length
+  ) fail(`${label} must bind non-empty evidence to the measured run event.`)
+}
+
+function validateHumanReview(identity, runId, eventId, label) {
+  assertExactKeys(
+    identity,
+    ['runId', 'eventId', 'requestId', 'action', 'revision', 'actor', 'replayed'],
+    label,
+  )
+  assertExactKeys(identity.actor, ['kind', 'displayName'], `${label} actor`)
+  if (
+    identity.runId !== runId || identity.eventId !== eventId ||
+    typeof identity.requestId !== 'string' || identity.requestId.trim() === '' ||
+    identity.action !== 'confirm' || identity.revision !== 1 ||
+    identity.actor.kind !== 'local_operator' ||
+    typeof identity.actor.displayName !== 'string' || identity.actor.displayName.trim() === '' ||
+    identity.replayed !== false
+  ) fail(`${label} must bind the exact non-replayed confirmation receipt identity.`)
 }
 
 async function validateRun(
@@ -845,6 +901,8 @@ async function validateRun(
       'stageDurations',
       'importedDataset',
       'analysisRun',
+      'evidenceReview',
+      'humanReview',
       'q09',
       'publicLabelsUsedAsDetectorInput',
       'artifacts',
@@ -889,8 +947,14 @@ async function validateRun(
     run.importedDataset.sourceFilename !== run.analysisRun.sourceFilename ||
     run.importedDataset.rowCount !== run.analysisRun.rowCount ||
     run.importedDataset.fingerprint !== run.analysisRun.fingerprint ||
-    importRange.start !== analysisRange.start || importRange.end !== analysisRange.end
+    importRange.start !== analysisRange.start || importRange.end !== analysisRange.end ||
+    !sameBaseProvenance(
+      { ...importRange.provenance, modelVersion: analysisRange.provenance.modelVersion },
+      analysisRange.provenance,
+    )
   ) fail(`${runLabel} import and analysis identities do not match.`)
+  validateEvidenceReview(run.evidenceReview, run.runId, run.analyzedEventId, `${runLabel} evidence review`)
+  validateHumanReview(run.humanReview, run.runId, run.analyzedEventId, `${runLabel} human review`)
   assertExactKeys(run.artifacts, ['diagnosisReport', 'reviewAudit', 'submissionCsv'], `${runLabel} artifacts`)
 
   const artifactBytes = {}
@@ -923,11 +987,13 @@ async function validateRun(
     eventId: run.analyzedEventId,
     fingerprint: run.analysisRun.fingerprint,
     diagnosisHash: run.artifacts.diagnosisReport.sha256,
+    analysisProvenance: run.analysisRun.provenance,
   }, `${runLabel} Q09`)
   validateAudit(
     decodeUtf8(artifactBytes.reviewAudit, `${runLabel} review audit`),
     run.runId,
     run.analyzedEventId,
+    run.humanReview,
     `${runLabel} review audit`,
   )
   validateSubmission(

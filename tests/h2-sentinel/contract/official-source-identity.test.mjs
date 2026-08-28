@@ -6,12 +6,9 @@ import { describe, it } from 'node:test'
 
 import { OFFICIAL_FIELDS } from '../../../validation/lib/official-contract.mjs'
 import {
-  EVALUATION_RUNTIME_FIELDS,
   collectPredictionsThenLoadLabels,
   labelsInWindow,
-  projectOfficialChunkForRuntime,
 } from '../../../validation/evaluate.mjs'
-import { parseCsvText, serializeCsv } from '../../../validation/lib/csv.mjs'
 import {
   EVALUATION_WINDOWS,
   OFFICIAL_SOURCES,
@@ -125,42 +122,9 @@ describe('H2 Sentinel official source identity', () => {
     )
   })
 
-  it('projects one verified official chunk into the frozen label-free runtime fields', () => {
-    const values = Object.fromEntries(OFFICIAL_FIELDS.map((field) => [field, '0']))
-    Object.assign(values, {
-      timestamp: '2026-01-01T00:00:00Z',
-      pv_actual_kw: '100',
-      bess_power_actual_kw: '-20',
-      pcc_power_actual_kw: '40',
-      elz1_power_actual_kw: '10.5',
-      elz2_power_actual_kw: '20',
-      elz3_power_actual_kw: '30.5',
-      aux_load_kw: '1',
-      bess_soc_pct: '55',
-      grid_export_power_limit_kw: '500',
-      grid_import_power_limit_kw: '600',
-      bess_power_cmd_kw: '20',
-    })
-    const officialChunk = serializeCsv(
-      OFFICIAL_FIELDS,
-      [OFFICIAL_FIELDS.map((field) => values[field])],
-    )
-    const projected = parseCsvText(
-      projectOfficialChunkForRuntime(officialChunk),
-      'Projected runtime chunk',
-    )
-
-    assert.deepEqual(projected.columns, EVALUATION_RUNTIME_FIELDS)
-    assert.deepEqual(projected.rows[0], [
-      '2026-01-01T00:00:00Z', '100', '-20', '40', '61', '1', '55', '500', '600', '20',
-    ])
-    assert.ok(projected.columns.every((column) => !/label|event_id|anomaly_code/i.test(column)))
-
-    const invalid = officialChunk.replace(',100,', ',0x64,')
-    assert.throws(
-      () => projectOfficialChunkForRuntime(invalid),
-      /invalid pv_actual_kw value/,
-    )
+  it('keeps the official detector contract at the exact label-free 69 fields', () => {
+    assert.equal(OFFICIAL_FIELDS.length, 69)
+    assert.ok(OFFICIAL_FIELDS.every((column) => !/label|event_id|anomaly_code/i.test(column)))
   })
 
   it('rejects same-name one-row lookalikes before slicing or reporting', async () => {
@@ -254,7 +218,7 @@ describe('H2 Sentinel official source identity', () => {
     const run = {
       runId: 'run-1',
       dataset: { ...imported.dataset },
-      provenance: { ...provenance },
+      provenance: { ...provenance, modelVersion: 'detector-v1' },
     }
     assert.equal(assertAnalysisRun(run, imported).runId, 'run-1')
     assert.throws(
@@ -265,6 +229,20 @@ describe('H2 Sentinel official source identity', () => {
       }),
       /identity/,
     )
+    for (const mutate of [
+      (value) => { value.source = 'contradictory-source' },
+      (value) => { value.ruleVersion = 'contradictory-rule' },
+      (value) => { value.configurationVersion = 'contradictory-configuration' },
+      (value) => { value.generatedAt = '2026-01-01T00:03:00Z' },
+      (value) => { value.limitations = ['Contradictory limitation.'] },
+    ]) {
+      const contradictory = structuredClone(run)
+      mutate(contradictory.provenance)
+      assert.throws(
+        () => assertAnalysisRun(contradictory, imported),
+        /inherit the exact verified import identity/,
+      )
+    }
     assert.throws(
       () => assertAnalysisRun({
         ...run,

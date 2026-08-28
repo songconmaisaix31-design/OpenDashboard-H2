@@ -74,7 +74,10 @@ row count, monotonic timestamps, observed interval, and absence of label
 columns. For each run it also recomputes the SHA-256 of a Chinese diagnosis HTML
 report, a review-audit JSON export, and the exact 16-column `submission.csv`.
 The audit must retain the analyzed event at confirmed revision 1, and the
-submission must pass the official vocabulary/equipment checker. The diagnosis
+recorded receipt must bind the same non-replayed review request ID, action,
+revision, actor, run, and event. The evidence-review identity must name the
+same run/event and at least one unique evidence ID. The submission must pass
+the official vocabulary/equipment checker. The diagnosis
 HTML must name the selected event, source filename, detector fingerprint, and
 rendered provenance scope.
 The validator distinguishes verified manifest scope from actual LIVE_ANALYSIS
@@ -87,7 +90,11 @@ must equal the manifest observed range, remain inside the verified source
 range, and equal its peer. Q09 must retain exact question/run/event identity,
 the `single_event_diagnosis` HTML descriptor and content hash, actual answer
 and report provenance, exactly one matching report citation, and explicit
-human-confirmation text.
+positive `所有操作建议均须人工确认` text. Import provenance defines the base;
+analysis inherits it exactly with only a model-version addition, and Q09/report
+provenance inherits the analysis identity with only its fixed renderer version.
+Negation, no-confirmation wording, direct-control claims, or contradictory
+source/rule/configuration/generation/limitations fail closed.
 
 Passing this validator proves only that the supplied local receipt and files
 meet this evidence contract. It is not an organizer score, full-validation

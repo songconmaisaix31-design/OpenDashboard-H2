@@ -26,7 +26,12 @@ import {
   repositoryRelativePath,
   writeFileAtomic,
 } from './lib/output.mjs'
-import { assertAnalysisRun, assertImportedDataset } from './lib/runtime-provenance.mjs'
+import {
+  assertAnalysisRun,
+  assertImportedDataset,
+  assertRendererProvenance,
+  hasRequiredHumanConfirmation,
+} from './lib/runtime-provenance.mjs'
 import { validateDemoReceipt } from '../tests/h2-sentinel/scripts/validate-demo-receipt.mjs'
 
 function parseArguments(argv) {
@@ -194,22 +199,9 @@ function assertArtifactHash(artifact, label) {
   }
 }
 
-function assertRendererProvenance(provenance, fingerprint, rendererVersion, label) {
-  if (
-    provenance?.mode !== 'LIVE_ANALYSIS' ||
-    provenance.datasetFingerprint !== fingerprint ||
-    provenance.rendererVersion !== rendererVersion ||
-    typeof provenance.source !== 'string' || provenance.source.trim() === '' ||
-    typeof provenance.ruleVersion !== 'string' || provenance.ruleVersion.trim() === '' ||
-    typeof provenance.configurationVersion !== 'string' ||
-      provenance.configurationVersion.trim() === '' ||
-    !Array.isArray(provenance.limitations)
-  ) throw new Error(`${label} does not retain actual LIVE_ANALYSIS provenance.`)
-}
-
 export function assertQ09Answer(
   answer,
-  { runId, eventId, sourceFilename, fingerprint, displayLabel },
+  { runId, eventId, sourceFilename, fingerprint, displayLabel, analysisProvenance },
 ) {
   const report = answer?.generatedReport
   const descriptor = report?.descriptor
@@ -233,13 +225,13 @@ export function assertQ09Answer(
   assertArtifactHash(report, 'Q09 diagnosis report')
   assertRendererProvenance(
     answer.provenance,
-    fingerprint,
+    analysisProvenance,
     'deterministic-assistant-p1-v1',
     'Q09 answer provenance',
   )
   assertRendererProvenance(
     descriptor.provenance,
-    fingerprint,
+    analysisProvenance,
     'jinja-report-p1-v1',
     'Q09 report provenance',
   )
@@ -256,11 +248,10 @@ export function assertQ09Answer(
       section.citationIds.includes(reportCitations[0].citationId))
   ) throw new Error('Q09 must contain exactly one matching report citation.')
   if (
-    !answer.sections.some(({ text }) =>
-      typeof text === 'string' && /人工(?:确认|决定)|人工.*(?:确认|决定)/.test(text)) ||
+    !answer.sections.some(({ text }) => hasRequiredHumanConfirmation(text)) ||
     typeof descriptor.safetyDisclaimer !== 'string' ||
-    !descriptor.safetyDisclaimer.includes('所有操作建议均须人工确认') ||
-    !report.content.includes('所有操作建议均须人工确认')
+    !hasRequiredHumanConfirmation(descriptor.safetyDisclaimer) ||
+    !hasRequiredHumanConfirmation(report.content)
   ) throw new Error('Q09 must retain the required human-confirmation text.')
   for (const requiredBinding of [eventId, sourceFilename, fingerprint, displayLabel]) {
     if (!report.content.includes(requiredBinding)) {
@@ -283,6 +274,44 @@ export function assertQ09Answer(
       descriptor,
       mediaType: report.mediaType,
     },
+  }
+}
+
+export function assertEvidenceReviewIdentity(event, runId, eventId) {
+  if (event?.eventId !== eventId || !Array.isArray(event.evidence) || event.evidence.length === 0) {
+    throw new Error('The evidence review does not match the selected run event.')
+  }
+  const evidenceIds = event.evidence.map(({ evidenceId }) => evidenceId)
+  if (
+    evidenceIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
+    new Set(evidenceIds).size !== evidenceIds.length
+  ) throw new Error('The selected event has invalid detector evidence identities.')
+  return { runId, eventId, evidenceIds }
+}
+
+export function assertHumanReviewIdentity(receipt, request) {
+  const entry = receipt?.entry
+  const review = receipt?.review
+  const actorKeys = entry?.actor !== null && typeof entry?.actor === 'object'
+    ? Object.keys(entry.actor).sort()
+    : []
+  if (
+    receipt?.schemaVersion !== 1 || receipt.replayed !== false ||
+    entry?.requestId !== request.requestId || entry.action !== request.action ||
+    entry.revision !== 1 || actorKeys.join(',') !== 'displayName,kind' ||
+    entry.actor.kind !== request.actor.kind ||
+    entry.actor.displayName !== request.actor.displayName ||
+    review?.runId !== request.runId || review.eventId !== request.eventId ||
+    review.currentState !== 'confirmed' || review.revision !== entry.revision
+  ) throw new Error('Human review receipt identity does not match the measured confirmation.')
+  return {
+    runId: review.runId,
+    eventId: review.eventId,
+    requestId: entry.requestId,
+    action: entry.action,
+    revision: entry.revision,
+    actor: entry.actor,
+    replayed: receipt.replayed,
   }
 }
 
@@ -350,31 +379,32 @@ async function runOnce({ sequence, slice, outputDirectory }) {
         { runId: analysis.runId, eventId: candidate.eventId },
       ),
     )
-    if (!Array.isArray(evidenceEvent.evidence) || evidenceEvent.evidence.length === 0) {
-      throw new Error('The selected event has no detector evidence to review.')
-    }
+    const evidenceReview = assertEvidenceReviewIdentity(
+      evidenceEvent,
+      analysis.runId,
+      candidate.eventId,
+    )
 
+    const reviewRequest = {
+      schemaVersion: 1,
+      requestId: `demo-${sequence}-${randomUUID()}`,
+      runId: analysis.runId,
+      eventId: candidate.eventId,
+      action: 'confirm',
+      expectedRevision: 0,
+      actor: { kind: 'local_operator', displayName: 'demo_operator' },
+      note: 'Measured local demo review; actor label is unverified.',
+    }
     const review = await measuredStage(stages, 'human_review', () =>
       requestEnvelope(
         session.ready.analyticsUrl,
         `/api/v1/h2-sentinel/runs/${encodeURIComponent(analysis.runId)}/events/${
           encodeURIComponent(candidate.eventId)
         }:review`,
-        {
-          schemaVersion: 1,
-          requestId: `demo-${sequence}-${randomUUID()}`,
-          runId: analysis.runId,
-          eventId: candidate.eventId,
-          action: 'confirm',
-          expectedRevision: 0,
-          actor: { kind: 'local_operator', displayName: 'demo_operator' },
-          note: 'Measured local demo review; actor label is unverified.',
-        },
+        reviewRequest,
       ),
     )
-    if (review.review?.currentState !== 'confirmed' || review.review?.revision !== 1) {
-      throw new Error('Human review did not reach confirmed revision 1.')
-    }
+    const humanReview = assertHumanReviewIdentity(review, reviewRequest)
 
     const answer = await measuredStage(stages, 'q09_report', () =>
       requestEnvelope(
@@ -394,6 +424,7 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       sourceFilename: importedDataset.sourceFilename,
       fingerprint: analysisRun.fingerprint,
       displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+      analysisProvenance: analysisRun.provenance,
     })
 
     const artifacts = await measuredStage(stages, 'artifact_export', async () => {
@@ -442,6 +473,8 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       stageDurations: stages,
       importedDataset,
       analysisRun,
+      evidenceReview,
+      humanReview,
       q09,
       publicLabelsUsedAsDetectorInput: false,
       artifacts,

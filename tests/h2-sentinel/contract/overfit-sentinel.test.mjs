@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 
 import { assertEvaluationIdentity } from '../../../validation/overfit-sentinel.mjs'
 import { EVALUATION_WINDOWS, OFFICIAL_SOURCES } from '../../../validation/lib/official-sources.mjs'
+import { computeMetrics } from '../../../validation/lib/metrics.mjs'
 
 const candidateCommit = 'a'.repeat(40)
 
@@ -55,6 +56,9 @@ function evaluationReport() {
       f1: 0,
     }]),
   )
+  const unmatchedGroundTruth = Object.entries(window.byCode).flatMap(([code, count]) =>
+    Array.from({ length: count }, (_, index) => ({ id: `${code}-truth-${index}`, code })),
+  )
   return {
     schemaVersion: 2,
     reportKind: 'h2_official_validation_evaluation',
@@ -74,7 +78,7 @@ function evaluationReport() {
       boundaryErrorMinutes: 'prediction boundary minus corresponding ground-truth boundary',
       zeroDenominatorMetrics: 'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0',
       macroAveraging: 'unweighted arithmetic mean across C01-C07 precision, recall, and f1',
-      runtimeInputMapping: 'official 69-field row projected to the frozen 10-field loopback detector contract; no labels',
+      runtimeInputMapping: 'verified official 69-field UTC-day chunk submitted unchanged; no labels',
     },
     dataset: {
       source: { ...source.timeseries, fieldCount: 69 },
@@ -116,10 +120,16 @@ function evaluationReport() {
         detectionF1: 0,
         classificationAccuracy: 0,
         eventAccuracy: 0,
+        matchedPairs: [],
+        unmatchedGroundTruth: structuredClone(unmatchedGroundTruth),
+        unmatchedPredictions: [],
       },
       macro: { precision: 0, recall: 0, f1: 0 },
       byCode: byCodeMetrics,
     },
+    matches: [],
+    unmatchedGroundTruth,
+    unmatchedPredictions: [],
     provenance: {
       generatedAt: '2026-04-01T00:00:00Z',
       tool: 'validation/evaluate.mjs',
@@ -128,9 +138,84 @@ function evaluationReport() {
   }
 }
 
+function evaluationReportWithMatch() {
+  const report = evaluationReport()
+  const unmatched = report.unmatchedGroundTruth.shift()
+  report.metrics.classification.unmatchedGroundTruth.shift()
+  const match = {
+    groundTruthId: unmatched.id,
+    predictionId: 'prediction-1',
+    code: unmatched.code,
+    groundTruthStart: '2026-01-01T10:00:00Z',
+    groundTruthEnd: '2026-01-01T10:30:00Z',
+    predictionStart: '2026-01-01T10:02:00Z',
+    predictionEnd: '2026-01-01T10:27:00Z',
+    firstDetectionTime: '2026-01-01T09:55:00Z',
+    firstDetectionDelayMinutes: -5,
+    startBoundaryErrorMinutes: 2,
+    endBoundaryErrorMinutes: -3,
+  }
+  report.matches.push(match)
+  report.predictions.rawCount = 1
+  report.predictions.mergedCount = 1
+  report.predictions.byCode[unmatched.code] = 1
+  report.dataset.chunks[0].predictionCount = 1
+  report.metrics.overall = computeMetrics({ tp: 1, fp: 0, fn: report.groundTruth.count - 1 })
+  report.metrics.timing = {
+    firstDetectionDelay: { count: 1, meanMinutes: -5, meanAbsoluteMinutes: 5 },
+    startBoundaryError: { count: 1, meanMinutes: 2, meanAbsoluteMinutes: 2 },
+    endBoundaryError: { count: 1, meanMinutes: -3, meanAbsoluteMinutes: 3 },
+  }
+  report.metrics.byCode[unmatched.code] = {
+    code: unmatched.code,
+    groundTruth: report.groundTruth.byCode[unmatched.code],
+    predictions: 1,
+    ...computeMetrics({
+      tp: 1,
+      fp: 0,
+      fn: report.groundTruth.byCode[unmatched.code] - 1,
+    }),
+  }
+  report.metrics.macro = Object.fromEntries(
+    ['precision', 'recall', 'f1'].map((metric) => [
+      metric,
+      Object.values(report.metrics.byCode).reduce(
+        (total, entry) => total + entry[metric],
+        0,
+      ) / 7,
+    ]),
+  )
+  const classificationPrecision = 1
+  const classificationRecall = 1 / report.groundTruth.count
+  report.metrics.classification = {
+    matches: 1,
+    correctCode: 1,
+    detectionPrecision: classificationPrecision,
+    detectionRecall: classificationRecall,
+    detectionF1: (2 * classificationPrecision * classificationRecall) /
+      (classificationPrecision + classificationRecall),
+    classificationAccuracy: 1,
+    eventAccuracy: 1 / report.groundTruth.count,
+    matchedPairs: [{
+      groundTruthId: unmatched.id,
+      predictionId: match.predictionId,
+      groundTruthCode: unmatched.code,
+      predictionCode: unmatched.code,
+    }],
+    unmatchedGroundTruth: structuredClone(report.unmatchedGroundTruth),
+    unmatchedPredictions: [],
+  }
+  return report
+}
+
 describe('H2 Sentinel overfit report binding', () => {
   it('accepts a complete finite report bound to the candidate and official source', () => {
     const report = evaluationReport()
+    assert.equal(assertEvaluationIdentity(report, 'validation', candidateCommit), report)
+  })
+
+  it('accepts metrics reconstructed from one structural match', () => {
+    const report = evaluationReportWithMatch()
     assert.equal(assertEvaluationIdentity(report, 'validation', candidateCommit), report)
   })
 
@@ -163,6 +248,21 @@ describe('H2 Sentinel overfit report binding', () => {
       () => assertEvaluationIdentity(wrongImportProvenance, 'validation', candidateCommit),
       /stale or mismatched identity/,
     )
+
+    for (const mutate of [
+      (value) => { value.source = 'contradictory-source' },
+      (value) => { value.ruleVersion = 'contradictory-rule' },
+      (value) => { value.configurationVersion = 'contradictory-configuration' },
+      (value) => { value.generatedAt = '2026-01-01T23:58:00Z' },
+      (value) => { value.limitations = ['Contradictory limitation.'] },
+    ]) {
+      const contradictoryProvenance = evaluationReport()
+      mutate(contradictoryProvenance.dataset.chunks[0].analysisProvenance)
+      assert.throws(
+        () => assertEvaluationIdentity(contradictoryProvenance, 'validation', candidateCommit),
+        /stale or mismatched identity/,
+      )
+    }
 
     const wrongLabelPhase = evaluationReport()
     wrongLabelPhase.dataset.labelAccessPhase = 'before_analysis'
@@ -217,6 +317,34 @@ describe('H2 Sentinel overfit report binding', () => {
     impossibleMacroF1.metrics.macro.f1 = 1
     assert.throws(
       () => assertEvaluationIdentity(impossibleMacroF1, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
+
+    const clearedStructuralArrays = evaluationReport()
+    clearedStructuralArrays.unmatchedGroundTruth = []
+    assert.throws(
+      () => assertEvaluationIdentity(clearedStructuralArrays, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
+
+    const clearedMatchesWithForgedCounts = evaluationReportWithMatch()
+    clearedMatchesWithForgedCounts.matches = []
+    assert.throws(
+      () => assertEvaluationIdentity(clearedMatchesWithForgedCounts, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
+
+    const clearedClassificationArrays = evaluationReport()
+    clearedClassificationArrays.metrics.classification.unmatchedGroundTruth = []
+    assert.throws(
+      () => assertEvaluationIdentity(clearedClassificationArrays, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
+
+    const duplicateEventId = evaluationReport()
+    duplicateEventId.unmatchedGroundTruth[1].id = duplicateEventId.unmatchedGroundTruth[0].id
+    assert.throws(
+      () => assertEvaluationIdentity(duplicateEventId, 'validation', candidateCommit),
       /stale or mismatched identity/,
     )
   })
