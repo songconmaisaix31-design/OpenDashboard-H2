@@ -72,6 +72,52 @@ describe('H2 Sentinel presentation', () => {
     assert.match(markup, /必须人工确认/)
   })
 
+  it('makes the judge path, C01-C07 coverage, source identity, and sign conventions visible', () => {
+    const overviewMarkup = renderView(readyState, { route: 'overview' })
+    assert.match(overviewMarkup, /一条路径完成核验、复核与导出/)
+    assert.match(overviewMarkup, /数据源 \/ 导入/)
+    assert.match(overviewMarkup, /证据链/)
+    assert.match(overviewMarkup, /人工复核/)
+    assert.match(overviewMarkup, /Q01–Q10 助手/)
+    assert.match(overviewMarkup, /报告 \/ 提交导出/)
+    assert.match(overviewMarkup, new RegExp(H2_WEB_FIXTURE_RUN.dataset.sourceFilename))
+    assert.match(overviewMarkup, new RegExp(H2_WEB_FIXTURE_RUN.dataset.fingerprint))
+    assert.match(overviewMarkup, /无控制权限/)
+    for (const code of ['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07']) {
+      assert.match(overviewMarkup, new RegExp(code))
+    }
+    assert.match(overviewMarkup, /PCC.*正值上网（送出），负值下网（受电）/s)
+    assert.match(overviewMarkup, /储能.*正值放电，负值充电/s)
+
+    const analysisMarkup = renderView(readyState, { route: 'analysis' })
+    assert.match(analysisMarkup, /符号约定/)
+    assert.match(analysisMarkup, /正值上网（送出），负值下网（受电）/)
+    assert.match(analysisMarkup, /正值放电，负值充电/)
+  })
+
+  it('blocks downstream judge steps when the data-quality gate is blocked', () => {
+    const blockedState: H2WorkspaceState = {
+      status: 'ready',
+      workspace: {
+        ...readyState.workspace,
+        run: {
+          ...H2_WEB_FIXTURE_RUN,
+          quality: {
+            ...H2_WEB_FIXTURE_RUN.quality,
+            status: 'blocked',
+            blockingReasons: ['缺少官方必填字段'],
+          },
+        },
+      },
+    }
+    const markup = renderView(blockedState, { route: 'overview' })
+    assert.match(markup, /质量门禁已阻断后续分析/)
+    assert.match(markup, /缺少官方必填字段/)
+    assert.match(markup, /暂不可用/)
+    assert.match(markup, /disabled=""/)
+    assert.match(markup, /未生成替代事件或推测结论/)
+  })
+
   it('distinguishes loading, empty, error, and unknown safety states', () => {
     assert.match(
       renderView({ status: 'loading', message: 'loading fixture' }, { route: 'overview' }),

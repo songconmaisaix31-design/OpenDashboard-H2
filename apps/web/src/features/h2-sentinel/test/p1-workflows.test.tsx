@@ -13,7 +13,11 @@ import {
   type H2ReportArtifact,
 } from '@opendashboard/h2-contracts'
 import { EventReviewPanel } from '../components/review/EventReviewPanel.tsx'
-import { getH2AssistantEventRequirement } from '../model/assistant.ts'
+import {
+  getH2AssistantEventRequirement,
+  H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS,
+  resolveH2AssistantFollowUp,
+} from '../model/assistant.ts'
 import {
   getH2ProvenanceLabel,
 } from '../model/presentation.ts'
@@ -23,6 +27,7 @@ import {
 } from '../model/reporting.ts'
 import {
   getH2ReviewActions,
+  isH2ReviewConflict,
   validateH2ReviewDraft,
 } from '../model/review.ts'
 import { AssistantAnswer, AssistantPage } from '../pages/assistant/AssistantPage.tsx'
@@ -58,6 +63,60 @@ describe('H2 Sentinel P1 Web workflows', () => {
     assert.equal(getH2AssistantEventRequirement('Q09', H2_GOLDEN_C03_EVENT).valid, true)
   })
 
+  it('routes bounded follow-up wording to Q01-Q10 and refuses unknown or ambiguous input', () => {
+    for (const question of H2_ASSISTANT_QUESTIONS) {
+      assert.deepEqual(resolveH2AssistantFollowUp(question.prompt), {
+        status: 'matched',
+        questionId: question.questionId,
+        prompt: question.prompt,
+        message: `已确定性匹配 ${question.questionId}；将按官方问题和当前证据回答。`,
+      })
+    }
+
+    const aliases = {
+      Q01: 'PCC 正负值怎么理解？',
+      Q02: 'PCC 功率越限和电量配额怎么区分？',
+      Q03: '储能充放电方向会怎样影响并网点？',
+      Q04: 'SOC 调节裕度和备用怎么判断？',
+      Q05: '设备降额后 EMS 为什么没有同步？',
+      Q06: '如何区分云团波动和控制指令振荡？',
+      Q07: '多台电解槽的负荷分配怎么看？',
+      Q08: '哪些操作建议需要人工确认？',
+      Q09: '导出测试集诊断报告',
+      Q10: 'PCC 合规日报写什么？',
+    } as const
+    for (const [questionId, wording] of Object.entries(aliases)) {
+      const resolution = resolveH2AssistantFollowUp(wording)
+      assert.equal(resolution.status, 'matched')
+      if (resolution.status === 'matched') assert.equal(resolution.questionId, questionId)
+    }
+
+    assert.equal(resolveH2AssistantFollowUp('帮我随便聊聊').status, 'refused')
+    assert.equal(resolveH2AssistantFollowUp('PCC 越限配额合规日报').status, 'refused')
+    assert.equal(
+      resolveH2AssistantFollowUp('x'.repeat(H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS + 1)).status,
+      'refused',
+    )
+  })
+
+  it('renders the follow-up entry as disabled while an answer is pending', () => {
+    const markup = renderToStaticMarkup(
+      <AssistantPage
+        answer={null}
+        error={null}
+        event={H2_GOLDEN_C03_EVENT}
+        events={[H2_GOLDEN_C03_EVENT, H2_GOLDEN_C04_EVENT]}
+        onAsk={noop}
+        onDownload={noop}
+        onSelectEvent={noop}
+        pending
+      />,
+    )
+    assert.match(markup, /只路由到 Q01–Q10，不开放通用聊天/)
+    assert.match(markup, /maxLength="120"/)
+    assert.match(markup, /disabled=""/)
+  })
+
   it('renders the Q09 report citation and an explicit Chinese download control', async () => {
     const answer = await createH2WebFixtureDataSource().ask({
       runId: 'run-fixture-h2-sentinel-golden',
@@ -80,6 +139,9 @@ describe('H2 Sentinel P1 Web workflows', () => {
     assert.equal(validateH2ReviewDraft({ action: 'reject', actorName: 'operator', note: ' ' }).valid, false)
     assert.equal(validateH2ReviewDraft({ action: 'confirm', actorName: ' ', note: '' }).valid, false)
     assert.equal(validateH2ReviewDraft({ action: 'confirm', actorName: 'operator', note: '' }).valid, true)
+    assert.equal(isH2ReviewConflict({ remoteCode: 'review.conflict' }), true)
+    assert.equal(isH2ReviewConflict({ code: 'review_conflict' }), true)
+    assert.equal(isH2ReviewConflict({ code: 'unknown' }), false)
 
     const review = reviewWithReversedEntries()
     const markup = renderToStaticMarkup(

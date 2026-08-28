@@ -11,10 +11,12 @@ import {
   H2_PROVENANCE_LABELS,
   H2_REVIEW_LABELS,
   H2_SEVERITY_LABELS,
+  H2_SIGN_CONVENTIONS,
 } from '../../model/presentation.ts'
 import { createEventChartOption } from '../../model/chart-options.ts'
 import { EChartsCanvas } from '../../components/charts/EChartsCanvas.tsx'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
+import { SignConventionNote } from '../../components/common/SignConventionNote.tsx'
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
 import { EvidencePanel } from '../../components/evidence/EvidencePanel.tsx'
 import { ImpactPanel } from '../../components/impact/ImpactPanel.tsx'
@@ -98,6 +100,7 @@ export function DiagnosisPage({
             <div><dt>首次发现</dt><dd>{formatH2Timestamp(event.firstDetectionTime)}</dd></div>
             <div><dt>主要控制对象</dt><dd>{event.primaryControlObject.displayName}</dd></div>
             <div><dt>受影响设备</dt><dd>{event.affectedEquipment.map(({ displayName }) => displayName).join('、')}</dd></div>
+            <div><dt>功率符号约定</dt><dd>{H2_SIGN_CONVENTIONS.map(({ label, copy }) => `${label}：${copy}`).join('；')}</dd></div>
           </dl>
         </div>
       </section>
@@ -107,6 +110,7 @@ export function DiagnosisPage({
           <div><p className="h2-eyebrow">Synchronized evidence</p><h2>时间对齐趋势与事件区间</h2></div>
           <span>单位 kW · 阴影为事件区间</span>
         </div>
+        <SignConventionNote compact />
         {series ? (
           <EChartsCanvas ariaLabel={`${event.code} 事件时间对齐证据图，含约束线与事件区间`} option={createEventChartOption(series, event)} />
         ) : (

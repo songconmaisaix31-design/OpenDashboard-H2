@@ -170,14 +170,42 @@ describe('H2 CSV workspace loading', () => {
     assert.equal(result.qualityStatus, 'passed')
   })
 
-  it('fails closed for non-CSV and oversized files before reading content', () => {
-    assert.throws(
-      () => validateH2CsvFile({ name: 'payload.xlsx', size: 12 }),
-      (error) => error instanceof H2CsvInputError && error.code === 'invalid_type',
-    )
-    assert.throws(
-      () => validateH2CsvFile({ name: 'too-large.csv', size: H2_CSV_MAX_BYTES + 1 }),
-      (error) => error instanceof H2CsvInputError && error.code === 'too_large',
-    )
+  it('accepts the official CSV byte size and the exact local analytics boundary', () => {
+    assert.doesNotThrow(() => validateH2CsvFile({ name: 'official.csv', size: 77_865_257 }))
+    assert.doesNotThrow(() => validateH2CsvFile({ name: 'at-limit.csv', size: H2_CSV_MAX_BYTES }))
+  })
+
+  it('fails invalid or oversized files before reading content or calling the data source', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    const cases = [
+      { code: 'invalid_type' as const, name: 'payload.xlsx', size: 12 },
+      { code: 'too_large' as const, name: 'too-large.csv', size: H2_CSV_MAX_BYTES + 1 },
+    ]
+
+    for (const testCase of cases) {
+      let textCalls = 0
+      let dataSourceCalls = 0
+      const dataSource: H2SentinelDataSource = {
+        ...fixture,
+        async importCsv() {
+          dataSourceCalls += 1
+          throw new Error('The input guard must run before the data source.')
+        },
+      }
+
+      await assert.rejects(
+        () => importH2CsvWorkspace(dataSource, {
+          name: testCase.name,
+          size: testCase.size,
+          async text() {
+            textCalls += 1
+            return 'must not be read'
+          },
+        }),
+        (error) => error instanceof H2CsvInputError && error.code === testCase.code,
+      )
+      assert.equal(textCalls, 0)
+      assert.equal(dataSourceCalls, 0)
+    }
   })
 })

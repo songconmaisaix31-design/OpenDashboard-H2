@@ -25,6 +25,7 @@ import {
   type H2WorkspaceState,
 } from './model/view-state.ts'
 import {
+  H2_CSV_MAX_BYTES,
   H2CsvInputError,
   hydrateH2Workspace,
   importH2CsvWorkspace,
@@ -330,7 +331,7 @@ export function H2SentinelApp({
     } catch (error) {
       const message = error instanceof H2CsvInputError
         ? error.code === 'too_large'
-          ? 'CSV 超过 5 MiB 上限；未开始导入。'
+          ? `CSV 超过 ${H2_CSV_MAX_BYTES / (1024 * 1024)} MiB 上限；未开始导入。`
           : '只接受明确选择的 .csv 文件。'
         : 'CSV 导入或分析失败；当前运行保持不变。'
       setCommandState((current) => ({ ...current, pending: null, error: message }))

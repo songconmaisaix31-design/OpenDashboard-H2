@@ -4,6 +4,7 @@ import type {
   H2AnomalyEvent,
   H2ClaimKind,
   H2DataQualityStatus,
+  H2DatasetField,
   H2DatasetMode,
   H2EvidenceValue,
   H2Provenance,
@@ -15,13 +16,13 @@ import type {
 } from '@opendashboard/h2-contracts'
 
 export const H2_CODE_LABELS = {
-  C01: '电解槽设定值振荡',
-  C02: '可用容量未同步',
+  C01: '电解槽功率指令振荡',
+  C02: '设备可用容量未同步导致功率指令持续偏差',
   C03: '储能充放电方向异常',
-  C04: '并网点功率边界跟踪异常',
-  C05: '电网能量配额风险',
+  C04: 'PCC上下网功率边界跟踪异常',
+  C05: '上下网电量配额执行异常',
   C06: '多电解槽负荷分配异常',
-  C07: 'SOC 与调节裕度异常',
+  C07: '储能SOC目标轨迹与调节裕度管理异常',
 } as const satisfies Readonly<Record<H2AnomalyCode, string>>
 
 export const H2_SEVERITY_LABELS = {
@@ -61,6 +62,43 @@ export const H2_SAFETY_LABELS = {
   unknown: '证据不足',
   not_applicable: '不适用',
 } as const satisfies Readonly<Record<H2SafetyStatus, string>>
+
+/** Official power directions used consistently in overview, charts, and diagnosis. */
+export const H2_SIGN_CONVENTIONS = [
+  { id: 'pcc', label: 'PCC', copy: '正值上网（送出），负值下网（受电）' },
+  { id: 'bess', label: '储能', copy: '正值放电，负值充电' },
+] as const
+
+const H2_FIELD_SIGN_COPY = {
+  pcc_power_actual_kw: H2_SIGN_CONVENTIONS[0].copy,
+  pcc_power_kw: H2_SIGN_CONVENTIONS[0].copy,
+  bess_power_cmd_kw: H2_SIGN_CONVENTIONS[1].copy,
+  bess_power_actual_kw: H2_SIGN_CONVENTIONS[1].copy,
+  bess_dispatch_command_kw: H2_SIGN_CONVENTIONS[1].copy,
+  bess_power_kw: H2_SIGN_CONVENTIONS[1].copy,
+} as const satisfies Readonly<Record<string, string>>
+
+export interface H2FieldDictionaryRow {
+  readonly name: string
+  readonly chineseName: string
+  readonly role: string
+  readonly unit: string
+  readonly sign: string
+  readonly required: boolean
+}
+
+export function toH2FieldDictionaryRows(
+  fields: readonly H2DatasetField[],
+): readonly H2FieldDictionaryRow[] {
+  return fields.map((field) => ({
+    name: field.name,
+    chineseName: field.displayNameZh,
+    role: field.role,
+    unit: field.unit ?? '',
+    sign: H2_FIELD_SIGN_COPY[field.name as keyof typeof H2_FIELD_SIGN_COPY] ?? '',
+    required: field.required,
+  }))
+}
 
 export const H2_QUALITY_LABELS = {
   passed: '质量检查通过',
