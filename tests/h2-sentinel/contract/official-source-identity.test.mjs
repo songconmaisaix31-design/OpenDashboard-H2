@@ -217,10 +217,15 @@ describe('H2 Sentinel official source identity', () => {
 
     const run = {
       runId: 'run-1',
+      status: 'completed',
+      startedAt: provenance.generatedAt,
+      completedAt: '2026-01-01T00:02:01Z',
       dataset: { ...imported.dataset },
       provenance: { ...provenance, modelVersion: 'detector-v1' },
     }
-    assert.equal(assertAnalysisRun(run, imported).runId, 'run-1')
+    const runIdentity = assertAnalysisRun(run, imported)
+    assert.equal(runIdentity.runId, 'run-1')
+    assert.equal(runIdentity.completedAt, run.completedAt)
     assert.throws(
       () => assertImportedDataset({ dataset: { ...imported.dataset, datasetId: '' } }, {
         filename: imported.dataset.sourceFilename,
