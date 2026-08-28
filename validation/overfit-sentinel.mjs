@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { assertExactCleanCandidate, currentCandidate } from './lib/candidate.mjs'
 import { ANOMALY_CODES } from './lib/official-contract.mjs'
 import { EVALUATION_WINDOWS, OFFICIAL_SOURCES, sha256 } from './lib/official-sources.mjs'
-import { computeMetrics, toInstant } from './lib/metrics.mjs'
+import { classifyEvents, computeMetrics, matchEvents, toInstant } from './lib/metrics.mjs'
 import {
   createGeneratedRunDirectory,
   ensureIgnoredOutputPath,
@@ -321,6 +321,38 @@ function structuralEventIdentity(value) {
     ANOMALY_CODES.includes(value.code)
 }
 
+function canonicalEvaluationEvent(value, prediction) {
+  const keys = ['id', 'code', 'startTime', 'endTime']
+  const hasFirstDetection = prediction && value?.firstDetectionTime !== undefined
+  if (
+    !hasExactKeys(value, hasFirstDetection ? [...keys, 'firstDetectionTime'] : keys) ||
+    typeof value.id !== 'string' || value.id.trim() === '' ||
+    !ANOMALY_CODES.includes(value.code)
+  ) return false
+  const start = toInstant(value.startTime)
+  const end = toInstant(value.endTime)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end) return false
+  if (!hasFirstDetection) return true
+  const firstDetection = toInstant(value.firstDetectionTime)
+  return Number.isFinite(firstDetection) && firstDetection <= end
+}
+
+function sameJsonValue(left, right) {
+  if (left === right) return true
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+      left.every((entry, index) => sameJsonValue(entry, right[index]))
+  }
+  if (
+    left === null || right === null || typeof left !== 'object' ||
+    typeof right !== 'object'
+  ) return false
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  return leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => Object.hasOwn(right, key) && sameJsonValue(left[key], right[key]))
+}
+
 function uniqueStrings(values) {
   return values.every((value) => typeof value === 'string' && value.trim() !== '') &&
     new Set(values).size === values.length
@@ -349,6 +381,47 @@ function structuralEvaluationMatches(value) {
     !Array.isArray(value.unmatchedPredictions) ||
     !value.unmatchedGroundTruth.every(structuralEventIdentity) ||
     !value.unmatchedPredictions.every(structuralEventIdentity)
+  ) return false
+
+  const evaluatedEvents = value.evaluatedEvents
+  if (
+    !hasExactKeys(evaluatedEvents, ['groundTruth', 'predictions']) ||
+    !Array.isArray(evaluatedEvents.groundTruth) ||
+    !Array.isArray(evaluatedEvents.predictions) ||
+    !evaluatedEvents.groundTruth.every((event) => canonicalEvaluationEvent(event, false)) ||
+    !evaluatedEvents.predictions.every((event) => canonicalEvaluationEvent(event, true))
+  ) return false
+  let canonicalMatching
+  let canonicalClassification
+  try {
+    canonicalMatching = matchEvents({
+      groundTruth: evaluatedEvents.groundTruth,
+      predictions: evaluatedEvents.predictions,
+      graceMinutes: value.parameters.graceMinutes,
+    })
+    canonicalClassification = classifyEvents({
+      groundTruth: evaluatedEvents.groundTruth,
+      predictions: evaluatedEvents.predictions,
+      graceMinutes: value.parameters.graceMinutes,
+    })
+  } catch {
+    return false
+  }
+  const canonicalOverall = Object.fromEntries(
+    ['tp', 'fp', 'fn', 'precision', 'recall', 'f1']
+      .map((key) => [key, canonicalMatching[key]]),
+  )
+  const canonicalByCode = Object.fromEntries(
+    canonicalMatching.byCode.map((entry) => [entry.code, entry]),
+  )
+  if (
+    !sameJsonValue(value.matches, canonicalMatching.matches) ||
+    !sameJsonValue(value.unmatchedGroundTruth, canonicalMatching.unmatchedGroundTruth) ||
+    !sameJsonValue(value.unmatchedPredictions, canonicalMatching.unmatchedPredictions) ||
+    !sameJsonValue(value.metrics.overall, canonicalOverall) ||
+    !sameJsonValue(value.metrics.timing, canonicalMatching.timing) ||
+    !sameJsonValue(value.metrics.byCode, canonicalByCode) ||
+    !sameJsonValue(value.metrics.classification, canonicalClassification)
   ) return false
 
   const matchKeys = [

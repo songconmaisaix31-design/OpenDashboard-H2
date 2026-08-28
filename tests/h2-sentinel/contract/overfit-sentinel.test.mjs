@@ -3,7 +3,10 @@ import { describe, it } from 'node:test'
 
 import { assertEvaluationIdentity } from '../../../validation/overfit-sentinel.mjs'
 import { EVALUATION_WINDOWS, OFFICIAL_SOURCES } from '../../../validation/lib/official-sources.mjs'
-import { computeMetrics } from '../../../validation/lib/metrics.mjs'
+import {
+  classifyEvents,
+  matchEvents,
+} from '../../../validation/lib/metrics.mjs'
 
 const candidateCommit = 'a'.repeat(40)
 
@@ -56,9 +59,20 @@ function evaluationReport() {
       f1: 0,
     }]),
   )
-  const unmatchedGroundTruth = Object.entries(window.byCode).flatMap(([code, count]) =>
-    Array.from({ length: count }, (_, index) => ({ id: `${code}-truth-${index}`, code })),
+  let truthSequence = 0
+  const evaluatedGroundTruth = Object.entries(window.byCode).flatMap(([code, count]) =>
+    Array.from({ length: count }, (_, index) => {
+      const start = firstDay + truthSequence * 3_600_000
+      truthSequence += 1
+      return {
+        id: `${code}-truth-${index}`,
+        code,
+        startTime: new Date(start).toISOString(),
+        endTime: new Date(start + 30 * 60_000).toISOString(),
+      }
+    }),
   )
+  const unmatchedGroundTruth = evaluatedGroundTruth.map(({ id, code }) => ({ id, code }))
   return {
     schemaVersion: 2,
     reportKind: 'h2_official_validation_evaluation',
@@ -105,6 +119,10 @@ function evaluationReport() {
       runtime,
       byCode: zeroPredictionCounts,
     },
+    evaluatedEvents: {
+      groundTruth: evaluatedGroundTruth,
+      predictions: [],
+    },
     metrics: {
       overall: { tp: 0, fp: 0, fn: 70, precision: 0, recall: 0, f1: 0 },
       timing: {
@@ -138,44 +156,48 @@ function evaluationReport() {
   }
 }
 
-function evaluationReportWithMatch() {
-  const report = evaluationReport()
-  const unmatched = report.unmatchedGroundTruth.shift()
-  report.metrics.classification.unmatchedGroundTruth.shift()
-  const match = {
-    groundTruthId: unmatched.id,
-    predictionId: 'prediction-1',
-    code: unmatched.code,
-    groundTruthStart: '2026-01-01T10:00:00Z',
-    groundTruthEnd: '2026-01-01T10:30:00Z',
-    predictionStart: '2026-01-01T10:02:00Z',
-    predictionEnd: '2026-01-01T10:27:00Z',
-    firstDetectionTime: '2026-01-01T09:55:00Z',
-    firstDetectionDelayMinutes: -5,
-    startBoundaryErrorMinutes: 2,
-    endBoundaryErrorMinutes: -3,
-  }
-  report.matches.push(match)
-  report.predictions.rawCount = 1
-  report.predictions.mergedCount = 1
-  report.predictions.byCode[unmatched.code] = 1
-  report.dataset.chunks[0].predictionCount = 1
-  report.metrics.overall = computeMetrics({ tp: 1, fp: 0, fn: report.groundTruth.count - 1 })
-  report.metrics.timing = {
-    firstDetectionDelay: { count: 1, meanMinutes: -5, meanAbsoluteMinutes: 5 },
-    startBoundaryError: { count: 1, meanMinutes: 2, meanAbsoluteMinutes: 2 },
-    endBoundaryError: { count: 1, meanMinutes: -3, meanAbsoluteMinutes: 3 },
-  }
-  report.metrics.byCode[unmatched.code] = {
-    code: unmatched.code,
-    groundTruth: report.groundTruth.byCode[unmatched.code],
-    predictions: 1,
-    ...computeMetrics({
-      tp: 1,
-      fp: 0,
-      fn: report.groundTruth.byCode[unmatched.code] - 1,
-    }),
-  }
+function refreshStructuralEvaluation(report) {
+  const groundTruth = report.evaluatedEvents.groundTruth
+  const predictions = report.evaluatedEvents.predictions
+  const matching = matchEvents({
+    groundTruth,
+    predictions,
+    graceMinutes: report.parameters.graceMinutes,
+  })
+  const classification = classifyEvents({
+    groundTruth,
+    predictions,
+    graceMinutes: report.parameters.graceMinutes,
+  })
+  report.groundTruth.count = groundTruth.length
+  report.groundTruth.byCode = Object.fromEntries(
+    Object.keys(report.groundTruth.byCode).map((code) => [
+      code,
+      groundTruth.filter((event) => event.code === code).length,
+    ]),
+  )
+  report.dataset.evaluatedWindow.labelEventCount = groundTruth.length
+  report.predictions.rawCount = predictions.length
+  report.predictions.mergedCount = predictions.length
+  report.predictions.byCode = Object.fromEntries(
+    Object.keys(report.predictions.byCode).map((code) => [
+      code,
+      predictions.filter((event) => event.code === code).length,
+    ]),
+  )
+  report.dataset.chunks.forEach((chunk) => { chunk.predictionCount = 0 })
+  report.dataset.chunks[0].predictionCount = predictions.length
+  report.matches = matching.matches
+  report.unmatchedGroundTruth = matching.unmatchedGroundTruth
+  report.unmatchedPredictions = matching.unmatchedPredictions
+  report.metrics.overall = Object.fromEntries(
+    ['tp', 'fp', 'fn', 'precision', 'recall', 'f1'].map((key) => [key, matching[key]]),
+  )
+  report.metrics.timing = matching.timing
+  report.metrics.classification = classification
+  report.metrics.byCode = Object.fromEntries(
+    matching.byCode.map((entry) => [entry.code, entry]),
+  )
   report.metrics.macro = Object.fromEntries(
     ['precision', 'recall', 'f1'].map((metric) => [
       metric,
@@ -185,45 +207,34 @@ function evaluationReportWithMatch() {
       ) / 7,
     ]),
   )
-  const classificationPrecision = 1
-  const classificationRecall = 1 / report.groundTruth.count
-  report.metrics.classification = {
-    matches: 1,
-    correctCode: 1,
-    detectionPrecision: classificationPrecision,
-    detectionRecall: classificationRecall,
-    detectionF1: (2 * classificationPrecision * classificationRecall) /
-      (classificationPrecision + classificationRecall),
-    classificationAccuracy: 1,
-    eventAccuracy: 1 / report.groundTruth.count,
-    matchedPairs: [{
-      groundTruthId: unmatched.id,
-      predictionId: match.predictionId,
-      groundTruthCode: unmatched.code,
-      predictionCode: unmatched.code,
-    }],
-    unmatchedGroundTruth: structuredClone(report.unmatchedGroundTruth),
-    unmatchedPredictions: [],
-  }
   return report
+}
+
+function evaluationReportWithMatch() {
+  const report = evaluationReport()
+  const truth = report.evaluatedEvents.groundTruth[0]
+  const start = new Date(truth.startTime).getTime()
+  report.evaluatedEvents.predictions.push({
+    id: 'prediction-1',
+    code: truth.code,
+    startTime: new Date(start + 2 * 60_000).toISOString(),
+    endTime: new Date(start + 27 * 60_000).toISOString(),
+    firstDetectionTime: new Date(start - 5 * 60_000).toISOString(),
+  })
+  return refreshStructuralEvaluation(report)
 }
 
 function evaluationReportWithForgedClassificationMatch() {
   const report = evaluationReport()
-  const groundTruth = report.unmatchedGroundTruth.find(({ code }) => code === 'C02')
-  const prediction = { id: 'C02-prediction-unmatched', code: 'C02' }
-  report.unmatchedPredictions.push(prediction)
-  report.predictions.rawCount = 1
-  report.predictions.mergedCount = 1
-  report.predictions.byCode.C02 = 1
-  report.dataset.chunks[0].predictionCount = 1
-  report.metrics.overall = computeMetrics({ tp: 0, fp: 1, fn: report.groundTruth.count })
-  report.metrics.byCode.C02 = {
+  const groundTruth = report.evaluatedEvents.groundTruth.find(({ code }) => code === 'C02')
+  const prediction = {
+    id: 'C02-prediction-unmatched',
     code: 'C02',
-    groundTruth: report.groundTruth.byCode.C02,
-    predictions: 1,
-    ...computeMetrics({ tp: 0, fp: 1, fn: report.groundTruth.byCode.C02 }),
+    startTime: '2026-03-15T10:00:00.000Z',
+    endTime: '2026-03-15T10:30:00.000Z',
   }
+  report.evaluatedEvents.predictions.push(prediction)
+  refreshStructuralEvaluation(report)
   const classificationPrecision = 1
   const classificationRecall = 1 / report.groundTruth.count
   report.metrics.classification = {
@@ -249,6 +260,35 @@ function evaluationReportWithForgedClassificationMatch() {
   return report
 }
 
+function evaluationReportWithCrossCodeOverlaps() {
+  const report = evaluationReport()
+  const c01 = report.evaluatedEvents.groundTruth.find(({ code }) => code === 'C01')
+  const c02 = report.evaluatedEvents.groundTruth.find(({ code }) => code === 'C02')
+  Object.assign(c01, {
+    startTime: '2026-01-10T10:00:00.000Z',
+    endTime: '2026-01-10T10:30:00.000Z',
+  })
+  Object.assign(c02, {
+    startTime: '2026-03-10T10:00:00.000Z',
+    endTime: '2026-03-10T10:30:00.000Z',
+  })
+  report.evaluatedEvents.predictions.push(
+    {
+      id: 'prediction-c02-january',
+      code: 'C02',
+      startTime: '2026-01-10T10:05:00.000Z',
+      endTime: '2026-01-10T10:25:00.000Z',
+    },
+    {
+      id: 'prediction-c01-march',
+      code: 'C01',
+      startTime: '2026-03-10T10:05:00.000Z',
+      endTime: '2026-03-10T10:25:00.000Z',
+    },
+  )
+  return refreshStructuralEvaluation(report)
+}
+
 describe('H2 Sentinel overfit report binding', () => {
   it('accepts a complete finite report bound to the candidate and official source', () => {
     const report = evaluationReport()
@@ -258,6 +298,38 @@ describe('H2 Sentinel overfit report binding', () => {
   it('accepts metrics reconstructed from one structural match', () => {
     const report = evaluationReportWithMatch()
     assert.equal(assertEvaluationIdentity(report, 'validation', candidateCommit), report)
+  })
+
+  it('accepts canonical cross-code classification for overlapping events', () => {
+    const report = evaluationReportWithCrossCodeOverlaps()
+    assert.equal(report.metrics.classification.correctCode, 0)
+    assert.equal(assertEvaluationIdentity(report, 'validation', candidateCommit), report)
+  })
+
+  it('rejects a two-month C01/C02 cross-swap with self-consistent scalars', () => {
+    const report = evaluationReportWithCrossCodeOverlaps()
+    const [januaryPair, marchPair] = report.metrics.classification.matchedPairs
+    report.metrics.classification.matchedPairs = [
+      {
+        groundTruthId: januaryPair.groundTruthId,
+        predictionId: marchPair.predictionId,
+        groundTruthCode: januaryPair.groundTruthCode,
+        predictionCode: marchPair.predictionCode,
+      },
+      {
+        groundTruthId: marchPair.groundTruthId,
+        predictionId: januaryPair.predictionId,
+        groundTruthCode: marchPair.groundTruthCode,
+        predictionCode: januaryPair.predictionCode,
+      },
+    ]
+    report.metrics.classification.correctCode = 2
+    report.metrics.classification.classificationAccuracy = 1
+    report.metrics.classification.eventAccuracy = 2 / report.groundTruth.count
+    assert.throws(
+      () => assertEvaluationIdentity(report, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
   })
 
   it('rejects a forged same-code classification match whose events remain unmatched', () => {

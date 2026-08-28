@@ -48,12 +48,20 @@ const diagnosisSections = [
   '版本与溯源',
   '安全声明与限制',
 ]
-const ANALYSIS_GENERATED_AT = '2026-01-05T10:40:00Z'
-const ANALYSIS_COMPLETED_AT = '2026-01-05T10:40:01Z'
+const ANALYSIS_GENERATED_AT = '2026-01-05T12:45:00Z'
+const ANALYSIS_COMPLETED_AT = '2026-01-05T12:45:01Z'
+const ANALYSIS_MODEL_VERSION = 'deterministic-c01-c07-v4'
+const COMPLETE_SAFETY_STATEMENT =
+  '本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。'
 const INVALID_HUMAN_CONFIRMATION_DECLARATIONS = [
   '所有操作建议均须人工确认，但确认不是必需的。',
   '所有操作建议均须人工确认；人工确认并非必要条件。',
   '所有操作建议均须人工确认，但系统可以下发设备指令。',
+]
+const CONTROL_AUTHORITY_TEXTS = [
+  '系统有权下发设备指令',
+  '应用已获授权控制设备',
+  '操作员确认后，系统获准发送设备命令',
 ]
 
 function sha256(value) {
@@ -222,8 +230,10 @@ async function writeRunArtifacts(
   const diagnosis = [
     '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"></head><body>',
     ...diagnosisSections.map((heading) => `<h2>${heading}</h2><p>验证内容。</p>`),
-    `<p>${analyzedEventId} · validation-slice.csv · ${detectorFingerprint} · ${displayLabel}</p>`,
-    '<p>所有操作建议均须人工确认</p></body></html>',
+    `<p><code>${analyzedEventId}</code> · C04 / EXPORT_POWER_LIMIT_NOT_TRACKED</p>`,
+    `<p>validation-slice.csv · ${detectorFingerprint} · ${displayLabel}</p>`,
+    `<p><code>evidence-${sequence}-1</code></p>`,
+    `<p>${COMPLETE_SAFETY_STATEMENT}</p></body></html>`,
   ].join('')
   const evidenceResponse = `${JSON.stringify({
     schemaVersion: 1,
@@ -305,7 +315,7 @@ function rendererProvenance(fingerprint, rendererVersion) {
     source: 'test-fixture-import',
     generatedAt: ANALYSIS_COMPLETED_AT,
     datasetFingerprint: fingerprint,
-    modelVersion: 'test-detector-v1',
+    modelVersion: ANALYSIS_MODEL_VERSION,
     ruleVersion: 'test-rule-v1',
     configurationVersion: 'test-configuration-v1',
     rendererVersion,
@@ -334,7 +344,7 @@ function q09Binding(runId, eventId, fingerprint, contentHash) {
       {
         sectionId: 'generated_report',
         claimKind: 'recommendation',
-        text: '所有操作建议均须人工确认',
+        text: COMPLETE_SAFETY_STATEMENT,
         citationIds: [reportCitationId],
       },
     ],
@@ -369,7 +379,7 @@ function q09Binding(runId, eventId, fingerprint, contentHash) {
         contentHash,
         eventId,
         warnings: [],
-        safetyDisclaimer: '所有操作建议均须人工确认',
+        safetyDisclaimer: COMPLETE_SAFETY_STATEMENT,
         provenance: rendererProvenance(fingerprint, 'jinja-report-p1-v1'),
       },
       mediaType: 'text/html',
@@ -380,8 +390,10 @@ function q09Binding(runId, eventId, fingerprint, contentHash) {
 function runnerQ09Answer(runId, eventId, fingerprint, displayLabel) {
   const content = [
     '<!doctype html><html lang="zh-CN"><body>',
-    `<p>${eventId} · validation-slice.csv · ${fingerprint} · ${displayLabel}</p>`,
-    '<p>所有操作建议均须人工确认</p>',
+    `<p><code>${eventId}</code> · C04 / EXPORT_POWER_LIMIT_NOT_TRACKED</p>`,
+    `<p>validation-slice.csv · ${fingerprint} · ${displayLabel}</p>`,
+    '<p><code>evidence-1</code></p>',
+    `<p>${COMPLETE_SAFETY_STATEMENT}</p>`,
     '</body></html>',
   ].join('')
   const answer = q09Binding(runId, eventId, fingerprint, sha256(content))
@@ -460,7 +472,7 @@ function measuredRun({
       rowCount: detectorRowCount,
       fingerprint: detectorFingerprint,
       timeRange,
-      provenance: runtimeProvenance(detectorFingerprint, 'test-detector-v1'),
+      provenance: runtimeProvenance(detectorFingerprint, ANALYSIS_MODEL_VERSION),
     },
     q09: q09Binding(
       runId,
@@ -762,7 +774,7 @@ describe('P1 measured demo receipt validation', () => {
       startedAt: ANALYSIS_GENERATED_AT,
       completedAt: ANALYSIS_COMPLETED_AT,
       dataset,
-      provenance: runtimeProvenance(fingerprint, 'test-detector-v1'),
+      provenance: runtimeProvenance(fingerprint, ANALYSIS_MODEL_VERSION),
       events: [],
     }
     const identity = assertAnalysisRun(response, { dataset })
@@ -806,7 +818,7 @@ describe('P1 measured demo receipt validation', () => {
       },
     }
     assert.deepEqual(
-      assertEvidenceReviewIdentity(evidence, request.runId, request.eventId),
+      assertEvidenceReviewIdentity(evidence, request.runId, request.eventId, 'C04'),
       {
         runId: request.runId,
         eventId: request.eventId,
@@ -819,12 +831,13 @@ describe('P1 measured demo receipt validation', () => {
 
     for (const mutate of [
       (value) => { value.eventId = 'wrong-event' },
+      (value) => { value.code = 'C03' },
       (value) => { value.evidence = [] },
     ]) {
       const invalid = structuredClone(evidence)
       mutate(invalid)
       assert.throws(
-        () => assertEvidenceReviewIdentity(invalid, request.runId, request.eventId),
+        () => assertEvidenceReviewIdentity(invalid, request.runId, request.eventId, 'C04'),
       )
     }
     for (const mutate of [
@@ -842,7 +855,7 @@ describe('P1 measured demo receipt validation', () => {
     }
   })
 
-  it('runner rejects each Q09 identity, report, citation, provenance, and safety drift', () => {
+  it('accepts the real C04 Q09 lifecycle shape and rejects every identity or safety drift', () => {
     const expected = {
       runId: 'run-validation',
       eventId: 'detected-c04',
@@ -850,9 +863,11 @@ describe('P1 measured demo receipt validation', () => {
       fingerprint: `sha256:${'a'.repeat(64)}`,
       displayLabel: 'LIVE_ANALYSIS · 验证集切片',
       completedAt: ANALYSIS_COMPLETED_AT,
+      expectedCode: 'C04',
+      evidenceIds: ['evidence-1'],
       analysisProvenance: runtimeProvenance(
         `sha256:${'a'.repeat(64)}`,
-        'test-detector-v1',
+        ANALYSIS_MODEL_VERSION,
       ),
     }
     const valid = runnerQ09Answer(
@@ -863,14 +878,18 @@ describe('P1 measured demo receipt validation', () => {
     )
     assert.equal(assertQ09Answer(valid, expected).questionId, 'Q09')
     assert.notEqual(expected.analysisProvenance.generatedAt, valid.generatedAt)
+    assert.equal(expected.analysisProvenance.generatedAt, '2026-01-05T12:45:00Z')
+    assert.equal(valid.generatedAt, '2026-01-05T12:45:01Z')
+    assert.equal(valid.provenance.modelVersion, 'deterministic-c01-c07-v4')
+    assert.equal(valid.generatedReport.descriptor.safetyDisclaimer, COMPLETE_SAFETY_STATEMENT)
 
     const cases = [
       (answer) => { answer.questionId = 'Q08' },
       (answer) => { answer.runId = 'different-run' },
       (answer) => { answer.eventId = 'different-event' },
-      (answer) => { answer.generatedAt = '2026-01-05T10:40:02Z' },
+      (answer) => { answer.generatedAt = '2026-01-05T12:45:02Z' },
       (answer) => { answer.generatedReport.descriptor.kind = 'period_summary' },
-      (answer) => { answer.generatedReport.descriptor.generatedAt = '2026-01-05T10:40:02Z' },
+      (answer) => { answer.generatedReport.descriptor.generatedAt = '2026-01-05T12:45:02Z' },
       (answer) => { answer.generatedReport.mediaType = 'application/json' },
       (answer) => { answer.generatedReport.descriptor.contentHash = `sha256:${'0'.repeat(64)}` },
       (answer) => {
@@ -924,8 +943,29 @@ describe('P1 measured demo receipt validation', () => {
         (answer) => { answer.generatedReport.descriptor.safetyDisclaimer = text }),
       (answer) => {
         answer.generatedReport.content = answer.generatedReport.content.replace(
-          '<p>所有操作建议均须人工确认</p>',
-          '<p>所有操作建议均须人工确认，但系统可以下发设备指令。</p>',
+          '</body>',
+          '<p>系统可以下发设备指令。</p></body>',
+        )
+        answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
+      },
+      ...CONTROL_AUTHORITY_TEXTS.map((text) => (answer) => {
+        answer.generatedReport.content = answer.generatedReport.content.replace(
+          '</body>',
+          `<p>${text}</p></body>`,
+        )
+        answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
+      }),
+      (answer) => {
+        answer.generatedReport.content = answer.generatedReport.content.replace(
+          ' · C04 /',
+          ' · C03 /',
+        )
+        answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
+      },
+      (answer) => {
+        answer.generatedReport.content = answer.generatedReport.content.replace(
+          '<code>evidence-1</code>',
+          '<code>forged-evidence</code>',
         )
         answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
       },
@@ -1050,12 +1090,37 @@ describe('P1 measured demo receipt validation', () => {
 
       const evidencePath = join(fixture.artifactsRoot, 'run-1/evidence-response.json')
       const evidenceResponse = await readFile(evidencePath, 'utf8')
+      const forgedCodeValue = JSON.parse(evidenceResponse)
+      forgedCodeValue.code = 'C03'
+      const forgedCodeResponse = `${JSON.stringify(forgedCodeValue, null, 2)}\n`
+      await writeFile(evidencePath, forgedCodeResponse, 'utf8')
+      const forgedCodeReceipt = structuredClone(fixture.receipt)
+      const forgedCodeHash = sha256(forgedCodeResponse)
+      forgedCodeReceipt.runs[0].evidenceReview.anomalyCode = 'C03'
+      forgedCodeReceipt.runs[0].artifacts.evidenceResponse.sha256 = forgedCodeHash
+      forgedCodeReceipt.runs[0].evidenceReview.artifact.sha256 = forgedCodeHash
+      const forgedCodeReceiptPath = join(
+        fixture.artifactsRoot,
+        'forged-evidence-code-receipt.json',
+      )
+      await writeFile(
+        forgedCodeReceiptPath,
+        `${JSON.stringify(forgedCodeReceipt, null, 2)}\n`,
+        'utf8',
+      )
+      const forgedCodeResult = await runReceiptValidator(fixture, forgedCodeReceiptPath)
+      assert.equal(forgedCodeResult.status, 1)
+      assert.match(forgedCodeResult.stderr, /measured run event/)
+      await writeFile(evidencePath, evidenceResponse, 'utf8')
+
       const forgedEvidenceValue = JSON.parse(evidenceResponse)
       forgedEvidenceValue.evidence = [{ evidenceId: 'forged-evidence' }]
       const forgedEvidenceResponse = `${JSON.stringify(forgedEvidenceValue, null, 2)}\n`
       await writeFile(evidencePath, forgedEvidenceResponse, 'utf8')
       const forgedEvidenceReceipt = structuredClone(fixture.receipt)
       const forgedEvidenceHash = sha256(forgedEvidenceResponse)
+      forgedEvidenceReceipt.runs[0].evidenceReview.evidenceIds = ['forged-evidence']
+      forgedEvidenceReceipt.runs[0].evidenceReview.evidenceCount = 1
       forgedEvidenceReceipt.runs[0].artifacts.evidenceResponse.sha256 = forgedEvidenceHash
       forgedEvidenceReceipt.runs[0].evidenceReview.artifact.sha256 = forgedEvidenceHash
       const forgedEvidenceReceiptPath = join(
@@ -1162,7 +1227,7 @@ describe('P1 measured demo receipt validation', () => {
       },
       {
         name: 'q09-answer-generated-at-drift',
-        mutate: (receipt) => { receipt.runs[0].q09.generatedAt = '2026-01-05T10:40:02Z' },
+        mutate: (receipt) => { receipt.runs[0].q09.generatedAt = '2026-01-05T12:45:02Z' },
         message: /exact Q09, runId, eventId/,
       },
       {
@@ -1176,7 +1241,7 @@ describe('P1 measured demo receipt validation', () => {
         name: 'q09-descriptor-generated-at-drift',
         mutate: (receipt) => {
           receipt.runs[0].q09.generatedReport.descriptor.generatedAt =
-            '2026-01-05T10:40:02Z'
+            '2026-01-05T12:45:02Z'
         },
         message: /report descriptor or content hash/,
       },
@@ -1327,6 +1392,11 @@ describe('P1 measured demo receipt validation', () => {
           ),
           message: /human-confirmation safety boundary/,
         },
+        ...CONTROL_AUTHORITY_TEXTS.map((text, index) => ({
+          name: `q09-report-control-authority-${index + 1}`,
+          content: diagnosis.replace('</body>', `<p>${text}</p></body>`),
+          message: /human-confirmation safety boundary/,
+        })),
       ]) {
         await writeFile(diagnosisPath, testCase.content, 'utf8')
         const result = await runReceiptMutation(fixture, testCase.name, (receipt) => {
@@ -1389,7 +1459,7 @@ describe('P1 measured demo receipt validation', () => {
       {
         name: 'evidence-code-drift',
         mutate: (receipt) => { receipt.runs[0].evidenceReview.anomalyCode = 'C03' },
-        message: /canonical evidence response artifact/,
+        message: /non-empty evidence to the measured run event/,
       },
       {
         name: 'evidence-artifact-path-drift',

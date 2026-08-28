@@ -620,6 +620,11 @@ function validateAudit(content, runId, analyzedEventId, humanReview, label) {
   }
 }
 
+function escapeHtmlText(value) {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+}
+
 function validateSubmission(content, analyzedEventId, label) {
   const result = validateSubmissionText(content)
   if (!result.valid) {
@@ -886,7 +891,16 @@ function validateRuntimeIdentity(identity, kind, detector, label) {
   return { ...timeRange, provenance }
 }
 
-function validateEvidenceReview(identity, runId, eventId, artifact, bytes, label) {
+function validateEvidenceReview(
+  identity,
+  runId,
+  eventId,
+  expectedCode,
+  artifact,
+  bytes,
+  diagnosisContent,
+  label,
+) {
   assertExactKeys(
     identity,
     [
@@ -897,6 +911,7 @@ function validateEvidenceReview(identity, runId, eventId, artifact, bytes, label
   assertExactKeys(identity.artifact, ['relativePath', 'sha256'], `${label} artifact`)
   if (
     identity.runId !== runId || identity.eventId !== eventId ||
+    expectedCode !== 'C04' || identity.anomalyCode !== expectedCode ||
     !Array.isArray(identity.evidenceIds) || identity.evidenceIds.length === 0 ||
     identity.evidenceIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
     new Set(identity.evidenceIds).size !== identity.evidenceIds.length ||
@@ -920,13 +935,17 @@ function validateEvidenceReview(identity, runId, eventId, artifact, bytes, label
     : []
   if (
     response?.eventId !== eventId ||
-    (anomalyCode !== null && !ANOMALY_CODES.includes(anomalyCode)) ||
-    identity.anomalyCode !== anomalyCode ||
+    anomalyCode !== expectedCode || !ANOMALY_CODES.includes(anomalyCode) ||
     evidenceIds.length === 0 ||
     evidenceIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
     new Set(evidenceIds).size !== evidenceIds.length ||
     evidenceIds.length !== identity.evidenceCount ||
-    evidenceIds.some((id, index) => id !== identity.evidenceIds[index])
+    evidenceIds.some((id, index) => id !== identity.evidenceIds[index]) ||
+    !diagnosisContent.includes(
+      `<code>${escapeHtmlText(eventId)}</code> · ${expectedCode} /`,
+    ) ||
+    evidenceIds.some((id) =>
+      !diagnosisContent.includes(`<code>${escapeHtmlText(id)}</code>`))
   ) fail(`${label} does not match the canonical evidence response artifact.`)
 }
 
@@ -953,6 +972,7 @@ async function validateRun(
   artifactsRoot,
   usedArtifactPaths,
   detector,
+  expectedCode,
 ) {
   const runLabel = `Measured run ${expectedSequence}`
   assertExactKeys(
@@ -1041,17 +1061,23 @@ async function validateRun(
     artifactBytes[name] = bytes
   }
 
+  const diagnosisContent = decodeUtf8(
+    artifactBytes.diagnosisReport,
+    `${runLabel} diagnosis report`,
+  )
   validateEvidenceReview(
     run.evidenceReview,
     run.runId,
     run.analyzedEventId,
+    expectedCode,
     run.artifacts.evidenceResponse,
     artifactBytes.evidenceResponse,
+    diagnosisContent,
     `${runLabel} evidence review`,
   )
 
   validateHtml(
-    decodeUtf8(artifactBytes.diagnosisReport, `${runLabel} diagnosis report`),
+    diagnosisContent,
     `${runLabel} diagnosis report`,
     {
       analyzedEventId: run.analyzedEventId,
@@ -1177,10 +1203,10 @@ export async function validateDemoReceipt(
     observedRange: manifestIdentity.observedRange,
   }
   const first = await validateRun(
-    receipt.runs[0], 1, artifactsRoot, usedArtifactPaths, detector,
+    receipt.runs[0], 1, artifactsRoot, usedArtifactPaths, detector, receipt.selectedEvent.code,
   )
   const second = await validateRun(
-    receipt.runs[1], 2, artifactsRoot, usedArtifactPaths, detector,
+    receipt.runs[1], 2, artifactsRoot, usedArtifactPaths, detector, receipt.selectedEvent.code,
   )
   if (first.executionId === second.executionId) {
     fail('Measured runs must have distinct execution IDs.')
