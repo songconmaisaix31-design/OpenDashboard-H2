@@ -4,6 +4,7 @@ import statistics
 from dataclasses import dataclass
 
 from h2_analytics import vocabulary
+from h2_analytics.detection.fixture import FIXTURE_C03_DETECTOR_VERSION
 from h2_analytics.events import EventWindow
 from h2_analytics.models import DataRow
 
@@ -120,14 +121,12 @@ class ImpactCalculator:
         window: EventWindow,
         sampling_interval_minutes: float,
     ) -> ImpactCalculation:
-        fixture_actuals = [
-            actual
-            for row in window.rows
-            if (command := row.value("bess_power_cmd_kw")) is not None
-            and (actual := row.value("bess_power_actual_kw")) is not None
-            and command * actual < 0
-        ]
-        if fixture_actuals:
+        if window.detector_version == FIXTURE_C03_DETECTOR_VERSION:
+            fixture_actuals = [
+                actual
+                for row in window.rows
+                if (actual := row.value("bess_power_actual_kw")) is not None
+            ]
             return ImpactCalculation(
                 "abnormal_grid_exchange_energy_kwh",
                 sum(abs(actual) for actual in fixture_actuals)

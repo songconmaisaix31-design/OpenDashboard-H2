@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "detectorVersion": "deterministic-c01-c07-v3",
+  "detectorVersion": "deterministic-c01-c07-v4",
   "aggregationPolicyVersion": "h2-events-v2",
   "sourcePolicy": "Runtime detector inputs are restricted to canonical time-series measurements; public label files are excluded from import and runtime detection.",
   "classes": {
@@ -84,15 +84,30 @@
     },
     "C06": {
       "aggregation": {"minimumRows": 30, "confirmationRow": 10, "maximumGapIntervals": 1, "daily": false},
-      "specificEnergyMinimum": 0.5,
-      "inefficientPowerGapKw": 50.0,
-      "specificEnergyExcessKwhPerKg": 2.0,
-      "recentTransitionMinutes": 60,
+      "allocationTrackingToleranceKw": 1.0,
+      "targetBalanceToleranceKw": 1.0,
+      "elz2TargetShare": 0.3,
+      "elz3TargetShare": 0.5,
+      "specificEnergyAdvantageKwhPerKg": 0.5,
+      "minimumEquivalentReallocationKw": 1.0,
+      "equivalentReallocationReferenceKw": 50.0,
       "avoidableStartStopPowerMinimumKw": 390.0,
       "avoidableStartStopPowerMaximumKw": 410.0,
       "calibration": {
         "split": "public_train",
         "competitionPackageVersion": "public-v4.0",
+        "sourceFiles": {
+          "timeseries": {
+            "sha256": "67513c9b1d443d25eb1258a6f58252c02cdb438f701a7921e2f8dacc365a6c51",
+            "byteCount": 236991870,
+            "dataRowCount": 525600
+          },
+          "eventLabels": {
+            "sha256": "50f84b18f905b584b3e3f9d35ed02438179b392af2090c27827f7f659993720f",
+            "byteCount": 176117,
+            "dataRowCount": 280
+          }
+        },
         "avoidableStartStop": {
           "eventCount": 20,
           "inclusiveEventSampleCount": 3332,
@@ -102,7 +117,37 @@
           "finding": "All three electrolyzers were in run_state >= 2 with actual power inside the inclusive 390-410 kW band throughout every labeled interval; the immediately preceding and following samples left the signature.",
           "precedence": "The persistent AVOIDABLE_START_STOP signature is evaluated before transition-sensitive efficiency allocation so a recent state change cannot reclassify the opening rows."
         },
-        "limitation": "This public-v4.0 persistence signature is empirical TRAIN-only calibration, not a universal start-stop model.",
+        "inefficientPowerAllocation": {
+          "eventCount": 20,
+          "inclusiveEventSampleCount": 3265,
+          "eventLengthRows": {"minimum": 111, "maximum": 235},
+          "signatureRunCount": 20,
+          "exactBoundaryMatchCount": 20,
+          "extraSignatureRunCount": 0,
+          "maximumTrackingErrorKw": 0.0,
+          "maximumTargetBalanceErrorKw": 0.001,
+          "maximumElz2ShareErrorKw": 0.0006,
+          "maximumElz3ShareErrorKw": 0.0005,
+          "minimumFeasibleReallocationKw": 1.04,
+          "minimumMeasuredSpecificEnergyAdvantageKwhPerKg": 1.585,
+          "minimumCurveSpecificEnergyAdvantageKwhPerKg": 1.483333,
+          "selectedPairSampleCounts": {
+            "ELZ01->ELZ02": 792,
+            "ELZ01->ELZ03": 169,
+            "ELZ02->ELZ03": 401,
+            "ELZ03->ELZ01": 234,
+            "ELZ03->ELZ02": 1669
+          },
+          "signature": "All three available units track their commands and the EMS total target; ELZ02 carries 30% of target while ELZ03 carries the lesser of 50% of target and its actual capacity. Every qualifying row must also prove a bounded equivalent-output reference from a higher measured-specific-energy stable unit to a lower-specific-energy stable unit with actual headroom, preserving total power and retaining the advantage on the frozen per-unit curves.",
+          "derivationProcedure": [
+            "Scan every public TRAIN row without reading labels into runtime detection.",
+            "Form contiguous one-minute runs from the allocation marker and the per-row feasible equivalent-output reference.",
+            "Compare derived runs with public TRAIN C06 labels only inside the offline calibration report and count exact boundaries and non-label runs.",
+            "Reproduce hashes, impact statistics and signature statistics with python -m h2_analytics.tools.calibrate_c06 TIMESERIES LABELS; the report retains no official rows."
+          ],
+          "finding": "The frozen marker plus per-row capacity, run-state, measured-specific-energy and efficiency-curve feasibility gate matched all 20 public TRAIN INEFFICIENT_POWER_ALLOCATION intervals at inclusive boundaries with no extra signature runs."
+        },
+        "limitation": "These public-v4.0 persistence and allocation signatures are empirical TRAIN-only competition rules, not universal physical laws or proof of a hardware fault.",
         "heldOutPolicy": "Validation is acceptance-only and does not set C06 thresholds, persistence, or subtype precedence."
       }
     },

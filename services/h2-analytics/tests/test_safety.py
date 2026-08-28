@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from h2_analytics import vocabulary
-from h2_analytics.detection import RuleRowDetector
+from h2_analytics.detection import RuleRowDetector, sanitized_fixture_c03_candidates
 from h2_analytics.diagnosis import DiagnosisBuilder
 from h2_analytics.evidence import EvidenceContext
 from h2_analytics.events import EventAggregator, EventWindow
@@ -15,7 +15,13 @@ def test_safety_reports_passed_failed_and_warning(valid_csv: str) -> None:
     imported = DatasetLoader().import_csv(
         filename="tiny-valid-timeseries.csv", text=valid_csv
     )
-    candidates = RuleRowDetector().detect(imported.rows)
+    candidates = (
+        *RuleRowDetector().detect(imported.rows),
+        *sanitized_fixture_c03_candidates(
+            manifest=imported.manifest,
+            rows=imported.rows,
+        ),
+    )
     window = EventAggregator().aggregate(
         rows=imported.rows,
         candidates=candidates,
@@ -142,11 +148,17 @@ def test_alarms_are_evidence_only_and_never_detection_criteria(
     before_alarm_file = detector.detect(rows)
     with_alarm_present = detector.detect(rows)
     assert with_alarm_present == before_alarm_file
-    assert {candidate.code for candidate in with_alarm_present} == {"C03", "C04"}
+    assert {candidate.code for candidate in with_alarm_present} == {"C04"}
+    fixture_candidates = sanitized_fixture_c03_candidates(
+        manifest=imported.manifest,
+        rows=rows,
+    )
+    all_candidates = (*with_alarm_present, *fixture_candidates)
+    assert {candidate.code for candidate in all_candidates} == {"C03", "C04"}
 
     window = EventAggregator().aggregate(
         rows=rows,
-        candidates=with_alarm_present,
+        candidates=all_candidates,
         sampling_interval_minutes=1,
     )[0]
     event = DiagnosisBuilder(
@@ -186,12 +198,22 @@ def _scenario_windows(
         "C04": single(pcc_export_power_violation_kw=120.0),
         "C05": single(grid_export_energy_quota_excess_kwh=15.0),
         "C06": single(
-            elz1_power_actual_kw=500.0,
+            ems_total_elz_target_kw=1200.0,
+            elz1_available_flag=1.0,
+            elz1_run_state=2.0,
+            elz1_actual_available_capacity_kw=1000.0,
+            elz1_power_actual_kw=400.0,
             elz1_specific_energy_kwh_per_kg=55.0,
-            elz2_power_actual_kw=0.0,
-            elz2_specific_energy_kwh_per_kg=52.0,
-            elz2_available_flag=1,
+            elz2_available_flag=1.0,
+            elz2_run_state=2.0,
             elz2_actual_available_capacity_kw=1000.0,
+            elz2_power_actual_kw=400.0,
+            elz2_specific_energy_kwh_per_kg=53.0,
+            elz3_available_flag=1.0,
+            elz3_run_state=2.0,
+            elz3_actual_available_capacity_kw=1000.0,
+            elz3_power_actual_kw=400.0,
+            elz3_specific_energy_kwh_per_kg=56.0,
         ),
         "C07": single(
             bess_soc_pct=40.0,
@@ -204,7 +226,7 @@ def _scenario_windows(
         implicated_equipment_ids = {
             "C01": ("ELZ01", "ELZ02"),
             "C02": ("ELZ01",),
-            "C06": ("ELZ01", "ELZ02"),
+            "C06": ("ELZ01", "ELZ02", "ELZ03"),
         }.get(code, ())
         window = EventWindow(
             event_id=f"{code}-20260105-001",

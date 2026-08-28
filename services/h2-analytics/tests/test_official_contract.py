@@ -76,6 +76,6 @@ def test_service_keeps_all_seven_classes_with_versioned_outputs(
 def test_threshold_and_aggregation_versions_are_frozen() -> None:
     thresholds = vocabulary.detection_thresholds()
 
-    assert thresholds["detectorVersion"] == "deterministic-c01-c07-v3"
+    assert thresholds["detectorVersion"] == "deterministic-c01-c07-v4"
     assert thresholds["aggregationPolicyVersion"] == "h2-events-v2"
     assert set(thresholds["classes"]) == set(vocabulary.anomaly_codes())

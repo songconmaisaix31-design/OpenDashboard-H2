@@ -5,6 +5,11 @@ from typing import Any
 
 from h2_analytics import vocabulary
 from h2_analytics.contracts import build_provenance
+from h2_analytics.detection.c06 import (
+    C06Reallocation,
+    inefficient_allocation_signature,
+)
+from h2_analytics.detection.fixture import FIXTURE_C03_DETECTOR_VERSION
 from h2_analytics.evidence import EvidenceContext
 from h2_analytics.events import EventWindow
 from h2_analytics.impact import ImpactCalculator
@@ -324,7 +329,10 @@ class DiagnosisBuilder:
             sampling_interval_minutes=float(manifest["samplingIntervalMinutes"]),
         )
         evidence, impact_evidence_id = self._evidence(
-            window, calculation.value, provenance
+            window,
+            calculation.value,
+            calculation.formula_version,
+            provenance,
         )
         evidence_ids = tuple(item["evidenceId"] for item in evidence)
         safety_checks = self._safety.evaluate(
@@ -392,6 +400,7 @@ class DiagnosisBuilder:
         self,
         window: EventWindow,
         impact_value: float,
+        impact_formula_version: str,
         provenance: dict[str, Any],
     ) -> tuple[list[dict[str, Any]], str]:
         detection_row = _detection_row(window)
@@ -408,18 +417,26 @@ class DiagnosisBuilder:
                     reference,
                     item["comparator"],
                     item["conclusion"],
+                    item["unit"],
                     provenance,
                 )
             )
+        evidence.extend(
+            self._c06_reference_evidence(
+                window,
+                provenance,
+                offset=len(evidence),
+            )
+        )
         impact_variable = vocabulary.primary_impact_metric_by_code()[window.code]
-        impact_evidence_id = _evidence_id(window, len(plan) + 1)
+        impact_evidence_id = _evidence_id(window, len(evidence) + 1)
         evidence.append(
             _impact_evidence(
                 impact_evidence_id,
                 window,
                 impact_variable,
                 impact_value,
-                "impact-%s-v1" % window.code.lower(),
+                impact_formula_version,
                 "该事件的定量影响结果。",
                 provenance,
             )
@@ -446,7 +463,10 @@ class DiagnosisBuilder:
                 implicated[0], "reported_available_capacity_kw"
             )
             plan[1]["variable"] = _elz_field(implicated[0], "power_cmd_kw")
-        elif window.code == "C03":
+        elif (
+            window.code == "C03"
+            and window.detector_version == FIXTURE_C03_DETECTOR_VERSION
+        ):
             detection_row = _detection_row(window)
             command = detection_row.value("bess_power_cmd_kw")
             actual = detection_row.value("bess_power_actual_kw")
@@ -503,18 +523,117 @@ class DiagnosisBuilder:
             else:
                 plan[0]["variable"] = "grid_export_energy_quota_excess_kwh"
                 plan[1]["variable"] = "grid_export_energy_remaining_kwh"
+        elif window.code == "C06":
+            plan = list(self._c06_plan(window))
         elif window.code == "C07":
             if window.subtype == "DISCHARGE_RESERVE_SHORTFALL":
                 plan[0]["variable"] = "bess_available_discharge_energy_kwh"
-        if window.code == "C06" and implicated:
-            plan[0]["variable"] = _elz_field(
-                implicated[0], "specific_energy_kwh_per_kg"
-            )
-            comparison_equipment = implicated[1] if len(implicated) > 1 else implicated[0]
-            plan[1]["variable"] = _elz_field(
-                comparison_equipment, "power_actual_kw"
-            )
         return tuple(plan)
+
+    def _c06_plan(self, window: EventWindow) -> tuple[dict[str, Any], ...]:
+        if window.subtype == "INEFFICIENT_POWER_ALLOCATION":
+            reference = _required_c06_reallocation(window)
+            return _c06_inefficient_plan(reference)
+        if (
+            window.subtype != "AVOIDABLE_START_STOP"
+            or len(window.implicated_equipment_ids) != 3
+        ):
+            raise vocabulary.VocabularyError(
+                "C06 start-stop diagnosis requires all implicated electrolyzers."
+            )
+
+        detection_row = _detection_row(window)
+        plan: list[dict[str, Any]] = []
+        for equipment_id in window.implicated_equipment_ids:
+            actual_power = detection_row.value(
+                _elz_field(equipment_id, "power_actual_kw")
+            )
+            if actual_power is None:
+                raise vocabulary.VocabularyError(
+                    "C06 diagnosis requires complete operating evidence."
+                )
+            for suffix, unit, expected_reference, comparator, conclusion in (
+                ("run_state", "", 2, ">=", "事件确认时设备处于稳定运行状态。"),
+                ("available_flag", "", 1, "=", "设备在事件时段被标记为可用。"),
+                (
+                    "actual_available_capacity_kw",
+                    "kW",
+                    actual_power,
+                    ">=",
+                    "设备实际可用容量覆盖当前运行功率。",
+                ),
+                (
+                    "power_actual_kw",
+                    "kW",
+                    "persistent start-stop signature",
+                    "within",
+                    "设备功率处于冻结的可避免启停竞争签名。",
+                ),
+                (
+                    "specific_energy_kwh_per_kg",
+                    "kWh/kg",
+                    "frozen efficiency curve",
+                    "within",
+                    "设备实测单位电耗可与冻结效率曲线复核。",
+                ),
+            ):
+                variable = _elz_field(equipment_id, suffix)
+                if detection_row.value(variable) is None:
+                    raise vocabulary.VocabularyError(
+                        "C06 diagnosis requires complete operating evidence."
+                    )
+                plan.append(
+                    {
+                        "kind": "measurement",
+                        "variable": variable,
+                        "reference": expected_reference,
+                        "comparator": comparator,
+                        "conclusion": conclusion,
+                        "unit": unit,
+                    }
+                )
+        if detection_row.value("ems_total_elz_target_kw") is None:
+            raise vocabulary.VocabularyError(
+                "C06 diagnosis requires complete operating evidence."
+            )
+        plan.append(
+            {
+                "kind": "measurement",
+                "variable": "ems_total_elz_target_kw",
+                "reference": sum(
+                    detection_row.value(_elz_field(equipment_id, "power_actual_kw"))
+                    or 0
+                    for equipment_id in window.implicated_equipment_ids
+                ),
+                "comparator": "=",
+                "conclusion": "EMS电解槽总目标与事件时段的实际分配可逐行复核。",
+                "unit": "kW",
+            }
+        )
+        return tuple(plan)
+
+    def _c06_reference_evidence(
+        self,
+        window: EventWindow,
+        provenance: dict[str, Any],
+        *,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        if window.code != "C06":
+            return []
+        if window.subtype == "INEFFICIENT_POWER_ALLOCATION":
+            reference = _required_c06_reallocation(window)
+            return _c06_reallocation_evidence(
+                window,
+                reference,
+                provenance,
+                offset=offset,
+            )
+        return _canonical_c06_curve_evidence(
+            window,
+            provenance,
+            offset=offset,
+        )
 
     def _context_evidence(
         self,
@@ -691,6 +810,202 @@ def _elz_field(equipment_id: str, suffix: str) -> str:
     return f"elz{equipment_id[-1]}_{suffix}"
 
 
+def _required_c06_reallocation(window: EventWindow) -> C06Reallocation:
+    reference = inefficient_allocation_signature(_detection_row(window))
+    if reference is None:
+        raise vocabulary.VocabularyError(
+            "C06 diagnosis requires complete feasible-reallocation evidence."
+        )
+    implicated = set(window.implicated_equipment_ids)
+    if not {
+        reference.inefficient_equipment_id,
+        reference.alternative_equipment_id,
+    }.issubset(implicated):
+        raise vocabulary.VocabularyError(
+            "C06 diagnosis equipment does not match the feasible reallocation."
+        )
+    return reference
+
+
+def _c06_inefficient_plan(
+    reference: C06Reallocation,
+) -> tuple[dict[str, Any], ...]:
+    inefficient = reference.inefficient_equipment_id
+    alternative = reference.alternative_equipment_id
+    return (
+        {
+            "kind": "measurement",
+            "variable": _elz_field(inefficient, "specific_energy_kwh_per_kg"),
+            "reference": reference.alternative_specific_energy,
+            "comparator": ">",
+            "conclusion": "该设备实测单位电耗高于可行替代设备。",
+            "unit": "kWh/kg",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(inefficient, "power_actual_kw"),
+            "reference": reference.inefficient_equivalent_power_kw,
+            "comparator": ">",
+            "conclusion": "该设备当前功率可在不低于最小稳定负荷时下调。",
+            "unit": "kW",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(inefficient, "run_state"),
+            "reference": 2,
+            "comparator": ">=",
+            "conclusion": "高单位电耗设备处于稳定运行状态。",
+            "unit": "",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(inefficient, "available_flag"),
+            "reference": 1,
+            "comparator": "=",
+            "conclusion": "高单位电耗设备的可用状态已读取。",
+            "unit": "",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(inefficient, "actual_available_capacity_kw"),
+            "reference": reference.inefficient_actual_capacity_kw,
+            "comparator": "=",
+            "conclusion": "高单位电耗设备的实际容量与当前功率已同时读取。",
+            "unit": "kW",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(alternative, "specific_energy_kwh_per_kg"),
+            "reference": reference.inefficient_specific_energy,
+            "comparator": "<",
+            "conclusion": "替代设备实测单位电耗更低。",
+            "unit": "kWh/kg",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(alternative, "power_actual_kw"),
+            "reference": reference.alternative_equivalent_power_kw,
+            "comparator": "<",
+            "conclusion": "替代设备当前功率低于等功率转移后的参考功率。",
+            "unit": "kW",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(alternative, "run_state"),
+            "reference": 2,
+            "comparator": ">=",
+            "conclusion": "替代设备处于稳定运行状态。",
+            "unit": "",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(alternative, "available_flag"),
+            "reference": 1,
+            "comparator": "=",
+            "conclusion": "替代设备被标记为可用。",
+            "unit": "",
+        },
+        {
+            "kind": "measurement",
+            "variable": _elz_field(alternative, "actual_available_capacity_kw"),
+            "reference": reference.alternative_equivalent_power_kw,
+            "comparator": ">=",
+            "conclusion": "替代设备实际容量覆盖等功率转移后的参考功率。",
+            "unit": "kW",
+        },
+        {
+            "kind": "measurement",
+            "variable": "ems_total_elz_target_kw",
+            "reference": reference.actual_total_kw,
+            "comparator": "=",
+            "conclusion": "当前三机实际功率之和与EMS总目标一致。",
+            "unit": "kW",
+        },
+    )
+
+
+def _c06_reallocation_evidence(
+    window: EventWindow,
+    reference: C06Reallocation,
+    provenance: dict[str, Any],
+    *,
+    offset: int,
+) -> list[dict[str, Any]]:
+    interval = {
+        "startTime": _timestamp(window.start_time),
+        "endTime": _timestamp(window.end_time),
+    }
+    return [
+        {
+            "schemaVersion": 1,
+            "evidenceId": _evidence_id(window, offset + 1),
+            "kind": "derived_metric",
+            "claimKind": "calculation",
+            "interval": interval,
+            "variable": "equivalent_reallocation_kw",
+            "actualValue": reference.reallocation_kw,
+            "referenceValue": reference.target_kw,
+            "unit": "kW",
+            "comparator": "<=",
+            "source": "c06-equivalent-output-v1",
+            "conclusion": (
+                f"将{reference.reallocation_kw:g} kW从"
+                f"{reference.inefficient_equipment_id}转移至"
+                f"{reference.alternative_equipment_id}时，总功率目标保持不变。"
+            ),
+            "provenance": provenance,
+        },
+        {
+            "schemaVersion": 1,
+            "evidenceId": _evidence_id(window, offset + 2),
+            "kind": "knowledge_base",
+            "claimKind": "fact",
+            "variable": (
+                f"{reference.inefficient_equipment_id}_to_"
+                f"{reference.alternative_equipment_id}_curve_specific_energy"
+            ),
+            "actualValue": reference.inefficient_curve_specific_energy,
+            "referenceValue": reference.alternative_curve_specific_energy,
+            "unit": "kWh/kg",
+            "comparator": ">",
+            "source": "h2-efficiency-curves-v1",
+            "conclusion": "冻结效率曲线在等功率转移参考点仍显示替代设备单位电耗更低。",
+            "provenance": provenance,
+        },
+    ]
+
+
+def _canonical_c06_curve_evidence(
+    window: EventWindow,
+    provenance: dict[str, Any],
+    *,
+    offset: int,
+) -> list[dict[str, Any]]:
+    curves = vocabulary.efficiency_curve_by_equipment()
+    evidence: list[dict[str, Any]] = []
+    for equipment_id in window.implicated_equipment_ids:
+        values = [
+            float(point["specific_energy_kwh_per_kg"])
+            for point in curves[equipment_id]
+        ]
+        evidence.append(
+            _knowledge_evidence(
+                _evidence_id(window, offset + len(evidence) + 1),
+                "h2-efficiency-curves-v1",
+                "冻结效率曲线给出该设备可复核的单位电耗范围。",
+                provenance,
+                variable=_elz_field(
+                    equipment_id,
+                    "specific_energy_kwh_per_kg",
+                ),
+                actual_value=min(values),
+                reference_value=max(values),
+                unit="kWh/kg",
+            )
+        )
+    return evidence
+
+
 def _detection_row(window: EventWindow) -> Any:
     return window.rows[
         min(
@@ -710,6 +1025,7 @@ def _evidence_item(
     reference: str | float,
     comparator: str,
     conclusion: str,
+    unit: str,
     provenance: dict[str, Any],
 ) -> dict[str, Any]:
     assert row.timestamp is not None
@@ -722,7 +1038,7 @@ def _evidence_item(
         "variable": variable,
         "actualValue": row.value(variable),
         "referenceValue": reference,
-        "unit": "kW" if variable.endswith("_kw") or "_power_" in variable else "",
+        "unit": unit,
         "comparator": comparator,
         "source": (
             "fixture-timeseries"
