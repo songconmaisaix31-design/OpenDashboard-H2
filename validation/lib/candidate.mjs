@@ -2,9 +2,9 @@ import { spawnSync } from 'node:child_process'
 
 import { repositoryRoot } from './official-contract.mjs'
 
-export function currentCandidate() {
+export function currentCandidate(repository = repositoryRoot) {
   const head = spawnSync('git', ['rev-parse', 'HEAD'], {
-    cwd: repositoryRoot,
+    cwd: repository,
     encoding: 'utf8',
     shell: false,
     windowsHide: true,
@@ -15,9 +15,9 @@ export function currentCandidate() {
   }
   const status = spawnSync(
     'git',
-    ['status', '--porcelain', '--untracked-files=normal'],
+    ['status', '--porcelain', '--untracked-files=no'],
     {
-      cwd: repositoryRoot,
+      cwd: repository,
       encoding: 'utf8',
       shell: false,
       windowsHide: true,
@@ -37,7 +37,7 @@ export function assertExactCleanCandidate(expectedCommit) {
     throw new Error('Candidate commit does not match the current HEAD.')
   }
   if (!candidate.trackedTreeClean) {
-    throw new Error('Candidate evidence requires a clean working tree.')
+    throw new Error('Candidate evidence requires a clean tracked working tree and index.')
   }
   return candidate
 }

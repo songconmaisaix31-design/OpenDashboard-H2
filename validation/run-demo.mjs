@@ -284,7 +284,7 @@ async function runOnce({ sequence, slice, outputDirectory }) {
 }
 
 export async function runMeasuredDemo(options) {
-  const candidate = assertExactCleanCandidate(options.candidateCommit)
+  assertExactCleanCandidate(options.candidateCommit)
   const slice = loadSlice(options.manifest)
   if (existsSync(options.output)) {
     throw new Error('Demo output directory must not already exist.')
@@ -294,6 +294,7 @@ export async function runMeasuredDemo(options) {
   for (const sequence of [1, 2]) {
     runs.push(await runOnce({ sequence, slice, outputDirectory }))
   }
+  const candidate = assertExactCleanCandidate(options.candidateCommit)
   const receipt = {
     schemaVersion: 1,
     receiptKind: 'h2_validation_slice_demo',
