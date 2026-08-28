@@ -32,7 +32,11 @@ after every detector prediction finishes. Labels are held out from runtime
 input and used only for evaluation. Its versioned `event-match-v2` contract
 uses greedy one-to-one same-code interval overlap with a configurable symmetric
 grace window. It emits overall and C01-C07 precision, recall, and F1 plus
-signed first-detection delay and start/end boundary errors. Negative
+their unweighted macro averages, signed first-detection delay, and start/end
+boundary errors. Precision is zero when `tp + fp` is zero, recall is zero when
+`tp + fn` is zero, and F1 is zero when precision plus recall is zero; evaluator
+reports record this rule and the overfit gate recomputes every derived value
+from integer counts. Negative
 first-detection delay denotes an early warning. These are local contract
 metrics, not an organizer score.
 
@@ -47,6 +51,8 @@ The sentinel creates fresh evaluator reports for the validation set and final
 finite metrics, configuration, and distinct run IDs to the same clean
 candidate, and flags an absolute F1 gap above `0.15`. The train window is
 public and disjoint from the validation set; it is not a hidden test set.
+The inclusive Oct 3 through Dec 31 overlap contains 63 official TRAIN events:
+`C01=9`, `C02=13`, `C03=8`, `C04=9`, `C05=11`, `C06=2`, and `C07=11`.
 
 ## Submission checker and offline test-set smoke
 
@@ -69,8 +75,10 @@ array of objects with non-empty `evidence_id` values.
 
 The offline smoke first streams the complete public test source through the
 same identity checks. It then retains only the one raw source string required
-for the local import request, fingerprints the exact submitted text, and does
-not build a full row matrix or normalized duplicate. It analyzes the import,
+for the local import request in that same streaming pass, fingerprints the
+exact submitted text against the frozen official SHA, and never reopens the
+source between verification and submission. It does not build a full row
+matrix or normalized duplicate. It analyzes the import,
 exports the user-facing submission through the Web proxy, and applies the
 checker. Its result is local pipeline evidence only; it is not deployment,
 network-isolation, hidden-test, production, or organizer evidence.
@@ -94,7 +102,9 @@ diagnosis, review-audit export, and submission export. It writes distinct
 relative-path artifacts, hashes them, emits `demo-receipt.json`, and invokes the
 receipt validator itself. Deterministic analytics may reuse the same content-
 derived `runId`, so the receipt uses a distinct `executionId` to prove two
-separate executions.
+separate executions. Q09 is bound to the exact question/run/event, deterministic
+answer and report provenance, one matching report citation, the diagnosis
+descriptor/media contract, and the diagnosis bytes.
 
 The supplied `--output` is the artifacts root itself. It must be fresh and
 separate from the slice-manifest directory; do not append another `/artifacts`

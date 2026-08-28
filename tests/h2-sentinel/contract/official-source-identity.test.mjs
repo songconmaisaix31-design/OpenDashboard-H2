@@ -5,7 +5,10 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 
 import { OFFICIAL_FIELDS } from '../../../validation/lib/official-contract.mjs'
-import { collectPredictionsThenLoadLabels } from '../../../validation/evaluate.mjs'
+import {
+  collectPredictionsThenLoadLabels,
+  labelsInWindow,
+} from '../../../validation/evaluate.mjs'
 import {
   EVALUATION_WINDOWS,
   OFFICIAL_SOURCES,
@@ -86,6 +89,8 @@ describe('H2 Sentinel official source identity', () => {
         testRows: OFFICIAL_SOURCES.test.timeseries.rowCount,
         trainRows: OFFICIAL_SOURCES.train.timeseries.rowCount,
         trainLast90Rows: EVALUATION_WINDOWS['train-last-90'].rowCount,
+        trainLast90Labels: EVALUATION_WINDOWS['train-last-90'].labelCount,
+        trainLast90ByCode: EVALUATION_WINDOWS['train-last-90'].byCode,
       },
       {
         validationTimeseries: 'sha256:182728b3a4c5326503a90a04325adcf97fddc290c59ed1e319fa7e8be97d9666',
@@ -95,7 +100,25 @@ describe('H2 Sentinel official source identity', () => {
         testRows: 172_800,
         trainRows: 525_600,
         trainLast90Rows: 129_600,
+        trainLast90Labels: 63,
+        trainLast90ByCode: { C01: 9, C02: 13, C03: 8, C04: 9, C05: 11, C06: 2, C07: 11 },
       },
+    )
+  })
+
+  it('uses inclusive interval overlap for the frozen UTC-day evaluation window', () => {
+    const chunks = [{ day: '2025-10-03' }, { day: '2025-12-31' }]
+    const selected = labelsInWindow([
+      { id: 'ends-at-window-start', startTime: '2025-10-02T23:00:00Z', endTime: '2025-10-03T00:00:00Z' },
+      { id: 'first-c02-in-window', startTime: '2025-10-03T13:30:00Z', endTime: '2025-10-03T14:51:00Z' },
+      { id: 'starts-at-window-end', startTime: '2025-12-31T23:59:59.999Z', endTime: '2026-01-01T00:01:00Z' },
+      { id: 'before-window', startTime: '2025-10-02T22:00:00Z', endTime: '2025-10-02T23:59:59.999Z' },
+      { id: 'after-window', startTime: '2026-01-01T00:00:00Z', endTime: '2026-01-01T00:01:00Z' },
+    ], chunks)
+
+    assert.deepEqual(
+      selected.map(({ id }) => id),
+      ['ends-at-window-start', 'first-c02-in-window', 'starts-at-window-end'],
     )
   })
 

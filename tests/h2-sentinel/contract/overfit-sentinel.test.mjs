@@ -72,6 +72,8 @@ function evaluationReport() {
       chunking: 'UTC calendar day; adjacent same-code predictions merge across boundaries',
       firstDetectionDelayMinutes: 'prediction first_detection_time minus ground-truth start; negative means early warning',
       boundaryErrorMinutes: 'prediction boundary minus corresponding ground-truth boundary',
+      zeroDenominatorMetrics: 'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0',
+      macroAveraging: 'unweighted arithmetic mean across C01-C07 precision, recall, and f1',
     },
     dataset: {
       source: { ...source.timeseries, fieldCount: 69 },
@@ -114,6 +116,7 @@ function evaluationReport() {
         classificationAccuracy: 0,
         eventAccuracy: 0,
       },
+      macro: { precision: 0, recall: 0, f1: 0 },
       byCode: byCodeMetrics,
     },
     provenance: {
@@ -192,6 +195,27 @@ describe('H2 Sentinel overfit report binding', () => {
     inconsistentMetrics.metrics.byCode.C01.fn -= 1
     assert.throws(
       () => assertEvaluationIdentity(inconsistentMetrics, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
+
+    const impossibleOverallF1 = evaluationReport()
+    impossibleOverallF1.metrics.overall.f1 = 1
+    assert.throws(
+      () => assertEvaluationIdentity(impossibleOverallF1, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
+
+    const impossibleCodePrecision = evaluationReport()
+    impossibleCodePrecision.metrics.byCode.C01.precision = 1
+    assert.throws(
+      () => assertEvaluationIdentity(impossibleCodePrecision, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
+
+    const impossibleMacroF1 = evaluationReport()
+    impossibleMacroF1.metrics.macro.f1 = 1
+    assert.throws(
+      () => assertEvaluationIdentity(impossibleMacroF1, 'validation', candidateCommit),
       /stale or mismatched identity/,
     )
   })

@@ -82,6 +82,12 @@ import/run provenance and requires `publicLabelsUsedAsDetectorInput: false`,
 pre-started service disclosure, and
 explicit false values for organizer score, full validation, hidden test,
 deployment, production proof, and Fixture substitution claims.
+It also requires canonical ordered UTC ranges: each import and analysis range
+must equal the manifest observed range, remain inside the verified source
+range, and equal its peer. Q09 must retain exact question/run/event identity,
+the `single_event_diagnosis` HTML descriptor and content hash, actual answer
+and report provenance, exactly one matching report citation, and explicit
+human-confirmation text.
 
 Passing this validator proves only that the supplied local receipt and files
 meet this evidence contract. It is not an organizer score, full-validation

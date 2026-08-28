@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -6,7 +6,7 @@ import { validateSubmissionText } from './check-submission.mjs'
 import { currentCandidate } from './lib/candidate.mjs'
 import { OFFICIAL_FIELDS } from './lib/official-contract.mjs'
 import { OFFICIAL_SOURCES, sha256 } from './lib/official-sources.mjs'
-import { inspectOfficialTimeseries } from './lib/official-timeseries.mjs'
+import { snapshotOfficialTimeseries } from './lib/official-timeseries.mjs'
 import { freeLoopbackPort, requestEnvelope, startLauncher } from './lib/launcher.mjs'
 import {
   createGeneratedRunDirectory,
@@ -59,14 +59,13 @@ export async function runOfflineDeploySmoke(options) {
   const sourceContract = OFFICIAL_SOURCES.test.timeseries
   const sourcePath = resolve(options.officialData, sourceContract.filename)
   if (!existsSync(sourcePath)) throw new Error(`Required official file is missing: ${sourceContract.filename}`)
-  const sourceIdentity = await inspectOfficialTimeseries(sourcePath, sourceContract)
-  let sourceText
-  try {
-    sourceText = readFileSync(sourcePath, 'utf8')
-  } catch {
-    throw new Error(`Official source ${sourceContract.filename} could not be read.`)
-  }
+  const { identity: sourceIdentity, text: sourceText } =
+    await snapshotOfficialTimeseries(sourcePath, sourceContract)
   const submittedFingerprint = sha256(Buffer.from(sourceText, 'utf8'))
+  if (
+    submittedFingerprint !== sourceContract.sha256 ||
+    submittedFingerprint !== sourceIdentity.sha256
+  ) throw new Error('Submitted test-set bytes do not match the frozen official source identity.')
   const outputDirectory = options.output === null || options.output === undefined
     ? createGeneratedRunDirectory('offline-deploy-smoke', candidate.commit)
     : ensureIgnoredOutputDirectory(options.output)

@@ -62,11 +62,17 @@ values, exact candidate SHA, and explicit false claim flags.
 
 Run the validator after both executions:
 
-    node tests/h2-sentinel/scripts/validate-demo-receipt.mjs \
-      --receipt tests/h2-sentinel/reports/generated/<candidate-demo-run>/demo-receipt.json \
-      --manifest tests/h2-sentinel/reports/generated/<fresh-slice-run>/validation-slice-manifest.json \
-      --artifacts-root tests/h2-sentinel/reports/generated/<candidate-demo-run> \
-      --expected-commit <40-character-final-integrated-sha>
+```powershell
+node tests/h2-sentinel/scripts/validate-demo-receipt.mjs `
+  --receipt 'tests/h2-sentinel/reports/generated/<candidate-demo-run>/demo-receipt.json' `
+  --manifest 'tests/h2-sentinel/reports/generated/<fresh-slice-run>/validation-slice-manifest.json' `
+  --artifacts-root 'tests/h2-sentinel/reports/generated/<candidate-demo-run>' `
+  --expected-commit '<40-character-final-integrated-sha>'
+```
+
+This is PowerShell continuation syntax. The validator's `--help` output prints
+the same executable form; replace every angle-bracket placeholder before
+running the receipt gate.
 
 Only a passing final-candidate receipt permits the sub-180-second wording. It
 does not permit organizer-score, full-validation, hidden-test, deployment, or
@@ -77,6 +83,12 @@ before issuing the receipt. The manifest scope is a verified QA selection;
 each run separately records actual import and analysis provenance. A
 self-consistent synthetic test fixture uses
 `self_consistent_fixture_contract`, never `VALIDATION_SLICE`.
+
+Each run also retains the exact Q09 answer/run/event identity, deterministic
+mode, answer and report provenance, `single_event_diagnosis` HTML descriptor,
+content hash, and exactly one matching report citation. Import and analysis
+ranges must be canonical ordered UTC ranges, equal each other and the manifest
+observed range, and remain within the frozen source range.
 
 ## Fixture fallback
 

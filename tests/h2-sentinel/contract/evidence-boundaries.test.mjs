@@ -226,6 +226,8 @@ describe('H2 Sentinel remediation evidence boundaries', () => {
     assert.match(runner, /executionId/)
     assert.match(validator, /executionId/)
     assert.match(demo, /analytics `runId` may repeat/i)
+    assert.match(demo, /```powershell[\s\S]*validate-demo-receipt\.mjs `[\s\S]*--receipt .* `\r?\n/)
+    assert.doesNotMatch(demo, /validate-demo-receipt\.mjs \\\r?\n/)
   })
 
   it('re-checks the exact candidate after both measured runs and before receipt issuance', () => {

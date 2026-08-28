@@ -9,6 +9,7 @@ import { OFFICIAL_FIELDS } from '../../../validation/lib/official-contract.mjs'
 import { sha256 } from '../../../validation/lib/official-sources.mjs'
 import {
   inspectOfficialTimeseries,
+  snapshotOfficialTimeseries,
   streamOfficialTimeseriesWindow,
 } from '../../../validation/lib/official-timeseries.mjs'
 
@@ -143,6 +144,33 @@ describe('H2 Sentinel streamed official timeseries', () => {
     }
   })
 
+  it('captures the exact validated bytes for submission in one immutable streaming pass', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'h2-streamed-snapshot-'))
+    const path = join(directory, 'streamed-timeseries.csv')
+    const content = `\uFEFF${fixtureContent()}`
+    writeFileSync(path, content, 'utf8')
+    let readStreamCalls = 0
+    try {
+      const snapshot = await snapshotOfficialTimeseries(
+        path,
+        contractFor(content),
+        {
+          createReadStreamFn: (sourcePath) => {
+            readStreamCalls += 1
+            return createReadStream(sourcePath, { highWaterMark: 7 })
+          },
+        },
+      )
+
+      assert.equal(readStreamCalls, 1)
+      assert.equal(snapshot.text, content)
+      assert.equal(sha256(Buffer.from(snapshot.text, 'utf8')), snapshot.identity.sha256)
+      assert.equal(snapshot.identity.sha256, contractFor(content).sha256)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
   it('keeps TRAIN evaluation, slice preparation, and offline smoke off full cell-matrix parsing', () => {
     const evaluator = readFileSync(resolve(repositoryRoot, 'validation/evaluate.mjs'), 'utf8')
     const offline = readFileSync(
@@ -159,7 +187,8 @@ describe('H2 Sentinel streamed official timeseries', () => {
     assert.equal((evaluator.match(/\breadFileSync\s*\(/g) ?? []).length, 1)
     assert.equal((evaluator.match(/\bparseCsvText\s*\(/g) ?? []).length, 1)
     assert.match(evaluator, /decodeUtf8Strict\(bytes, 'Official labels'\)/)
-    assert.match(offline, /inspectOfficialTimeseries/)
+    assert.match(offline, /snapshotOfficialTimeseries/)
+    assert.doesNotMatch(offline, /inspectOfficialTimeseries|readFileSync/)
     assert.doesNotMatch(offline, /normalizeOfficialCsv|parseCsvText|parsed\.rows/)
     assert.match(slice, /streamOfficialTimeseriesWindow/)
     assert.doesNotMatch(slice, /timeseriesBytes|timeseriesCsv|validateTimeseries/)

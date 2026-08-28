@@ -79,8 +79,8 @@ export const EVALUATION_WINDOWS = Object.freeze({
     source: 'train',
     minimumUtcDay: '2025-10-03',
     rowCount: 129_600,
-    labelCount: 62,
-    byCode: Object.freeze({ C01: 9, C02: 12, C03: 8, C04: 9, C05: 11, C06: 2, C07: 11 }),
+    labelCount: 63,
+    byCode: Object.freeze({ C01: 9, C02: 13, C03: 8, C04: 9, C05: 11, C06: 2, C07: 11 }),
   }),
 })
 
