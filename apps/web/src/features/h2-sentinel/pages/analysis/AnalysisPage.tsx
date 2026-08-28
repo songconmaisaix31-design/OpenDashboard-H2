@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 
+import type { H2SentinelDataSource } from '@opendashboard/h2-contracts'
 import type { H2Workspace } from '../../model/view-state.ts'
 import {
   datasetHasValidationLabels,
@@ -8,6 +9,10 @@ import {
   toH2FieldDictionaryRows,
 } from '../../model/presentation.ts'
 import { createVariableChartOption } from '../../model/chart-options.ts'
+import {
+  createH2AnalysisSeriesQuery,
+  useH2Series,
+} from '../../model/series-loader.ts'
 import { H2_CSV_MAX_BYTES, H2_CSV_MAX_ROWS } from '../../model/workspace-loader.ts'
 import { EChartsCanvas } from '../../components/charts/EChartsCanvas.tsx'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
@@ -15,6 +20,7 @@ import { SignConventionNote } from '../../components/common/SignConventionNote.t
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
 
 export interface AnalysisPageProps {
+  readonly dataSource: H2SentinelDataSource
   readonly importError: string | null
   readonly importPending: boolean
   readonly importNotice: string | null
@@ -22,15 +28,19 @@ export interface AnalysisPageProps {
   readonly workspace: H2Workspace
 }
 
-export function AnalysisPage({ importError, importNotice, importPending, onImport, workspace }: AnalysisPageProps) {
+export function AnalysisPage({ dataSource, importError, importNotice, importPending, onImport, workspace }: AnalysisPageProps) {
   const chartableFields = useMemo(
-    () => workspace.run.dataset.fields.filter((field) =>
-      workspace.series?.variables.includes(field.name) ?? false,
+    () => workspace.run.dataset.fields.filter(
+      ({ role }) => role === 'measurement' || role === 'constraint',
     ),
-    [workspace.run.dataset.fields, workspace.series],
+    [workspace.run.dataset.fields],
   )
   const [selectedVariable, setSelectedVariable] = useState(chartableFields[0]?.name ?? '')
   const selectedField = chartableFields.find(({ name }) => name === selectedVariable) ?? chartableFields[0]
+  const seriesState = useH2Series(
+    dataSource,
+    selectedField ? createH2AnalysisSeriesQuery(workspace.run, selectedField.name) : null,
+  )
   const hasLabels = datasetHasValidationLabels(workspace.run)
 
   return (
@@ -99,7 +109,7 @@ export function AnalysisPage({ importError, importNotice, importPending, onImpor
 
       <section className="h2-panel h2-chart-panel">
         <div className="h2-panel__heading"><div><p className="h2-eyebrow">Variable explorer</p><h2>变量趋势</h2></div>{selectedField ? <label className="h2-inline-select"><span className="h2-visually-hidden">选择变量</span><select value={selectedField.name} onChange={(event) => setSelectedVariable(event.currentTarget.value)}>{chartableFields.map((field) => <option key={field.name} value={field.name}>{field.displayNameZh} · {field.unit ?? '无单位'}</option>)}</select></label> : null}</div>
-        {workspace.series && selectedField ? <EChartsCanvas ariaLabel={`${selectedField.displayNameZh}时间序列图`} option={createVariableChartOption(workspace.series, selectedField)} /> : <div className="h2-chart-empty"><strong>变量趋势不可用</strong><p>{workspace.seriesError ?? '当前数据源没有返回可绘制序列。'}</p></div>}
+        {seriesState.status === 'ready' && selectedField ? <EChartsCanvas ariaLabel={`${selectedField.displayNameZh}时间序列图`} option={createVariableChartOption(seriesState.series, selectedField)} /> : <div className="h2-chart-empty" role="status"><strong>变量趋势不可用</strong><p>{getAnalysisSeriesMessage(seriesState.status)}</p></div>}
       </section>
 
       <section className="h2-panel h2-field-dictionary">
@@ -110,4 +120,10 @@ export function AnalysisPage({ importError, importNotice, importPending, onImpor
       <section className="h2-panel h2-run-log"><div className="h2-panel__heading"><div><p className="h2-eyebrow">Run log</p><h2>分析运行记录</h2></div><StatusBadge tone={workspace.run.status === 'completed' ? 'positive' : 'warning'}>{workspace.run.status}</StatusBadge></div><ol><li><time>{formatH2Timestamp(workspace.run.startedAt)}</time><span>启动分析运行</span></li><li><time>{formatH2Timestamp(workspace.run.quality.generatedAt)}</time><span>完成数据质量门禁</span></li>{workspace.run.completedAt ? <li><time>{formatH2Timestamp(workspace.run.completedAt)}</time><span>完成事件聚合与证据组装</span></li> : null}</ol>{workspace.run.warnings.length > 0 ? <ul>{workspace.run.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}</section>
     </div>
   )
+}
+
+function getAnalysisSeriesMessage(status: 'idle' | 'loading' | 'ready' | 'error'): string {
+  if (status === 'loading') return '正在读取所选变量的时间序列。'
+  if (status === 'error') return '所选变量读取失败；未显示上一变量或占位曲线。'
+  return '当前数据集没有可选的测量或约束变量。'
 }

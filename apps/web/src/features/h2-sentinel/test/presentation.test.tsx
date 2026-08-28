@@ -24,24 +24,24 @@ import {
 } from '../routes.ts'
 import {
   CORRECTED_C04_IMPACT_KWH,
+  createH2WebFixtureDataSource,
   H2_WEB_FIXTURE_C04_EVENT,
   H2_WEB_FIXTURE_EVENTS,
   H2_WEB_FIXTURE_RUN,
 } from './fixture-data-source.ts'
 
 const noop = () => undefined
+const fixtureDataSource = createH2WebFixtureDataSource()
 
-const readyState: H2WorkspaceState = {
+const readyState = {
   status: 'ready',
   workspace: {
     mode: 'FIXTURE',
     datasets: [H2_WEB_FIXTURE_RUN.dataset],
     run: H2_WEB_FIXTURE_RUN,
     events: H2_WEB_FIXTURE_EVENTS,
-    series: null,
-    seriesError: 'Focused SSR test does not render a chart instance.',
   },
-}
+} as const satisfies H2WorkspaceState
 
 describe('H2 Sentinel presentation', () => {
   it('keeps all six top-level views directly addressable', () => {
@@ -70,6 +70,7 @@ describe('H2 Sentinel presentation', () => {
     assert.match(markup, /29\.33/)
     assert.doesNotMatch(markup, /86\.5/)
     assert.match(markup, /必须人工确认/)
+    assert.match(markup, /正在读取当前事件窗口/)
   })
 
   it('makes the judge path, C01-C07 coverage, source identity, and sign conventions visible', () => {
@@ -83,6 +84,7 @@ describe('H2 Sentinel presentation', () => {
     assert.match(overviewMarkup, new RegExp(H2_WEB_FIXTURE_RUN.dataset.sourceFilename))
     assert.match(overviewMarkup, new RegExp(H2_WEB_FIXTURE_RUN.dataset.fingerprint))
     assert.match(overviewMarkup, /无控制权限/)
+    assert.match(overviewMarkup, /最近 24 小时/)
     for (const code of ['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07']) {
       assert.match(overviewMarkup, new RegExp(code))
     }
@@ -93,6 +95,43 @@ describe('H2 Sentinel presentation', () => {
     assert.match(analysisMarkup, /符号约定/)
     assert.match(analysisMarkup, /正值上网（送出），负值下网（受电）/)
     assert.match(analysisMarkup, /正值放电，负值充电/)
+    assert.match(analysisMarkup, /正在读取所选变量/)
+  })
+
+  it('keeps arbitrary measurement and constraint fields selectable in Analysis', () => {
+    const fields = [
+      ...H2_WEB_FIXTURE_RUN.dataset.fields,
+      {
+        name: 'arbitrary_manifest_measurement_kw',
+        displayNameZh: '任意清单测量字段',
+        role: 'measurement',
+        required: false,
+        unit: 'kW',
+      },
+      {
+        name: 'metadata_only_field',
+        displayNameZh: '仅元数据字段',
+        role: 'metadata',
+        required: false,
+      },
+    ] as const
+    const run = {
+      ...H2_WEB_FIXTURE_RUN,
+      dataset: { ...H2_WEB_FIXTURE_RUN.dataset, fields },
+    }
+    const state = {
+      status: 'ready',
+      workspace: {
+        ...readyState.workspace,
+        run,
+      },
+    } as const satisfies H2WorkspaceState
+    const markup = renderView(state, { route: 'analysis' })
+    const select = markup.match(/<select[\s\S]*?<\/select>/u)?.[0]
+
+    assert.ok(select)
+    assert.match(select, /arbitrary_manifest_measurement_kw/)
+    assert.doesNotMatch(select, /metadata_only_field/)
   })
 
   it('blocks downstream judge steps when the data-quality gate is blocked', () => {
@@ -204,6 +243,7 @@ function renderView(
   return renderToStaticMarkup(
     <H2SentinelView
       commandState={commandState}
+      dataSource={fixtureDataSource}
       navigation={navigation}
       onAsk={noop}
       onDownload={noop}

@@ -1,6 +1,7 @@
 import type {
   H2AssistantQuestionId,
   H2ReportArtifact,
+  H2SentinelDataSource,
 } from '@opendashboard/h2-contracts'
 import { H2Shell } from './components/common/H2Shell.tsx'
 import { EmptyDatasetState } from './components/common/EmptyDatasetState.tsx'
@@ -22,6 +23,7 @@ import { ReportsPage, type ReportDefinition } from './pages/reports/ReportsPage.
 
 export interface H2SentinelViewProps {
   readonly commandState: H2CommandState
+  readonly dataSource: H2SentinelDataSource
   readonly navigation: H2NavigationTarget
   readonly onAsk: (questionId: H2AssistantQuestionId) => void
   readonly onDownload: (artifact: H2ReportArtifact) => void
@@ -39,6 +41,7 @@ export interface H2SentinelViewProps {
 
 export function H2SentinelView({
   commandState,
+  dataSource,
   navigation,
   onAsk,
   onDownload,
@@ -104,25 +107,26 @@ export function H2SentinelView({
       run={workspace.run}
     >
       {navigation.route === 'overview' ? (
-        <OverviewPage onNavigate={onNavigate} workspace={workspace} />
+        <OverviewPage dataSource={dataSource} onNavigate={onNavigate} workspace={workspace} />
       ) : null}
       {navigation.route === 'events' ? (
         <EventsPage onNavigate={onNavigate} workspace={workspace} />
       ) : null}
       {navigation.route === 'diagnosis' ? (
         <DiagnosisPage
+          dataSource={dataSource}
           event={selectedEvent}
           events={workspace.events}
           onNavigate={onNavigate}
           onReloadReview={onReloadReview}
           onReview={onReview}
           reviewState={reviewState}
-          series={workspace.series}
-          seriesError={workspace.seriesError}
+          run={workspace.run}
         />
       ) : null}
       {navigation.route === 'analysis' ? (
         <AnalysisPage
+          dataSource={dataSource}
           importError={commandState.error}
           importNotice={commandState.notice}
           importPending={commandState.pending === 'import'}

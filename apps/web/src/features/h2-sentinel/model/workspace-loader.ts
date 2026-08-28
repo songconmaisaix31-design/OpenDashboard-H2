@@ -1,16 +1,13 @@
 import type {
   H2DatasetManifest,
   H2SentinelDataSource,
-  H2SeriesResponse,
 } from '@opendashboard/h2-contracts'
 import type { H2Workspace } from './view-state.ts'
-import { selectH2SeriesVariables } from './chart-options.ts'
 
 /** Matches the Local service's accepted single-file boundary before browser content is read. */
 export const H2_CSV_MAX_BYTES = 96 * 1024 * 1024
 /** The Local service remains authoritative for row-count validation. */
 export const H2_CSV_MAX_ROWS = 180_000
-export const H2_SERIES_REQUEST_MAX_VARIABLES = 32
 
 export interface H2CsvFileInput {
   readonly name: string
@@ -37,124 +34,13 @@ export async function hydrateH2Workspace(
 ): Promise<H2Workspace> {
   const run = await dataSource.runAnalysis(dataset.datasetId)
   const events = run.events
-  const variables = selectH2SeriesVariables(run.dataset.fields, events)
 
-  try {
-    const series = await loadH2Series(dataSource, run.runId, variables, run.dataset.timeRange)
-    return {
-      mode: run.dataset.mode,
-      datasets,
-      run,
-      events,
-      series,
-      seriesError: null,
-    }
-  } catch {
-    return {
-      mode: run.dataset.mode,
-      datasets,
-      run,
-      events,
-      series: null,
-      seriesError:
-        '时间序列读取失败；没有绘制占位曲线。事件、证据和安全检查仍来自规范化结果。',
-    }
+  return {
+    mode: run.dataset.mode,
+    datasets,
+    run,
+    events,
   }
-}
-
-async function loadH2Series(
-  dataSource: H2SentinelDataSource,
-  runId: string,
-  variables: readonly string[],
-  timeRange: H2DatasetManifest['timeRange'],
-): Promise<H2SeriesResponse> {
-  if (new Set(variables).size !== variables.length) {
-    throw new Error('Series variables must be unique before batching.')
-  }
-  if (variables.length === 0) {
-    return { runId, variables: [], points: [] }
-  }
-
-  let mergedResponse: {
-    readonly runId: string
-    readonly variables: string[]
-    readonly points: Array<{
-      readonly timestamp: string
-      readonly values: Record<string, number | null>
-    }>
-  } | null = null
-
-  for (let offset = 0; offset < variables.length; offset += H2_SERIES_REQUEST_MAX_VARIABLES) {
-    const batch = variables.slice(offset, offset + H2_SERIES_REQUEST_MAX_VARIABLES)
-    const response = await dataSource.getSeries({
-      runId,
-      variables: batch,
-      startTime: timeRange.startTime,
-      endTime: timeRange.endTime,
-    })
-    validateH2SeriesBatch(runId, batch, response)
-
-    if (variables.length <= H2_SERIES_REQUEST_MAX_VARIABLES) return response
-
-    if (!mergedResponse) {
-      mergedResponse = {
-        runId,
-        variables: [...batch],
-        points: response.points.map((point) => ({
-          timestamp: point.timestamp,
-          values: { ...point.values },
-        })),
-      }
-      continue
-    }
-
-    if (response.points.length !== mergedResponse.points.length) {
-      throw new Error('Series batches returned different point counts.')
-    }
-
-    const mergedPoints = mergedResponse.points
-    response.points.forEach((point, pointIndex) => {
-      const mergedPoint = mergedPoints[pointIndex]
-      if (!mergedPoint || mergedPoint.timestamp !== point.timestamp) {
-        throw new Error('Series batches returned different timestamps.')
-      }
-      for (const variable of batch) {
-        if (Object.hasOwn(mergedPoint.values, variable)) {
-          throw new Error('Series batches returned overlapping variables.')
-        }
-        mergedPoint.values[variable] = point.values[variable] ?? null
-      }
-    })
-    mergedResponse.variables.push(...batch)
-  }
-
-  if (!mergedResponse) {
-    throw new Error('Series batch count does not match the request.')
-  }
-  return mergedResponse
-}
-
-function validateH2SeriesBatch(
-  runId: string,
-  batch: readonly string[],
-  response: H2SeriesResponse,
-): void {
-  if (response.runId !== runId || !sameStrings(response.variables, batch)) {
-    throw new Error('Series batch identity does not match the request.')
-  }
-  for (const point of response.points) {
-    const keys = Object.keys(point.values)
-    if (
-      keys.length !== batch.length ||
-      !batch.every((variable) => Object.hasOwn(point.values, variable))
-    ) {
-      throw new Error('Series batch values do not match the requested variables.')
-    }
-  }
-}
-
-function sameStrings(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 export async function importH2CsvWorkspace(

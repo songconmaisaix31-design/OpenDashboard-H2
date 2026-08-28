@@ -1,4 +1,8 @@
-import type { H2AnomalyEvent, H2SeriesResponse } from '@opendashboard/h2-contracts'
+import type {
+  H2AnalysisRun,
+  H2AnomalyEvent,
+  H2SentinelDataSource,
+} from '@opendashboard/h2-contracts'
 import type { H2NavigationTarget } from '../../routes.ts'
 import type { H2ReviewDraft } from '../../model/review.ts'
 import type { H2ReviewCommandState } from '../../model/view-state.ts'
@@ -17,6 +21,10 @@ import {
   createEventChartOption,
   getEventChartUnitSummary,
 } from '../../model/chart-options.ts'
+import {
+  createH2DiagnosisSeriesQuery,
+  useH2Series,
+} from '../../model/series-loader.ts'
 import { EChartsCanvas } from '../../components/charts/EChartsCanvas.tsx'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { SignConventionNote } from '../../components/common/SignConventionNote.tsx'
@@ -27,26 +35,32 @@ import { EventReviewPanel } from '../../components/review/EventReviewPanel.tsx'
 import { SafetyPanel } from '../../components/safety/SafetyPanel.tsx'
 
 export interface DiagnosisPageProps {
+  readonly dataSource: H2SentinelDataSource
   readonly event: H2AnomalyEvent | null
   readonly events: readonly H2AnomalyEvent[]
   readonly onNavigate: (target: H2NavigationTarget) => void
   readonly onReloadReview: () => void
   readonly onReview: (draft: H2ReviewDraft) => void
   readonly reviewState: H2ReviewCommandState
-  readonly series: H2SeriesResponse | null
-  readonly seriesError: string | null
+  readonly run: H2AnalysisRun
 }
 
 export function DiagnosisPage({
+  dataSource,
   event,
   events,
   onNavigate,
   onReloadReview,
   onReview,
   reviewState,
-  series,
-  seriesError,
+  run,
 }: DiagnosisPageProps) {
+  const seriesState = useH2Series(
+    dataSource,
+    event ? createH2DiagnosisSeriesQuery(run, event) : null,
+  )
+  const series = seriesState.status === 'ready' ? seriesState.series : null
+
   if (!event) {
     return (
       <div className="h2-page">
@@ -117,7 +131,7 @@ export function DiagnosisPage({
         {series ? (
           <EChartsCanvas ariaLabel={`${event.code} 事件时间对齐证据图，含约束线与事件区间`} option={createEventChartOption(series, event)} />
         ) : (
-          <div className="h2-chart-empty" role="status"><strong>趋势数据暂不可用</strong><p>{seriesError ?? '事件结构化证据仍可核验，系统不会绘制推测曲线。'}</p></div>
+          <div className="h2-chart-empty" role="status"><strong>趋势数据暂不可用</strong><p>{getDiagnosisSeriesMessage(seriesState.status)}</p></div>
         )}
       </section>
 
@@ -153,4 +167,10 @@ export function DiagnosisPage({
       </section>
     </div>
   )
+}
+
+function getDiagnosisSeriesMessage(status: 'idle' | 'loading' | 'ready' | 'error'): string {
+  if (status === 'loading') return '正在读取当前事件窗口的时间序列。'
+  if (status === 'error') return '当前事件趋势读取失败；未显示上一事件或推测曲线。'
+  return '当前事件没有可请求的测量或约束变量；结构化证据仍可独立核验。'
 }

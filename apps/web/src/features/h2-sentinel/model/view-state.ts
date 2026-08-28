@@ -6,7 +6,6 @@ import type {
   H2EventReview,
   H2ReportArtifact,
   H2ReviewAction,
-  H2SeriesResponse,
   H2AnomalyEvent,
 } from '@opendashboard/h2-contracts'
 
@@ -15,8 +14,6 @@ export interface H2Workspace {
   readonly datasets: readonly H2DatasetManifest[]
   readonly run: H2AnalysisRun
   readonly events: readonly H2AnomalyEvent[]
-  readonly series: H2SeriesResponse | null
-  readonly seriesError: string | null
 }
 
 export type H2WorkspaceState =
