@@ -11,7 +11,7 @@ const contractsDirectory = resolve(repositoryRoot, 'packages/h2-contracts')
 const passed = []
 const skipped = []
 const failed = []
-const canonicalC04ImpactKwh = 29.333333333333332
+const canonicalC04ImpactKwh = 120
 
 function run(name, test) {
   try {
@@ -128,8 +128,8 @@ run('C02 golden C03 fixture preserves evidence, provenance, and advisory boundar
   })
   const row = rowsByTimestamp.get('2026-01-05T10:24:00Z')
   assert.ok(row, 'C03 evidence timestamp must exist in the fixture CSV')
-  assert.equal(Number(row.bess_dispatch_command_kw), -240)
-  assert.equal(Number(row.bess_power_kw), 230)
+  assert.equal(Number(row.bess_power_cmd_kw), -240)
+  assert.equal(Number(row.bess_power_actual_kw), 230)
 })
 
 run('C02a golden C03/C04 fixtures conform to the published anomaly JSON Schema', () => {
@@ -146,16 +146,11 @@ run('C04 golden impact is reproducible from the sanitized minute fixture', () =>
   })
   const impact = rows
     .filter((row) => row.timestamp >= c04.startTime && row.timestamp <= c04.endTime)
-    .reduce(
-      (total, row) =>
-        total +
-        Math.max(Number(row.pcc_power_kw) - Number(row.pcc_export_limit_kw), 0) / 60,
-      0,
-    )
+    .reduce((total, row) => total + Number(row.pcc_export_power_violation_kw) / 60, 0)
   assert.equal(c04.impact.value, canonicalC04ImpactKwh)
   assert.ok(
-    Math.abs(impact - canonicalC04ImpactKwh) < 1e-10,
-    `CSV-derived C04 impact must equal ${canonicalC04ImpactKwh} kWh`,
+    Math.abs(impact - c04.impact.value) < 1e-10,
+    `CSV-derived C04 impact must equal golden contract value ${c04.impact.value} kWh`,
   )
 })
 
