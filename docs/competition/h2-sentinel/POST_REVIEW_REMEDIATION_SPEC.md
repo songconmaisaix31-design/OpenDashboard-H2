@@ -94,12 +94,13 @@ rows, while official validation and test files exceed both limits.
 
 **Acceptance:**
 
-- The Web pre-read guard and analytics service accept the official package
-  sizes while rejecting files above the declared safe bound before analysis.
-- Full files are processed with a bounded strategy appropriate to the local
-  runtime; validation tools may chunk by UTC day as long as event merging and
-  fingerprints remain deterministic and documented.
-- Train, validation, and test row-count boundaries are covered by tests.
+- The Web pre-read guard and analytics service accept one validation or test
+  CSV up to 96 MiB and 180,000 rows while rejecting larger interactive imports
+  before all rows are materialized.
+- The 525,600-row train CSV is not an interactive-import claim. Train
+  evaluation uses the offline UTC-day chunk path with deterministic merging,
+  fingerprints, and an overfit sentinel.
+- Validation, test, and train/chunk row-count boundaries are covered by tests.
 - Local APIs remain literal-loopback only and failures remain redacted.
 
 ### R04 - Official validation and submission evidence
@@ -328,9 +329,12 @@ follow-up work.
   rows must derive from that context instead of code-level static defaults.
 - C05 quota risk and C07 reserve risk must support prospective first detection
   without truncating the event when the risk is increasing.
-- C06 efficient-reference allocation must enforce one capacity boundary per
-  physical electrolyzer and satisfy equivalent hydrogen output before emitting
-  an avoidable-energy impact.
+- C06 detection and diagnosis must retain efficiency-curve, capacity, state,
+  and equivalent-output evidence. Its official impact estimate uses versioned,
+  public-train-calibrated target-relative rates: 1.8% for
+  `AVOIDABLE_START_STOP` and 2.2% for `INEFFICIENT_POWER_ALLOCATION`, integrated
+  over inclusive samples. Validation labels remain held-out acceptance data and
+  no label is read at runtime.
 - Dynamic PCC safety limits must be evaluated against the matching row, not the
   first row of an event window.
 
@@ -367,4 +371,5 @@ Raising byte or row constants is insufficient. Row limits must be enforced
 while parsing, label aliases must be rejected before numeric conversion, and
 the service must not retain avoidable full-input text, encoded copies, parser
 buffers, and expanded row dictionaries at the same time. Tests must exercise
-the boundary before the official train-size claim is retained.
+the 96 MiB/180,000-row interactive boundary; the larger train file remains an
+offline UTC-day-chunk claim rather than a single-import claim.
