@@ -1,5 +1,5 @@
 import type { H2DatasetMode } from '@opendashboard/h2-contracts'
-import { H2_CSV_MAX_BYTES } from '../../model/workspace-loader.ts'
+import { H2_CSV_MAX_BYTES, H2_CSV_MAX_ROWS } from '../../model/workspace-loader.ts'
 import { StatusBadge } from './StatusBadge.tsx'
 
 export interface EmptyDatasetStateProps {
@@ -56,7 +56,7 @@ export function EmptyDatasetState({
         </button>
       </div>
       <p className="h2-file-policy" id="h2-empty-file-policy">
-        仅接受 .csv，最大 {maxMegabytes} MiB。不会读取任意本地路径或自动上传其他文件。
+        仅接受 .csv，单文件最大 {maxMegabytes} MiB，本地服务单次最多 {H2_CSV_MAX_ROWS.toLocaleString('en-US')} 行；完整训练集仅支持分片导入。不会读取任意本地路径或自动上传其他文件。
       </p>
       {error ? <p className="h2-message h2-message--error" role="alert">{error}</p> : null}
       <StatusBadge tone={mode === 'LIVE_ANALYSIS' ? 'live' : 'fixture'}>

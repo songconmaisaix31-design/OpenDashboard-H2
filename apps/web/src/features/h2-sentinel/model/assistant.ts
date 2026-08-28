@@ -80,6 +80,19 @@ export function resolveH2AssistantFollowUp(
   return matchedH2FollowUp(match.questionId)
 }
 
+/** Resolves wording and current-event compatibility as one fail-closed intent. */
+export function resolveH2AssistantIntent(
+  input: string,
+  event: H2AnomalyEvent | null,
+): H2AssistantFollowUpResolution {
+  const resolution = resolveH2AssistantFollowUp(input)
+  if (resolution.status === 'refused') return resolution
+  const requirement = getH2AssistantEventRequirement(resolution.questionId, event)
+  return requirement.valid
+    ? resolution
+    : { status: 'refused', message: requirement.message }
+}
+
 function matchedH2FollowUp(
   questionId: H2AssistantQuestionId,
 ): Extract<H2AssistantFollowUpResolution, { readonly status: 'matched' }> {

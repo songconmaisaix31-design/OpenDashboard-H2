@@ -14,6 +14,7 @@ import {
   createLiveH2EmsDataSource,
   H2_EMS_DATA_SOURCE,
   H2_EMS_LIVE_ROUTES,
+  H2_EMS_REQUEST_TIMEOUTS_MS,
   H2EmsAdapterError,
 } from '../src/index.ts'
 import { createPluginRuntime } from '@opendashboard/plugin-runtime'
@@ -190,7 +191,7 @@ describe('H2 EMS loopback adapter', () => {
     const timedOut = createLiveH2EmsDataSource({
       enabled: true,
       baseUrl: 'http://127.0.0.1:8123/',
-      timeoutMs: 1,
+      requestTimeoutsMs: { standard: 1 },
       fetchFn: (_input, init) => new Promise((_, reject) => init?.signal?.addEventListener('abort', () => reject(new Error('raw transport failure')))),
     })
     await assert.rejects(
@@ -209,6 +210,52 @@ describe('H2 EMS loopback adapter', () => {
     await assert.rejects(
       () => cancelled.getMode(),
       (error: unknown) => error instanceof H2EmsAdapterError && error.code === 'request_aborted',
+    )
+  })
+
+  it('uses closed operation-specific defaults for Local import and analysis', async () => {
+    assert.deepEqual(H2_EMS_REQUEST_TIMEOUTS_MS, {
+      standard: 15_000,
+      importCsv: 60_000,
+      analysis: 180_000,
+    })
+    assert.throws(
+      () => createLiveH2EmsDataSource({
+        enabled: true,
+        baseUrl: 'http://127.0.0.1:8123/',
+        requestTimeoutsMs: { analysis: H2_EMS_REQUEST_TIMEOUTS_MS.analysis + 1 },
+      }),
+      (error: unknown) =>
+        error instanceof H2EmsAdapterError && error.code === 'remote_response_invalid',
+    )
+
+    const waitForAbort: typeof fetch = (_input, init) => new Promise((_, reject) => {
+      init?.signal?.addEventListener(
+        'abort',
+        () => reject(new Error('raw transport failure')),
+        { once: true },
+      )
+    })
+    const importTimedOut = createLiveH2EmsDataSource({
+      enabled: true,
+      baseUrl: 'http://127.0.0.1:8123/',
+      requestTimeoutsMs: { importCsv: 1 },
+      fetchFn: waitForAbort,
+    })
+    await assert.rejects(
+      () => importTimedOut.importCsv({ filename: 'bounded.csv', text: 'timestamp\n' }),
+      (error: unknown) => error instanceof H2EmsAdapterError && error.code === 'request_timeout',
+    )
+
+    const analysisTimedOut = createLiveH2EmsDataSource({
+      enabled: true,
+      baseUrl: 'http://127.0.0.1:8123/',
+      requestTimeoutsMs: { analysis: 1 },
+      fetchFn: waitForAbort,
+    })
+    await assert.rejects(
+      () => analysisTimedOut.runAnalysis('dataset-bounded'),
+      (error: unknown) => error instanceof H2EmsAdapterError && error.code === 'request_timeout',
     )
   })
 })

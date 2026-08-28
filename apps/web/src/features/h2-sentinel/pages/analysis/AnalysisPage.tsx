@@ -8,7 +8,7 @@ import {
   toH2FieldDictionaryRows,
 } from '../../model/presentation.ts'
 import { createVariableChartOption } from '../../model/chart-options.ts'
-import { H2_CSV_MAX_BYTES } from '../../model/workspace-loader.ts'
+import { H2_CSV_MAX_BYTES, H2_CSV_MAX_ROWS } from '../../model/workspace-loader.ts'
 import { EChartsCanvas } from '../../components/charts/EChartsCanvas.tsx'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { SignConventionNote } from '../../components/common/SignConventionNote.tsx'
@@ -65,7 +65,7 @@ export function AnalysisPage({ importError, importNotice, importPending, onImpor
             type="file"
           />
         </label>
-        <p className="h2-file-policy">仅接受 .csv，最大 {H2_CSV_MAX_BYTES / (1024 * 1024)} MiB。</p>
+        <p className="h2-file-policy">仅接受 .csv，单文件最大 {H2_CSV_MAX_BYTES / (1024 * 1024)} MiB，本地服务单次最多 {H2_CSV_MAX_ROWS.toLocaleString('en-US')} 行；完整训练集仅支持分片导入。</p>
         <div aria-live="polite" className="h2-message-stack">
           {importError ? <p className="h2-message h2-message--error">{importError}</p> : null}
           {importNotice ? <p className="h2-message h2-message--success">{importNotice}</p> : null}

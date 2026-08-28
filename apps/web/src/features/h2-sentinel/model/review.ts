@@ -9,6 +9,23 @@ export interface H2ReviewDraft {
   readonly actorName: string
   readonly note: string
 }
+
+export interface H2ReviewTarget {
+  readonly runId: string
+  readonly eventId: string
+  readonly revision: number
+}
+
+export function isH2ReviewTargetCurrent(
+  active: H2ReviewTarget | null,
+  submitted: H2ReviewTarget,
+): boolean {
+  return active !== null &&
+    active.runId === submitted.runId &&
+    active.eventId === submitted.eventId &&
+    active.revision === submitted.revision
+}
+
 export type H2ReviewDraftValidation =
   | {
       readonly valid: true

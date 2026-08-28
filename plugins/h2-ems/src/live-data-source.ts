@@ -34,10 +34,21 @@ import {
 } from './remote-validation-primitives.ts'
 import { sha256 } from './sha256.ts'
 
+export const H2_EMS_REQUEST_TIMEOUTS_MS = {
+  standard: 15_000,
+  importCsv: 60_000,
+  analysis: 180_000,
+} as const
+
+export type H2EmsRequestTimeouts = Readonly<
+  Record<keyof typeof H2_EMS_REQUEST_TIMEOUTS_MS, number>
+>
+
 export interface H2EmsLiveAdapterOptions {
   readonly enabled: true
   readonly baseUrl: string
-  readonly timeoutMs?: number
+  /** Tests and bounded runtimes may shorten, but never extend, the closed defaults. */
+  readonly requestTimeoutsMs?: Partial<H2EmsRequestTimeouts>
   readonly signal?: AbortSignal
   readonly fetchFn?: typeof fetch
 }
@@ -69,13 +80,14 @@ export function createLiveH2EmsDataSource(
     throw new H2EmsAdapterError('live_adapter_disabled', false)
   }
   const baseUrl = validateLoopbackUrl(options.baseUrl)
-  const timeoutMs = validateTimeout(options.timeoutMs)
+  const requestTimeoutsMs = resolveRequestTimeouts(options.requestTimeoutsMs)
   const fetchFn = options.fetchFn ?? fetch
 
   const request = <T>(
     route: string,
     payload: unknown,
     guard: (value: unknown) => value is T,
+    timeoutMs = requestTimeoutsMs.standard,
   ): Promise<T> => requestEnvelope(baseUrl, route, payload, guard, fetchFn, timeoutMs, options.signal)
 
   return {
@@ -89,7 +101,12 @@ export function createLiveH2EmsDataSource(
         throw new H2EmsAdapterError('remote_response_invalid', false)
       }
       return verifyRemoteIdentity(
-        await request(H2_EMS_LIVE_ROUTES.importCsv, input, isCsvImportResult),
+        await request(
+          H2_EMS_LIVE_ROUTES.importCsv,
+          input,
+          isCsvImportResult,
+          requestTimeoutsMs.importCsv,
+        ),
         ({ dataset }) =>
           dataset.sourceFilename === input.filename &&
           dataset.fingerprint === expectedFingerprint,
@@ -100,7 +117,12 @@ export function createLiveH2EmsDataSource(
       (quality) => quality.datasetId === datasetId,
     ),
     runAnalysis: async (datasetId) => verifyRemoteIdentity(
-      await request(H2_EMS_LIVE_ROUTES.analysis, { datasetId }, isAnalysisRun),
+      await request(
+        H2_EMS_LIVE_ROUTES.analysis,
+        { datasetId },
+        isAnalysisRun,
+        requestTimeoutsMs.analysis,
+      ),
       (run) => run.dataset.datasetId === datasetId,
     ),
     getOverview: async (runId) => verifyRemoteIdentity(
@@ -179,9 +201,28 @@ function validateLoopbackUrl(input: string): URL {
   return parsed
 }
 
-function validateTimeout(value: number | undefined): number {
-  const timeoutMs = value ?? 5_000
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000) {
+function resolveRequestTimeouts(
+  overrides: Partial<H2EmsRequestTimeouts> | undefined,
+): H2EmsRequestTimeouts {
+  return {
+    standard: validateTimeoutOverride(
+      overrides?.standard,
+      H2_EMS_REQUEST_TIMEOUTS_MS.standard,
+    ),
+    importCsv: validateTimeoutOverride(
+      overrides?.importCsv,
+      H2_EMS_REQUEST_TIMEOUTS_MS.importCsv,
+    ),
+    analysis: validateTimeoutOverride(
+      overrides?.analysis,
+      H2_EMS_REQUEST_TIMEOUTS_MS.analysis,
+    ),
+  }
+}
+
+function validateTimeoutOverride(value: number | undefined, maximum: number): number {
+  const timeoutMs = value ?? maximum
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > maximum) {
     throw new H2EmsAdapterError('remote_response_invalid', false)
   }
   return timeoutMs

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
   H2DatasetManifest,
@@ -12,11 +12,15 @@ import { createH2ReportRequest } from './model/reporting.ts'
 import {
   createH2ReviewRequestId,
   h2ReviewFailureMessage,
+  isH2ReviewTargetCurrent,
   isH2ReviewConflict,
   validateH2ReviewDraft,
   type H2ReviewDraft,
+  type H2ReviewTarget,
 } from './model/review.ts'
 import {
+  beginH2ArtifactExport,
+  failH2ArtifactExport,
   INITIAL_H2_COMMAND_STATE,
   INITIAL_H2_REVIEW_COMMAND_STATE,
   type H2CommandState,
@@ -127,6 +131,19 @@ export function H2SentinelApp({
   const activeRunId = workspaceState.status === 'ready'
     ? workspaceState.workspace.run.runId
     : null
+  const currentReviewTarget: H2ReviewTarget | null =
+    activeRunId &&
+    selectedEventId &&
+    reviewState.review?.runId === activeRunId &&
+    reviewState.review.eventId === selectedEventId
+      ? {
+          runId: activeRunId,
+          eventId: selectedEventId,
+          revision: reviewState.review.revision,
+        }
+      : null
+  const activeReviewTargetRef = useRef<H2ReviewTarget | null>(currentReviewTarget)
+  activeReviewTargetRef.current = currentReviewTarget
 
   useEffect(() => {
     let disposed = false
@@ -219,7 +236,7 @@ export function H2SentinelApp({
       ? events.find(({ eventId }) => eventId === selectedEventId)
       : undefined
 
-    setCommandState((current) => ({ ...current, pending: definition.operation, error: null, notice: null }))
+    setCommandState((current) => beginH2ArtifactExport(current, definition.operation))
     try {
       const artifact = definition.kind === 'submission'
         ? await dataSource.exportSubmission(run.runId)
@@ -233,19 +250,20 @@ export function H2SentinelApp({
           )
       setCommandState((current) => ({ ...current, pending: null, artifact, notice: `已生成 ${artifact.descriptor.filename}` }))
     } catch (error: unknown) {
-      setCommandState((current) => ({
-        ...current,
-        pending: null,
-        error: h2ReportFailureMessage(error, definition.kind),
-      }))
+      setCommandState((current) => failH2ArtifactExport(
+        current,
+        h2ReportFailureMessage(error, definition.kind),
+      ))
     }
   }
 
   async function reviewEvent(draft: H2ReviewDraft): Promise<void> {
+    const submittedTarget = activeReviewTargetRef.current
     if (
       workspaceState.status !== 'ready' ||
       !selectedEventId ||
       !reviewState.review ||
+      !submittedTarget ||
       reviewState.pending
     ) return
     const validation = validateH2ReviewDraft(draft)
@@ -254,18 +272,22 @@ export function H2SentinelApp({
       return
     }
 
+    const request = {
+      schemaVersion: 1,
+      requestId: createH2ReviewRequestId(),
+      runId: submittedTarget.runId,
+      eventId: submittedTarget.eventId,
+      action: draft.action,
+      expectedRevision: submittedTarget.revision,
+      actor: validation.actor,
+      ...(validation.note === undefined ? {} : { note: validation.note }),
+    } as const
+
     setReviewState((current) => ({ ...current, pending: draft.action, error: null, notice: null }))
     try {
-      const receipt = await dataSource.reviewEvent({
-        schemaVersion: 1,
-        requestId: createH2ReviewRequestId(),
-        runId: workspaceState.workspace.run.runId,
-        eventId: selectedEventId,
-        action: draft.action,
-        expectedRevision: reviewState.review.revision,
-        actor: validation.actor,
-        ...(validation.note === undefined ? {} : { note: validation.note }),
-      })
+      const receipt = await dataSource.reviewEvent(request)
+      if (!isH2ReviewTargetCurrent(activeReviewTargetRef.current, submittedTarget)) return
+      setWorkspaceState((current) => projectReviewIntoWorkspace(current, receipt.review))
       setReviewState({
         ...INITIAL_H2_REVIEW_COMMAND_STATE,
         review: receipt.review,
@@ -273,10 +295,10 @@ export function H2SentinelApp({
           ? '该复核请求已处理，本次返回原始记录，没有重复追加。'
           : `已保存修订 ${receipt.review.revision}。`,
       })
-      setWorkspaceState((current) => projectReviewIntoWorkspace(current, receipt.review))
     } catch (error: unknown) {
+      if (!isH2ReviewTargetCurrent(activeReviewTargetRef.current, submittedTarget)) return
       if (isH2ReviewConflict(error)) {
-        await reloadReviewAfterConflict()
+        await reloadReviewAfterConflict(submittedTarget)
         return
       }
       setReviewState((current) => ({
@@ -287,20 +309,21 @@ export function H2SentinelApp({
     }
   }
 
-  async function reloadReviewAfterConflict(): Promise<void> {
-    if (workspaceState.status !== 'ready' || !selectedEventId) return
+  async function reloadReviewAfterConflict(target: H2ReviewTarget): Promise<void> {
     try {
       const review = await dataSource.getEventReview(
-        workspaceState.workspace.run.runId,
-        selectedEventId,
+        target.runId,
+        target.eventId,
       )
+      if (!isH2ReviewTargetCurrent(activeReviewTargetRef.current, target)) return
+      setWorkspaceState((current) => projectReviewIntoWorkspace(current, review))
       setReviewState({
         ...INITIAL_H2_REVIEW_COMMAND_STATE,
         review,
         notice: '检测到并发修订冲突，已重新加载最新状态；未覆盖其他操作人的记录。',
       })
-      setWorkspaceState((current) => projectReviewIntoWorkspace(current, review))
     } catch {
+      if (!isH2ReviewTargetCurrent(activeReviewTargetRef.current, target)) return
       setReviewState((current) => ({
         ...current,
         pending: null,

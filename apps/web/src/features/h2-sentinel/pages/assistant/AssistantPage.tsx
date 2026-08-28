@@ -10,7 +10,7 @@ import {
 import {
   getH2AssistantEventRequirement,
   H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS,
-  resolveH2AssistantFollowUp,
+  resolveH2AssistantIntent,
 } from '../../model/assistant.ts'
 import {
   getH2ProvenanceLabel,
@@ -58,7 +58,7 @@ export function AssistantPage({
 
   function submitFollowUp(submitEvent: React.FormEvent<HTMLFormElement>): void {
     submitEvent.preventDefault()
-    const resolution = resolveH2AssistantFollowUp(followUpInput)
+    const resolution = resolveH2AssistantIntent(followUpInput, event)
     if (resolution.status === 'refused') {
       setFollowUpState({ tone: 'error', message: resolution.message })
       return

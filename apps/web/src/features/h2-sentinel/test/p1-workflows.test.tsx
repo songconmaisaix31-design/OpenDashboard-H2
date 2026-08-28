@@ -16,6 +16,7 @@ import { EventReviewPanel } from '../components/review/EventReviewPanel.tsx'
 import {
   getH2AssistantEventRequirement,
   H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS,
+  resolveH2AssistantIntent,
   resolveH2AssistantFollowUp,
 } from '../model/assistant.ts'
 import {
@@ -27,9 +28,16 @@ import {
 } from '../model/reporting.ts'
 import {
   getH2ReviewActions,
+  isH2ReviewTargetCurrent,
   isH2ReviewConflict,
+  type H2ReviewTarget,
   validateH2ReviewDraft,
 } from '../model/review.ts'
+import {
+  beginH2ArtifactExport,
+  failH2ArtifactExport,
+  INITIAL_H2_COMMAND_STATE,
+} from '../model/view-state.ts'
 import { AssistantAnswer, AssistantPage } from '../pages/assistant/AssistantPage.tsx'
 import { ReportsPage } from '../pages/reports/ReportsPage.tsx'
 import { createH2WebFixtureDataSource } from './fixture-data-source.ts'
@@ -97,6 +105,18 @@ describe('H2 Sentinel P1 Web workflows', () => {
       resolveH2AssistantFollowUp('x'.repeat(H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS + 1)).status,
       'refused',
     )
+    assert.equal(
+      resolveH2AssistantIntent('PCC 合规日报写什么？', H2_GOLDEN_C03_EVENT).status,
+      'refused',
+    )
+    const compatibleIntent = resolveH2AssistantIntent(
+      'PCC 合规日报写什么？',
+      H2_GOLDEN_C04_EVENT,
+    )
+    assert.equal(compatibleIntent.status, 'matched')
+    if (compatibleIntent.status === 'matched') {
+      assert.equal(compatibleIntent.questionId, 'Q10')
+    }
   })
 
   it('renders the follow-up entry as disabled while an answer is pending', () => {
@@ -156,6 +176,67 @@ describe('H2 Sentinel P1 Web workflows', () => {
     assert.match(markup, /&lt;script&gt;operator&lt;\/script&gt;/)
     assert.match(markup, /&lt;img src=x&gt; 已核验/)
     assert.doesNotMatch(markup, /<script|<img/iu)
+  })
+
+  it('ignores a deferred event A review response after navigation to event B', async () => {
+    const submittedTarget = {
+      runId: 'run-1',
+      eventId: 'event-a',
+      revision: 0,
+    } as const satisfies H2ReviewTarget
+    const eventBTarget = {
+      runId: 'run-1',
+      eventId: 'event-b',
+      revision: 0,
+    } as const satisfies H2ReviewTarget
+    const deferred = deferredValue<H2EventReview>()
+    let activeTarget: H2ReviewTarget | null = submittedTarget
+    let renderedReview = {
+      ...reviewWithReversedEntries(),
+      eventId: submittedTarget.eventId,
+      revision: submittedTarget.revision,
+      entries: [],
+    } as H2EventReview
+    const response = deferred.promise.then((review) => {
+      if (isH2ReviewTargetCurrent(activeTarget, submittedTarget)) {
+        renderedReview = review
+      }
+    })
+
+    activeTarget = eventBTarget
+    renderedReview = {
+      ...renderedReview,
+      eventId: eventBTarget.eventId,
+      revision: eventBTarget.revision,
+    }
+    deferred.resolve({
+      ...renderedReview,
+      eventId: submittedTarget.eventId,
+      revision: 1,
+    })
+    await response
+
+    assert.equal(renderedReview.eventId, eventBTarget.eventId)
+    assert.equal(renderedReview.revision, eventBTarget.revision)
+  })
+
+  it('invalidates an old artifact when a new export starts or fails', () => {
+    const artifact = {
+      descriptor: H2_FIXTURE_REPORT_DESCRIPTOR,
+      mediaType: 'text/html',
+      content: '<p>old report</p>',
+    } as const satisfies H2ReportArtifact
+    const started = beginH2ArtifactExport(
+      { ...INITIAL_H2_COMMAND_STATE, artifact },
+      'event-report',
+    )
+    assert.equal(started.artifact, null)
+    const failed = failH2ArtifactExport(
+      { ...started, artifact },
+      '导出失败',
+    )
+    assert.equal(failed.artifact, null)
+    assert.equal(failed.error, '导出失败')
   })
 
   it('builds exact report scopes and labels Fixture, validation slice, and Live distinctly', () => {
@@ -264,5 +345,22 @@ function reviewWithReversedEntries(): H2EventReview {
     revision: 2,
     entries: [second, first],
     provenance: H2_FIXTURE_PROVENANCE,
+  }
+}
+
+function deferredValue<T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T) => void
+} {
+  let resolvePromise: ((value: T) => void) | undefined
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve
+  })
+  return {
+    promise,
+    resolve(value) {
+      if (!resolvePromise) throw new Error('Deferred promise was not initialized.')
+      resolvePromise(value)
+    },
   }
 }
