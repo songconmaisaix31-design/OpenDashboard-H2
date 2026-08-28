@@ -129,8 +129,8 @@ export function validateSubmissionText(text) {
     ) {
       issues.push(`${label} first_detection_time is outside the event interval`)
     }
-    if (!['true', 'false'].includes(row.requires_human_confirmation.trim())) {
-      issues.push(`${label} requires_human_confirmation must be true or false`)
+    if (row.requires_human_confirmation.trim() !== 'true') {
+      issues.push(`${label} requires_human_confirmation must be true for every recommendation`)
     }
   }
 

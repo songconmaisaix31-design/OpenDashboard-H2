@@ -106,4 +106,21 @@ describe('H2 Sentinel remediation evidence boundaries', () => {
     assert.match(validator, /executionId/)
     assert.match(demo, /analytics `runId` may repeat/i)
   })
+
+  it('re-checks the exact candidate after both measured runs and before receipt issuance', () => {
+    const runner = readRepositoryFile('validation/run-demo.mjs')
+    const candidateCheck = 'assertExactCleanCandidate(options.candidateCommit)'
+    const firstCheck = runner.indexOf(candidateCheck)
+    const runLoop = runner.indexOf('for (const sequence of [1, 2])')
+    const completedCheck = runner.indexOf(
+      candidateCheck,
+      firstCheck + candidateCheck.length,
+    )
+    const receipt = runner.indexOf('const receipt =', completedCheck)
+
+    assert.ok(firstCheck >= 0)
+    assert.ok(runLoop > firstCheck)
+    assert.ok(completedCheck > runLoop)
+    assert.ok(receipt > completedCheck)
+  })
 })

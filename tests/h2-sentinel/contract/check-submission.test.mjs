@@ -105,6 +105,18 @@ describe('H2 Sentinel official submission checker', () => {
     )
   })
 
+  it('rejects recommendations that do not require human confirmation', () => {
+    const result = validateSubmissionText(
+      serializeSubmission([row({ requires_human_confirmation: 'false' })]),
+    )
+    assert.equal(result.valid, false)
+    assert.ok(
+      result.issues.some((issue) =>
+        issue.includes('requires_human_confirmation must be true for every recommendation'),
+      ),
+    )
+  })
+
   it('freezes the exact 16-column order', () => {
     assert.equal(SUBMISSION_COLUMNS.length, 16)
     assert.equal(SUBMISSION_COLUMNS[0], 'pred_event_id')
