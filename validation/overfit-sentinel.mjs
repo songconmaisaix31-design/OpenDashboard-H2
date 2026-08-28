@@ -359,7 +359,7 @@ export function assertEvaluationIdentity(value, expectedSet, expectedCommit) {
       [
         'graceMinutes', 'mergeGapMinutes', 'limitDays', 'minimumUtcDay', 'matching',
         'chunking', 'firstDetectionDelayMinutes', 'boundaryErrorMinutes',
-        'zeroDenominatorMetrics', 'macroAveraging',
+        'zeroDenominatorMetrics', 'macroAveraging', 'runtimeInputMapping',
       ],
     ) ||
     !Number.isFinite(value.parameters.graceMinutes) ||
@@ -378,6 +378,8 @@ export function assertEvaluationIdentity(value, expectedSet, expectedCommit) {
       'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0' ||
     value.parameters.macroAveraging !==
       'unweighted arithmetic mean across C01-C07 precision, recall, and f1' ||
+    value.parameters.runtimeInputMapping !==
+      'official 69-field row projected to the frozen 10-field loopback detector contract; no labels' ||
     !evaluationDatasetMatches(value, expectedSet, source, window) ||
     !evaluationMetricsMatch(value.metrics) ||
     !evaluationMetricCountsMatch(value) ||

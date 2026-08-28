@@ -26,7 +26,12 @@ The evaluator streams the complete named source to verify its SHA-256, exact
 69-field header, full row count, first/last timestamps, and strictly increasing
 timestamps before selecting any rows. A second verified streaming pass retains
 only one UTC calendar-day chunk at a time for the deterministic loopback
-pipeline; it never materializes the full cell matrix. Adjacent same-code
+pipeline; it never materializes the full cell matrix. Each verified 69-field
+chunk is projected into the analytics service's frozen 10-field detector
+contract using documented direct aliases plus the sum of the three
+electrolyzer actual-power fields. This projection contains no label fields,
+and its actual submitted fingerprint is recorded for import/run provenance.
+Adjacent same-code
 predictions are merged across day boundaries, and public labels are opened only
 after every detector prediction finishes. Labels are held out from runtime
 input and used only for evaluation. Its versioned `event-match-v2` contract

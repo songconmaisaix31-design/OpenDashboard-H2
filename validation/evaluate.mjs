@@ -4,9 +4,10 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { currentCandidate } from './lib/candidate.mjs'
-import { decodeUtf8Strict, parseCsvText } from './lib/csv.mjs'
+import { decodeUtf8Strict, parseCsvText, serializeCsv } from './lib/csv.mjs'
 import {
   ANOMALY_CODES,
+  OFFICIAL_FIELDS,
   normalizeUtcTimestamp,
 } from './lib/official-contract.mjs'
 import {
@@ -27,6 +28,54 @@ import {
 import { assertAnalysisRun, assertImportedDataset } from './lib/runtime-provenance.mjs'
 
 const directory = dirname(fileURLToPath(import.meta.url))
+const DECIMAL_PATTERN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
+export const EVALUATION_RUNTIME_FIELDS = Object.freeze([
+  'timestamp',
+  'pv_actual_kw',
+  'bess_power_kw',
+  'pcc_power_kw',
+  'total_electrolyzer_power_kw',
+  'auxiliary_load_kw',
+  'bess_soc_percent',
+  'pcc_export_limit_kw',
+  'pcc_import_limit_kw',
+  'bess_dispatch_command_kw',
+])
+
+function officialDecimal(value, field) {
+  if (
+    typeof value !== 'string' || value !== value.trim() ||
+    !DECIMAL_PATTERN.test(value) || !Number.isFinite(Number(value))
+  ) throw new Error(`Official evaluation chunk has an invalid ${field} value.`)
+  return value
+}
+
+export function projectOfficialChunkForRuntime(text) {
+  const parsed = parseCsvText(text, 'Official evaluation chunk')
+  if (
+    parsed.columns.length !== OFFICIAL_FIELDS.length ||
+    parsed.columns.some((column, index) => column !== OFFICIAL_FIELDS[index])
+  ) throw new Error('Official evaluation chunk does not preserve the exact 69-field vocabulary.')
+  const index = new Map(parsed.columns.map((column, columnIndex) => [column, columnIndex]))
+  const value = (row, field) => officialDecimal(row[index.get(field)], field)
+  const rows = parsed.rows.map((row) => [
+    row[index.get('timestamp')],
+    value(row, 'pv_actual_kw'),
+    value(row, 'bess_power_actual_kw'),
+    value(row, 'pcc_power_actual_kw'),
+    String(
+      Number(value(row, 'elz1_power_actual_kw')) +
+      Number(value(row, 'elz2_power_actual_kw')) +
+      Number(value(row, 'elz3_power_actual_kw')),
+    ),
+    value(row, 'aux_load_kw'),
+    value(row, 'bess_soc_pct'),
+    value(row, 'grid_export_power_limit_kw'),
+    value(row, 'grid_import_power_limit_kw'),
+    value(row, 'bess_power_cmd_kw'),
+  ])
+  return serializeCsv(EVALUATION_RUNTIME_FIELDS, rows)
+}
 
 function parseArguments(argv) {
   const known = new Set([
@@ -138,11 +187,12 @@ async function collectPredictions(predictionSource, set) {
       ...predictionSource,
       onChunk: async (chunk) => {
         const filename = `${set}-${chunk.day}.csv`
-        const fingerprint = sha256(Buffer.from(chunk.text, 'utf8'))
+        const detectorText = projectOfficialChunkForRuntime(chunk.text)
+        const fingerprint = sha256(Buffer.from(detectorText, 'utf8'))
         const imported = await requestEnvelope(
           session.ready.analyticsUrl,
           '/api/v1/h2-sentinel/datasets:import',
-          { filename, text: chunk.text },
+          { filename, text: detectorText },
         )
         const importedIdentity = assertImportedDataset(imported, {
           filename,
@@ -306,6 +356,7 @@ export async function evaluateOfficialData(options) {
       boundaryErrorMinutes: 'prediction boundary minus corresponding ground-truth boundary',
       zeroDenominatorMetrics: 'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0',
       macroAveraging: 'unweighted arithmetic mean across C01-C07 precision, recall, and f1',
+      runtimeInputMapping: 'official 69-field row projected to the frozen 10-field loopback detector contract; no labels',
     },
     dataset: {
       source: timeseriesIdentity,
