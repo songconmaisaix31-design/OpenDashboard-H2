@@ -33,6 +33,19 @@ export default defineConfig(() => {
         }
 
   return {
+    build: {
+      rollupOptions: {
+        output: {
+          onlyExplicitManualChunks: true,
+          manualChunks(id) {
+            const normalizedId = id.replaceAll('\\', '/')
+            if (normalizedId.includes('/node_modules/zrender/')) return 'h2-chart-renderer'
+            if (normalizedId.includes('/node_modules/echarts/')) return 'h2-chart-runtime'
+            return undefined
+          },
+        },
+      },
+    },
     envDir: false,
     server: {
       host: LOOPBACK_HOST,

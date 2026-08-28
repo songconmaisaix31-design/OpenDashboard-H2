@@ -10,7 +10,7 @@ import { formatH2Timestamp } from './presentation.ts'
 const COLORS = ['#70c2ac', '#d5a162', '#7eb8c5', '#d86f7b', '#a78ac1'] as const
 
 interface SeriesDefinition {
-  readonly variable: string
+  readonly variables: readonly string[]
   readonly label: string
   readonly color: string
   readonly dashed?: boolean
@@ -19,18 +19,18 @@ interface SeriesDefinition {
 const powerSeriesByCode = {
   C03: [
     {
-      variable: 'bess_dispatch_command_kw',
+      variables: ['bess_power_cmd_kw', 'bess_dispatch_command_kw'],
       label: '储能调度指令',
       color: COLORS[1],
       dashed: true,
     },
-    { variable: 'bess_power_kw', label: '储能实际功率', color: COLORS[0] },
-    { variable: 'pcc_power_kw', label: '并网点功率', color: COLORS[2] },
+    { variables: ['bess_power_actual_kw', 'bess_power_kw'], label: '储能实际功率', color: COLORS[0] },
+    { variables: ['pcc_power_actual_kw', 'pcc_power_kw'], label: '并网点功率', color: COLORS[2] },
   ],
   C04: [
-    { variable: 'pcc_power_kw', label: '并网点实际功率', color: COLORS[3] },
+    { variables: ['pcc_power_actual_kw', 'pcc_power_kw'], label: '并网点实际功率', color: COLORS[3] },
     {
-      variable: 'pcc_export_limit_kw',
+      variables: ['grid_export_power_limit_kw', 'pcc_export_limit_kw'],
       label: '送出边界',
       color: COLORS[1],
       dashed: true,
@@ -69,7 +69,7 @@ function createEvidenceSeries(event: H2AnomalyEvent): readonly SeriesDefinition[
     .slice(0, COLORS.length)
 
   return variables.map(({ kind, variable }, index) => ({
-    variable,
+    variables: [variable],
     label: variable,
     color: COLORS[index] ?? COLORS[0],
     dashed: kind === 'constraint',
@@ -80,15 +80,15 @@ export function createPccChartOption(response: H2SeriesResponse): EChartsCoreOpt
   return createLineOption(
     response,
     [
-      { variable: 'pcc_power_kw', label: '并网点实际功率', color: COLORS[0] },
+      { variables: ['pcc_power_actual_kw', 'pcc_power_kw'], label: '并网点实际功率', color: COLORS[0] },
       {
-        variable: 'pcc_export_limit_kw',
+        variables: ['grid_export_power_limit_kw', 'pcc_export_limit_kw'],
         label: '送出边界',
         color: COLORS[1],
         dashed: true,
       },
       {
-        variable: 'pcc_import_limit_kw',
+        variables: ['grid_import_power_limit_kw', 'pcc_import_limit_kw'],
         label: '受电边界',
         color: COLORS[2],
         dashed: true,
@@ -101,7 +101,10 @@ export function createPccChartOption(response: H2SeriesResponse): EChartsCoreOpt
 export function createSocChartOption(response: H2SeriesResponse): EChartsCoreOption {
   return createLineOption(
     response,
-    [{ variable: 'bess_soc_percent', label: '储能 SOC', color: COLORS[4] }],
+    [
+      { variables: ['soc_target_pct'], label: '储能目标 SOC', color: COLORS[1], dashed: true },
+      { variables: ['bess_soc_pct', 'bess_soc_percent'], label: '储能实际 SOC', color: COLORS[4] },
+    ],
     '%',
   )
 }
@@ -112,7 +115,7 @@ export function createVariableChartOption(
 ): EChartsCoreOption {
   return createLineOption(
     response,
-    [{ variable: field.name, label: field.displayNameZh, color: COLORS[0] }],
+    [{ variables: [field.name], label: field.displayNameZh, color: COLORS[0] }],
     field.unit === 'percent' ? '%' : (field.unit ?? ''),
   )
 }
@@ -128,10 +131,16 @@ function createLineOption(
   },
 ): EChartsCoreOption {
   const timestamps = response.points.map(({ timestamp }) => timestamp)
+  const resolvedDefinitions = definitions.flatMap((definition) => {
+    const variable = definition.variables.find((candidate) =>
+      response.variables.includes(candidate),
+    )
+    return variable ? [{ ...definition, variable }] : []
+  })
 
   return {
     aria: { enabled: true, decal: { show: true } },
-    color: definitions.map(({ color }) => color),
+    color: resolvedDefinitions.map(({ color }) => color),
     grid: { left: 54, right: 24, top: 54, bottom: 48, containLabel: false },
     legend: {
       top: 4,
@@ -174,7 +183,7 @@ function createLineOption(
       axisLabel: { color: '#9d9195' },
       splitLine: { lineStyle: { color: 'rgba(255, 238, 233, 0.08)' } },
     },
-    series: definitions.map((definition, index) => ({
+    series: resolvedDefinitions.map((definition, index) => ({
       name: definition.label,
       type: 'line',
       data: response.points.map(({ values }) => values[definition.variable] ?? null),

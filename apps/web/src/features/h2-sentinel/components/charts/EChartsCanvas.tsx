@@ -1,28 +1,10 @@
-import { useEffect, useRef } from 'react'
-import { LineChart } from 'echarts/charts'
-import {
-  AriaComponent,
-  DataZoomComponent,
-  GridComponent,
-  LegendComponent,
-  MarkAreaComponent,
-  MarkLineComponent,
-  TooltipComponent,
-} from 'echarts/components'
-import { init, use, type EChartsCoreOption, type EChartsType } from 'echarts/core'
-import { CanvasRenderer } from 'echarts/renderers'
+import { lazy, Suspense } from 'react'
+import type { EChartsCoreOption } from 'echarts/core'
 
-use([
-  LineChart,
-  AriaComponent,
-  DataZoomComponent,
-  GridComponent,
-  LegendComponent,
-  MarkAreaComponent,
-  MarkLineComponent,
-  TooltipComponent,
-  CanvasRenderer,
-])
+const LazyEChartsCanvasRuntime = lazy(async () => {
+  const module = await import('./EChartsCanvasRuntime.tsx')
+  return { default: module.EChartsCanvasRuntime }
+})
 
 export interface EChartsCanvasProps {
   readonly ariaLabel: string
@@ -30,55 +12,26 @@ export interface EChartsCanvasProps {
   readonly option: EChartsCoreOption
 }
 
-/** Small feature-local ECharts lifecycle wrapper; page components stay chart-library agnostic. */
+/** Keeps the application shell interactive while the chart runtime loads on demand. */
 export function EChartsCanvas({ ariaLabel, className = '', option }: EChartsCanvasProps) {
-  const elementRef = useRef<HTMLDivElement>(null)
-  const chartRef = useRef<EChartsType | null>(null)
-
-  useEffect(() => {
-    const element = elementRef.current
-    if (!element) {
-      return
-    }
-
-    const chart = init(element, undefined, { renderer: 'canvas' })
-    chartRef.current = chart
-
-    const resize = (): void => chart.resize()
-    const observer =
-      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(resize)
-
-    observer?.observe(element)
-    window.addEventListener('resize', resize)
-
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener('resize', resize)
-      chart.dispose()
-      chartRef.current = null
-    }
-  }, [])
-
-  useEffect(() => {
-    const prefersReducedMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)',
-    ).matches
-
-    chartRef.current?.setOption(
-      {
-        ...option,
-        animation: !prefersReducedMotion,
-      },
-      { notMerge: true },
-    )
-  }, [option])
+  const fallback = (
+    <div
+      aria-label={`${ariaLabel}正在加载`}
+      className={`h2-chart h2-chart--loading ${className}`.trim()}
+      role="status"
+    >
+      <span>正在加载本地图表…</span>
+    </div>
+  )
+  if (typeof window === 'undefined') return fallback
 
   return (
-    <div
-      aria-label={ariaLabel}
-      className={`h2-chart ${className}`.trim()}
-      ref={elementRef}
-      role="img"
-    />
+    <Suspense fallback={fallback}>
+      <LazyEChartsCanvasRuntime
+        ariaLabel={ariaLabel}
+        className={className}
+        option={option}
+      />
+    </Suspense>
   )
 }

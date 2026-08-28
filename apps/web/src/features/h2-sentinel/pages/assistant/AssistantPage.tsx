@@ -7,7 +7,11 @@ import {
   type H2AnomalyEvent,
   type H2ReportArtifact,
 } from '@opendashboard/h2-contracts'
-import { getH2AssistantEventRequirement } from '../../model/assistant.ts'
+import {
+  getH2AssistantEventRequirement,
+  H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS,
+  resolveH2AssistantFollowUp,
+} from '../../model/assistant.ts'
 import {
   getH2ProvenanceLabel,
   H2_CLAIM_LABELS,
@@ -37,18 +41,75 @@ export function AssistantPage({
   pending,
 }: AssistantPageProps) {
   const [selectedQuestion, setSelectedQuestion] = useState<H2AssistantQuestionId>('Q03')
+  const [followUpInput, setFollowUpInput] = useState('')
+  const [followUpState, setFollowUpState] = useState<{
+    readonly tone: 'error' | 'success'
+    readonly message: string
+  } | null>(null)
   const question = H2_ASSISTANT_QUESTIONS.find(
     ({ questionId }) => questionId === selectedQuestion,
   ) ?? H2_ASSISTANT_QUESTIONS[0]
   const requirement = getH2AssistantEventRequirement(selectedQuestion, event)
-  const visibleAnswer = answer?.questionId === selectedQuestion &&
+  const visibleAnswer = followUpState?.tone !== 'error' &&
+    answer?.questionId === selectedQuestion &&
     (answer.eventId ?? null) === (event?.eventId ?? null)
     ? answer
     : null
 
+  function submitFollowUp(submitEvent: React.FormEvent<HTMLFormElement>): void {
+    submitEvent.preventDefault()
+    const resolution = resolveH2AssistantFollowUp(followUpInput)
+    if (resolution.status === 'refused') {
+      setFollowUpState({ tone: 'error', message: resolution.message })
+      return
+    }
+
+    setSelectedQuestion(resolution.questionId)
+    setFollowUpState({ tone: 'success', message: resolution.message })
+    onAsk(resolution.questionId)
+  }
+
   return (
     <div className="h2-page h2-assistant-page">
       <PageHeader description="十个官方问题均由确定性中文模板回答；先验证事件上下文，再引用当前运行证据。外部 LLM 不是黄金路径依赖。" eyebrow="Deterministic operations assistant" icon="assistant" title="运行助手" />
+
+      <section aria-labelledby="h2-follow-up-title" className="h2-panel h2-follow-up">
+        <div>
+          <p className="h2-eyebrow">Bounded follow-up</p>
+          <h2 id="h2-follow-up-title">用自然表述匹配官方问题</h2>
+          <p>只路由到 Q01–Q10，不开放通用聊天；未知或含糊输入会安全拒绝。</p>
+        </div>
+        <form onSubmit={submitFollowUp}>
+          <label>
+            <span className="h2-visually-hidden">输入 Q01–Q10 的自然表述</span>
+            <input
+              disabled={pending}
+              maxLength={H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS}
+              onChange={(inputEvent) => {
+                setFollowUpInput(inputEvent.currentTarget.value)
+                setFollowUpState(null)
+              }}
+              placeholder="例如：PCC 正负值怎么理解？"
+              type="text"
+              value={followUpInput}
+            />
+          </label>
+          <button
+            className="h2-button h2-button--secondary"
+            disabled={pending || followUpInput.trim().length === 0}
+            type="submit"
+          >
+            匹配并回答
+          </button>
+        </form>
+        <div aria-live="polite">
+          {followUpState ? (
+            <p className={`h2-message h2-message--${followUpState.tone}`}>
+              {followUpState.message}
+            </p>
+          ) : null}
+        </div>
+      </section>
 
       <div className="h2-assistant-layout">
         <section aria-label="官方问题" className="h2-panel h2-question-list">
@@ -59,7 +120,10 @@ export function AssistantPage({
                 <button
                   aria-pressed={selectedQuestion === questionId}
                   className={selectedQuestion === questionId ? 'is-active' : ''}
-                  onClick={() => setSelectedQuestion(questionId)}
+                  onClick={() => {
+                    setSelectedQuestion(questionId)
+                    setFollowUpState(null)
+                  }}
                   type="button"
                 >
                   <span>{questionId}</span>
