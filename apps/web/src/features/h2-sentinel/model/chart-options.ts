@@ -56,6 +56,45 @@ const pccImportBoundarySeries = {
   transform: (value: number) => -Math.abs(value),
 } as const satisfies SeriesDefinition
 
+const pccSeriesDefinitions = [
+  { ...pccActualSeries, color: COLORS[0] },
+  pccExportBoundarySeries,
+  pccImportBoundarySeries,
+] as const satisfies readonly SeriesDefinition[]
+
+const socSeriesDefinitions = [
+  { variables: ['soc_target_pct'], label: '储能目标 SOC', color: COLORS[1], unit: '%', dashed: true },
+  { variables: ['bess_soc_pct', 'bess_soc_percent'], label: '储能实际 SOC', color: COLORS[4], unit: '%' },
+] as const satisfies readonly SeriesDefinition[]
+
+export function selectH2SeriesVariables(
+  fields: readonly H2DatasetField[],
+  events: readonly H2AnomalyEvent[],
+): string[] {
+  const availableVariables = new Set(
+    fields
+      .filter(({ role }) => role === 'measurement' || role === 'constraint')
+      .map(({ name }) => name),
+  )
+  const consumedVariables = new Set<string>()
+  const definitions = [
+    ...pccSeriesDefinitions,
+    ...socSeriesDefinitions,
+    ...events.flatMap((event) => getEventSeriesDefinitions(event)),
+  ]
+
+  for (const definition of definitions) {
+    const variable = definition.variables.find((candidate) => availableVariables.has(candidate))
+    if (variable) consumedVariables.add(variable)
+  }
+
+  const selectedVariables: string[] = []
+  for (const { name } of fields) {
+    if (consumedVariables.delete(name)) selectedVariables.push(name)
+  }
+  return selectedVariables
+}
+
 export function createEventChartOption(
   response: H2SeriesResponse,
   event: H2AnomalyEvent,
@@ -109,24 +148,11 @@ function createEvidenceSeries(event: H2AnomalyEvent): readonly SeriesDefinition[
 }
 
 export function createPccChartOption(response: H2SeriesResponse): EChartsCoreOption {
-  return createLineOption(
-    response,
-    [
-      { ...pccActualSeries, color: COLORS[0] },
-      pccExportBoundarySeries,
-      pccImportBoundarySeries,
-    ],
-  )
+  return createLineOption(response, pccSeriesDefinitions)
 }
 
 export function createSocChartOption(response: H2SeriesResponse): EChartsCoreOption {
-  return createLineOption(
-    response,
-    [
-      { variables: ['soc_target_pct'], label: '储能目标 SOC', color: COLORS[1], unit: '%', dashed: true },
-      { variables: ['bess_soc_pct', 'bess_soc_percent'], label: '储能实际 SOC', color: COLORS[4], unit: '%' },
-    ],
-  )
+  return createLineOption(response, socSeriesDefinitions)
 }
 
 export function createVariableChartOption(

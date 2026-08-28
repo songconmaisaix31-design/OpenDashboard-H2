@@ -4,6 +4,7 @@ import type {
   H2SeriesResponse,
 } from '@opendashboard/h2-contracts'
 import type { H2Workspace } from './view-state.ts'
+import { selectH2SeriesVariables } from './chart-options.ts'
 
 /** Matches the Local service's accepted single-file boundary before browser content is read. */
 export const H2_CSV_MAX_BYTES = 96 * 1024 * 1024
@@ -36,9 +37,7 @@ export async function hydrateH2Workspace(
 ): Promise<H2Workspace> {
   const run = await dataSource.runAnalysis(dataset.datasetId)
   const events = run.events
-  const variables = run.dataset.fields
-    .filter(({ role }) => role === 'measurement' || role === 'constraint')
-    .map(({ name }) => name)
+  const variables = selectH2SeriesVariables(run.dataset.fields, events)
 
   try {
     const series = await loadH2Series(dataSource, run.runId, variables, run.dataset.timeRange)
@@ -76,65 +75,45 @@ async function loadH2Series(
     return { runId, variables: [], points: [] }
   }
 
-  const batches = Array.from(
-    { length: Math.ceil(variables.length / H2_SERIES_REQUEST_MAX_VARIABLES) },
-    (_, index) => variables.slice(
-      index * H2_SERIES_REQUEST_MAX_VARIABLES,
-      (index + 1) * H2_SERIES_REQUEST_MAX_VARIABLES,
-    ),
-  )
-  const responses: H2SeriesResponse[] = []
-  for (const batch of batches) {
-    responses.push(await dataSource.getSeries({
+  let mergedResponse: {
+    readonly runId: string
+    readonly variables: string[]
+    readonly points: Array<{
+      readonly timestamp: string
+      readonly values: Record<string, number | null>
+    }>
+  } | null = null
+
+  for (let offset = 0; offset < variables.length; offset += H2_SERIES_REQUEST_MAX_VARIABLES) {
+    const batch = variables.slice(offset, offset + H2_SERIES_REQUEST_MAX_VARIABLES)
+    const response = await dataSource.getSeries({
       runId,
       variables: batch,
       startTime: timeRange.startTime,
       endTime: timeRange.endTime,
-    }))
-  }
+    })
+    validateH2SeriesBatch(runId, batch, response)
 
-  return mergeH2SeriesBatches(runId, batches, responses)
-}
+    if (variables.length <= H2_SERIES_REQUEST_MAX_VARIABLES) return response
 
-function mergeH2SeriesBatches(
-  runId: string,
-  batches: readonly (readonly string[])[],
-  responses: readonly H2SeriesResponse[],
-): H2SeriesResponse {
-  if (batches.length !== responses.length || responses.length === 0) {
-    throw new Error('Series batch count does not match the request.')
-  }
-
-  const mergedPoints: Array<{
-    readonly timestamp: string
-    readonly values: Record<string, number | null>
-  }> = []
-  responses.forEach((response, batchIndex) => {
-    const batch = batches[batchIndex]
-    if (
-      !batch ||
-      response.runId !== runId ||
-      !sameStrings(response.variables, batch)
-    ) {
-      throw new Error('Series batch identity does not match the request.')
+    if (!mergedResponse) {
+      mergedResponse = {
+        runId,
+        variables: [...batch],
+        points: response.points.map((point) => ({
+          timestamp: point.timestamp,
+          values: { ...point.values },
+        })),
+      }
+      continue
     }
-    if (batchIndex > 0 && response.points.length !== mergedPoints.length) {
+
+    if (response.points.length !== mergedResponse.points.length) {
       throw new Error('Series batches returned different point counts.')
     }
 
+    const mergedPoints = mergedResponse.points
     response.points.forEach((point, pointIndex) => {
-      const keys = Object.keys(point.values)
-      if (
-        keys.length !== batch.length ||
-        !batch.every((variable) => Object.hasOwn(point.values, variable))
-      ) {
-        throw new Error('Series batch values do not match the requested variables.')
-      }
-      if (batchIndex === 0) {
-        mergedPoints.push({ timestamp: point.timestamp, values: { ...point.values } })
-        return
-      }
-
       const mergedPoint = mergedPoints[pointIndex]
       if (!mergedPoint || mergedPoint.timestamp !== point.timestamp) {
         throw new Error('Series batches returned different timestamps.')
@@ -146,12 +125,31 @@ function mergeH2SeriesBatches(
         mergedPoint.values[variable] = point.values[variable] ?? null
       }
     })
-  })
+    mergedResponse.variables.push(...batch)
+  }
 
-  return {
-    runId,
-    variables: batches.flatMap((batch) => [...batch]),
-    points: mergedPoints,
+  if (!mergedResponse) {
+    throw new Error('Series batch count does not match the request.')
+  }
+  return mergedResponse
+}
+
+function validateH2SeriesBatch(
+  runId: string,
+  batch: readonly string[],
+  response: H2SeriesResponse,
+): void {
+  if (response.runId !== runId || !sameStrings(response.variables, batch)) {
+    throw new Error('Series batch identity does not match the request.')
+  }
+  for (const point of response.points) {
+    const keys = Object.keys(point.values)
+    if (
+      keys.length !== batch.length ||
+      !batch.every((variable) => Object.hasOwn(point.values, variable))
+    ) {
+      throw new Error('Series batch values do not match the requested variables.')
+    }
   }
 }
 
