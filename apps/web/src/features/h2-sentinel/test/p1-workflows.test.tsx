@@ -12,6 +12,7 @@ import {
   type H2Provenance,
   type H2ReportArtifact,
 } from '@opendashboard/h2-contracts'
+import { ProvenanceBanner } from '../components/provenance/ProvenanceBanner.tsx'
 import { EventReviewPanel } from '../components/review/EventReviewPanel.tsx'
 import {
   getH2AssistantEventRequirement,
@@ -239,7 +240,7 @@ describe('H2 Sentinel P1 Web workflows', () => {
     assert.equal(failed.error, '导出失败')
   })
 
-  it('builds exact report scopes and labels Fixture, validation slice, and Live distinctly', () => {
+  it('builds exact report scopes and separates explicit provenance from filename hints', () => {
     assert.deepEqual(h2DatasetCalendarDay('2026-01-31T10:20:00+08:00'), {
       startTime: '2026-01-31T00:00:00+08:00',
       endTime: '2026-02-01T00:00:00+08:00',
@@ -255,6 +256,10 @@ describe('H2 Sentinel P1 Web workflows', () => {
     )
     assert.equal(getH2ProvenanceLabel(H2_FIXTURE_PROVENANCE), 'FIXTURE · 固定样例')
     assert.equal(
+      getH2ProvenanceLabel(H2_FIXTURE_PROVENANCE, ['validation-slice.csv']),
+      'FIXTURE · 固定样例',
+    )
+    assert.equal(
       getH2ProvenanceLabel(liveProvenance('public_validation_slice')),
       'LIVE_ANALYSIS · 验证集切片',
     )
@@ -262,7 +267,46 @@ describe('H2 Sentinel P1 Web workflows', () => {
       getH2ProvenanceLabel(liveProvenance('full_validation_dataset')),
       'LIVE_ANALYSIS · 完整验证集',
     )
+    assert.equal(
+      getH2ProvenanceLabel({
+        ...liveProvenance('local-import'),
+        limitations: ['public_validation_slice'],
+      }),
+      'LIVE_ANALYSIS · 验证集切片',
+    )
+    assert.equal(
+      getH2ProvenanceLabel(liveProvenance('local-import'), ['validation-slice.csv']),
+      'LIVE_ANALYSIS · 未核验文件名提示（验证集切片）',
+    )
+    assert.equal(
+      getH2ProvenanceLabel(liveProvenance('local-import'), ['full-validation.csv']),
+      'LIVE_ANALYSIS · 未核验文件名提示（完整验证集）',
+    )
     assert.equal(getH2ProvenanceLabel(liveProvenance('local-import')), 'LIVE_ANALYSIS · 本地数据')
+  })
+
+  it('describes filename-only validation hints without asserting a public source', () => {
+    const hintedMarkup = renderToStaticMarkup(
+      <ProvenanceBanner
+        mode="LIVE_ANALYSIS"
+        provenance={liveProvenance('local-import')}
+        sourceHints={['validation-slice.csv']}
+      />,
+    )
+    assert.match(hintedMarkup, /未核验文件名提示（验证集切片）/)
+    assert.match(hintedMarkup, /独立 manifest\/receipt 才能确认公共来源身份/)
+    assert.doesNotMatch(hintedMarkup, /来自公开验证数据/)
+
+    const explicitMarkup = renderToStaticMarkup(
+      <ProvenanceBanner
+        mode="LIVE_ANALYSIS"
+        provenance={liveProvenance('public_validation_slice')}
+        sourceHints={['arbitrary.csv']}
+      />,
+    )
+    assert.match(explicitMarkup, /LIVE_ANALYSIS · 验证集切片/)
+    assert.match(explicitMarkup, /来自公开验证数据/)
+    assert.doesNotMatch(explicitMarkup, /未核验文件名提示/)
   })
 
   it('shows every report kind and previews artifact content as inert text', () => {
