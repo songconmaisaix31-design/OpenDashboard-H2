@@ -112,6 +112,9 @@ class DatasetLoader:
             raise CsvImportError("import.malformed_csv", "CSV syntax is malformed.") from error
 
         headers = tuple(cell.strip() for cell in header_cells)
+        # Keep submitted-byte provenance intact by handling the BOM only after hashing.
+        if header_cells and header_cells[0].startswith("\ufeff"):
+            headers = (headers[0].removeprefix("\ufeff"), *headers[1:])
         if not headers or any(not header for header in headers):
             raise CsvImportError("import.invalid_header", "CSV header names must be non-empty.")
         duplicates = sorted(name for name, count in Counter(headers).items() if count > 1)

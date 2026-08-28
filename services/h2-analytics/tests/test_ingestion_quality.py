@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from itertools import repeat
 
 import pytest
@@ -32,6 +33,66 @@ def test_valid_fixture_import_is_in_memory_and_explicitly_fixture(valid_csv: str
     assert len(result.manifest["fields"]) == 69
     assert result.quality["status"] == "warning"
     assert result.quality["blockingReasons"] == []
+
+
+def test_official_leading_bom_preserves_bytes_and_parses_timestamp(valid_csv: str) -> None:
+    bom_csv = f"\ufeff{valid_csv}"
+    result = DatasetLoader().import_csv(filename="official-validation.csv", text=bom_csv)
+
+    assert bom_csv[0] == "\ufeff"
+    assert result.manifest["fingerprint"] == (
+        f"sha256:{hashlib.sha256(bom_csv.encode('utf-8')).hexdigest()}"
+    )
+    assert result.manifest["mode"] == "LIVE_ANALYSIS"
+    assert result.manifest["fields"][0]["name"] == "timestamp"
+    assert result.rows[0].timestamp_text == "2026-01-05T10:20:00Z"
+    assert result.manifest["timeRange"] == {
+        "startTime": "2026-01-05T10:20:00Z",
+        "endTime": "2026-01-05T10:41:00Z",
+    }
+    assert result.quality["status"] == "warning"
+    assert result.quality["blockingReasons"] == []
+
+
+@pytest.mark.parametrize(
+    "header_mutation",
+    ["\ufeff\ufefftimestamp", "time\ufeffstamp"],
+)
+def test_import_does_not_normalize_non_official_bom_positions(
+    valid_csv: str, header_mutation: str
+) -> None:
+    mutated_csv = valid_csv.replace("timestamp", header_mutation, 1)
+    result = DatasetLoader().import_csv(filename="invalid-bom.csv", text=mutated_csv)
+
+    assert result.manifest["fields"][0]["name"] != "timestamp"
+    assert result.manifest["timeRange"] == {
+        "startTime": "1970-01-01T00:00:00Z",
+        "endTime": "1970-01-01T00:00:00Z",
+    }
+    assert result.quality["status"] == "blocked"
+
+
+def test_import_does_not_normalize_bom_in_later_header_cell(valid_csv: str) -> None:
+    later_bom_csv = valid_csv.replace(
+        "pcc_power_actual_kw", "\ufeffpcc_power_actual_kw", 1
+    )
+    result = DatasetLoader().import_csv(filename="later-bom.csv", text=later_bom_csv)
+
+    assert "\ufeffpcc_power_actual_kw" in {
+        field["name"] for field in result.manifest["fields"]
+    }
+    assert result.quality["status"] == "blocked"
+
+
+def test_leading_bom_does_not_bypass_duplicate_header_rejection() -> None:
+    with pytest.raises(CsvImportError) as error:
+        DatasetLoader().import_csv(
+            filename="duplicate.csv",
+            text="\ufefftimestamp,timestamp\n2026-01-05T10:20:00Z,2026-01-05T10:20:00Z\n",
+        )
+
+    assert error.value.code == "import.duplicate_header"
+    assert error.value.details == ("timestamp",)
 
 
 def test_invalid_fixture_returns_blocking_quality_without_raising(invalid_csv: str) -> None:
