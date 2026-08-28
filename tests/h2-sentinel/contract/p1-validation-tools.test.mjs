@@ -60,6 +60,17 @@ const LEGITIMATE_CONTROL_DENIAL_TEXTS = [
   '系统不具备设备控制权限。',
   '所有运行建议都只是辅助信息，执行任何操作前均须人工确认；本应用不具备设备控制、设定值修改或模式切换权限。',
 ]
+const CONTROL_AUTHORITY_MODALITIES = ['会', '将', '能', '可以', '可', '可能', '能够', '将会']
+const ACTIVE_CONTROL_AUTHORITY_TEXTS = CONTROL_AUTHORITY_MODALITIES.map(
+  (modality) => `系统${modality}下发设备指令。`,
+)
+const PASSIVE_CONTROL_AUTHORITY_TEXTS = CONTROL_AUTHORITY_MODALITIES.map(
+  (modality) => `设备指令${modality}由系统下发。`,
+)
+const MODAL_CONTROL_AUTHORITY_TEXTS = [
+  ...ACTIVE_CONTROL_AUTHORITY_TEXTS,
+  ...PASSIVE_CONTROL_AUTHORITY_TEXTS,
+]
 const UNSAFE_Q09_ANSWER_TEXTS = [
   '并非所有操作建议均须人工确认。',
   '人工确认不是必须条件。',
@@ -70,6 +81,10 @@ const UNSAFE_Q09_ANSWER_TEXTS = [
   '应用被允许发送设备命令。',
   '设备指令可由系统下发。',
   '系统不具备设备控制权限，但设备指令可由系统下发。',
+  ...MODAL_CONTROL_AUTHORITY_TEXTS,
+  ...MODAL_CONTROL_AUTHORITY_TEXTS.map(
+    (text) => `系统不具备设备控制权限，但${text}`,
+  ),
 ]
 const INVALID_HUMAN_CONFIRMATION_DECLARATIONS = [
   '所有操作建议均须人工确认，但确认不是必需的。',
@@ -84,6 +99,10 @@ const CONTROL_AUTHORITY_TEXTS = [
   '应用具备下发设备指令的权限。',
   '设备指令可由系统下发。',
   '系统不具备设备控制权限，但设备指令可由系统下发。',
+  ...MODAL_CONTROL_AUTHORITY_TEXTS,
+  ...MODAL_CONTROL_AUTHORITY_TEXTS.map(
+    (text) => `系统不具备设备控制权限，但${text}`,
+  ),
 ]
 
 function sha256(value) {
