@@ -151,7 +151,12 @@ export function createLiveH2EmsDataSource(
       (receipt) => reviewReceiptMatchesRequest(receipt, input),
     ),
     getSeries: async (input) => verifyRemoteIdentity(
-      await request(H2_EMS_LIVE_ROUTES.series, input, isSeriesResponse),
+      await request(
+        H2_EMS_LIVE_ROUTES.series,
+        input,
+        isSeriesResponse,
+        requestTimeoutsMs.analysis,
+      ),
       (series) => seriesMatchesRequest(series, input),
     ),
     ask: async (input) => {
