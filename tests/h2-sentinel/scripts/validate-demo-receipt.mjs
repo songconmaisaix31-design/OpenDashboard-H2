@@ -3,10 +3,16 @@ import { readFile, realpath, stat } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateSubmissionText } from '../../../validation/check-submission.mjs'
-import { assertOfficialTimeseriesColumns } from '../../../validation/lib/official-contract.mjs'
+import {
+  ANOMALY_CODES,
+  assertOfficialTimeseriesColumns,
+} from '../../../validation/lib/official-contract.mjs'
 import { OFFICIAL_SOURCES } from '../../../validation/lib/official-sources.mjs'
 import { toCanonicalUtcInstant, toInstant } from '../../../validation/lib/metrics.mjs'
-import { hasRequiredHumanConfirmation } from '../../../validation/lib/runtime-provenance.mjs'
+import {
+  documentHasRequiredHumanConfirmation,
+  hasRequiredHumanConfirmation,
+} from '../../../validation/lib/runtime-provenance.mjs'
 import {
   REQUIRED_TIMESERIES_COLUMNS,
   isLabelColumn,
@@ -564,7 +570,7 @@ function validateHtml(content, label, bindings) {
     if (position <= previous) fail(`${label} is missing the required ordered Chinese sections.`)
     previous = position
   }
-  if (!hasRequiredHumanConfirmation(content)) {
+  if (!documentHasRequiredHumanConfirmation(content)) {
     fail(`${label} must retain the human-confirmation safety boundary.`)
   }
   if (/<script\b|https?:\/\//i.test(content)) {
@@ -660,9 +666,7 @@ function validateLiveProvenance(provenance, label, fingerprint, kind) {
 function sameBaseProvenance(left, right) {
   return (
     left.mode === right.mode && left.source === right.source &&
-    left.generatedAt === right.generatedAt &&
     left.datasetFingerprint === right.datasetFingerprint &&
-    left.modelVersion === right.modelVersion &&
     left.ruleVersion === right.ruleVersion &&
     left.configurationVersion === right.configurationVersion &&
     left.limitations.length === right.limitations.length &&
@@ -670,7 +674,13 @@ function sameBaseProvenance(left, right) {
   )
 }
 
-function validateRendererProvenance(provenance, label, analysisProvenance, rendererVersion) {
+function validateRendererProvenance(
+  provenance,
+  label,
+  analysisProvenance,
+  completedAt,
+  rendererVersion,
+) {
   assertExactKeys(
     provenance,
     [
@@ -682,6 +692,8 @@ function validateRendererProvenance(provenance, label, analysisProvenance, rende
   if (
     provenance.mode !== 'LIVE_ANALYSIS' ||
     provenance.rendererVersion !== rendererVersion ||
+    provenance.generatedAt !== completedAt ||
+    provenance.modelVersion !== analysisProvenance.modelVersion ||
     !sameBaseProvenance(provenance, analysisProvenance)
   ) fail(`${label} must retain complete actual LIVE_ANALYSIS renderer provenance.`)
   assertString(provenance.source, `${label} source`)
@@ -707,7 +719,8 @@ function validateQ09Binding(q09, expected, label) {
   if (
     q09.schemaVersion !== 1 || q09.questionId !== 'Q09' ||
     q09.runId !== expected.runId || q09.eventId !== expected.eventId ||
-    q09.mode !== 'DETERMINISTIC_TEMPLATE' || q09.refusedControlClaim !== true
+    q09.mode !== 'DETERMINISTIC_TEMPLATE' || q09.refusedControlClaim !== true ||
+    q09.generatedAt !== expected.completedAt
   ) fail(`${label} must bind exact Q09, runId, eventId, and deterministic mode.`)
   assertString(q09.answerId, `${label} answerId`)
   parseTimestamp(q09.generatedAt, `${label} generatedAt`)
@@ -715,6 +728,7 @@ function validateQ09Binding(q09, expected, label) {
     q09.provenance,
     `${label} answer provenance`,
     expected.analysisProvenance,
+    expected.completedAt,
     'deterministic-assistant-p1-v1',
   )
 
@@ -791,7 +805,8 @@ function validateQ09Binding(q09, expected, label) {
     descriptor.schemaVersion !== 1 || descriptor.runId !== expected.runId ||
     descriptor.eventId !== expected.eventId ||
     descriptor.kind !== 'single_event_diagnosis' || descriptor.format !== 'html' ||
-    descriptor.status !== 'ready' || descriptor.contentHash !== expected.diagnosisHash
+    descriptor.status !== 'ready' || descriptor.generatedAt !== expected.completedAt ||
+    descriptor.contentHash !== expected.diagnosisHash
   ) fail(`${label} report descriptor or content hash does not match the measured artifact.`)
   assertString(descriptor.reportId, `${label} reportId`)
   assertString(descriptor.filename, `${label} report filename`)
@@ -810,6 +825,7 @@ function validateQ09Binding(q09, expected, label) {
     descriptor.provenance,
     `${label} report provenance`,
     expected.analysisProvenance,
+    expected.completedAt,
     'jinja-report-p1-v1',
   )
   const reportCitations = q09.citations.filter(({ sourceType }) => sourceType === 'report')
@@ -825,9 +841,18 @@ function validateQ09Binding(q09, expected, label) {
 
 function validateRuntimeIdentity(identity, kind, detector, label) {
   const idField = kind === 'import' ? 'datasetId' : 'runId'
+  const lifecycleFields = kind === 'analysis' ? ['status', 'startedAt', 'completedAt'] : []
   assertExactKeys(
     identity,
-    [idField, 'sourceFilename', 'rowCount', 'fingerprint', 'timeRange', 'provenance'],
+    [
+      idField,
+      ...lifecycleFields,
+      'sourceFilename',
+      'rowCount',
+      'fingerprint',
+      'timeRange',
+      'provenance',
+    ],
     label,
   )
   assertString(identity[idField], `${label} ${idField}`)
@@ -849,17 +874,60 @@ function validateRuntimeIdentity(identity, kind, detector, label) {
     detector.fingerprint,
     kind,
   )
+  if (kind === 'analysis') {
+    const startedAt = parseTimestamp(identity.startedAt, `${label} startedAt`)
+    const completedAt = parseTimestamp(identity.completedAt, `${label} completedAt`)
+    if (
+      identity.status !== 'completed' || startedAt > completedAt ||
+      identity.startedAt !== provenance.generatedAt
+    ) fail(`${label} must retain the completed Analytics lifecycle identity.`)
+    return { ...timeRange, provenance, startedAt, completedAt: identity.completedAt }
+  }
   return { ...timeRange, provenance }
 }
 
-function validateEvidenceReview(identity, runId, eventId, label) {
-  assertExactKeys(identity, ['runId', 'eventId', 'evidenceIds'], label)
+function validateEvidenceReview(identity, runId, eventId, artifact, bytes, label) {
+  assertExactKeys(
+    identity,
+    [
+      'runId', 'eventId', 'anomalyCode', 'evidenceIds', 'evidenceCount', 'artifact',
+    ],
+    label,
+  )
+  assertExactKeys(identity.artifact, ['relativePath', 'sha256'], `${label} artifact`)
   if (
     identity.runId !== runId || identity.eventId !== eventId ||
     !Array.isArray(identity.evidenceIds) || identity.evidenceIds.length === 0 ||
     identity.evidenceIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
-    new Set(identity.evidenceIds).size !== identity.evidenceIds.length
+    new Set(identity.evidenceIds).size !== identity.evidenceIds.length ||
+    identity.evidenceCount !== identity.evidenceIds.length ||
+    identity.artifact.relativePath !== artifact.relativePath ||
+    identity.artifact.sha256 !== artifact.sha256
   ) fail(`${label} must bind non-empty evidence to the measured run event.`)
+  const content = decodeUtf8(bytes, `${label} artifact`)
+  let response
+  try {
+    response = JSON.parse(content)
+  } catch {
+    fail(`${label} artifact must contain valid JSON.`)
+  }
+  if (`${JSON.stringify(response, null, 2)}\n` !== content) {
+    fail(`${label} artifact must use canonical JSON serialization.`)
+  }
+  const anomalyCode = response?.code ?? null
+  const evidenceIds = Array.isArray(response?.evidence)
+    ? response.evidence.map((entry) => entry?.evidenceId)
+    : []
+  if (
+    response?.eventId !== eventId ||
+    (anomalyCode !== null && !ANOMALY_CODES.includes(anomalyCode)) ||
+    identity.anomalyCode !== anomalyCode ||
+    evidenceIds.length === 0 ||
+    evidenceIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
+    new Set(evidenceIds).size !== evidenceIds.length ||
+    evidenceIds.length !== identity.evidenceCount ||
+    evidenceIds.some((id, index) => id !== identity.evidenceIds[index])
+  ) fail(`${label} does not match the canonical evidence response artifact.`)
 }
 
 function validateHumanReview(identity, runId, eventId, label) {
@@ -948,14 +1016,15 @@ async function validateRun(
     run.importedDataset.rowCount !== run.analysisRun.rowCount ||
     run.importedDataset.fingerprint !== run.analysisRun.fingerprint ||
     importRange.start !== analysisRange.start || importRange.end !== analysisRange.end ||
-    !sameBaseProvenance(
-      { ...importRange.provenance, modelVersion: analysisRange.provenance.modelVersion },
-      analysisRange.provenance,
-    )
+    importRange.provenance.generatedAt !== analysisRange.provenance.generatedAt ||
+    !sameBaseProvenance(importRange.provenance, analysisRange.provenance)
   ) fail(`${runLabel} import and analysis identities do not match.`)
-  validateEvidenceReview(run.evidenceReview, run.runId, run.analyzedEventId, `${runLabel} evidence review`)
   validateHumanReview(run.humanReview, run.runId, run.analyzedEventId, `${runLabel} human review`)
-  assertExactKeys(run.artifacts, ['diagnosisReport', 'reviewAudit', 'submissionCsv'], `${runLabel} artifacts`)
+  assertExactKeys(
+    run.artifacts,
+    ['diagnosisReport', 'evidenceResponse', 'reviewAudit', 'submissionCsv'],
+    `${runLabel} artifacts`,
+  )
 
   const artifactBytes = {}
   for (const [name, artifact] of Object.entries(run.artifacts)) {
@@ -971,6 +1040,15 @@ async function validateRun(
     }
     artifactBytes[name] = bytes
   }
+
+  validateEvidenceReview(
+    run.evidenceReview,
+    run.runId,
+    run.analyzedEventId,
+    run.artifacts.evidenceResponse,
+    artifactBytes.evidenceResponse,
+    `${runLabel} evidence review`,
+  )
 
   validateHtml(
     decodeUtf8(artifactBytes.diagnosisReport, `${runLabel} diagnosis report`),
@@ -988,6 +1066,7 @@ async function validateRun(
     fingerprint: run.analysisRun.fingerprint,
     diagnosisHash: run.artifacts.diagnosisReport.sha256,
     analysisProvenance: run.analysisRun.provenance,
+    completedAt: analysisRange.completedAt,
   }, `${runLabel} Q09`)
   validateAudit(
     decodeUtf8(artifactBytes.reviewAudit, `${runLabel} review audit`),

@@ -76,8 +76,11 @@ report, a review-audit JSON export, and the exact 16-column `submission.csv`.
 The audit must retain the analyzed event at confirmed revision 1, and the
 recorded receipt must bind the same non-replayed review request ID, action,
 revision, actor, run, and event. The evidence-review identity must name the
-same run/event and at least one unique evidence ID. The submission must pass
-the official vocabulary/equipment checker. The diagnosis
+same run/event and at least one unique evidence ID. It must also bind a
+canonical evidence-response JSON artifact by relative path and SHA-256,
+anomaly code, ordered evidence IDs, and count; the validator reopens and hashes
+those bytes. The submission must pass the official vocabulary/equipment
+checker. The diagnosis
 HTML must name the selected event, source filename, detector fingerprint, and
 rendered provenance scope.
 The validator distinguishes verified manifest scope from actual LIVE_ANALYSIS
@@ -90,11 +93,13 @@ must equal the manifest observed range, remain inside the verified source
 range, and equal its peer. Q09 must retain exact question/run/event identity,
 the `single_event_diagnosis` HTML descriptor and content hash, actual answer
 and report provenance, exactly one matching report citation, and explicit
-positive `所有操作建议均须人工确认` text. Import provenance defines the base;
-analysis inherits it exactly with only a model-version addition, and Q09/report
-provenance inherits the analysis identity with only its fixed renderer version.
-Negation, no-confirmation wording, direct-control claims, or contradictory
-source/rule/configuration/generation/limitations fail closed.
+positive `所有操作建议均须人工确认` field. Import provenance defines the base;
+analysis inherits its dataset-analysis timestamp exactly, records a completed
+lifecycle identity, and adds only a model version. Q09/report timestamps equal
+that run `completedAt`; their provenance inherits the analysis source,
+fingerprint, model, rule, configuration, and limitations plus only the fixed
+renderer version. Suffixes, negation, no-confirmation wording, direct-control
+claims, or contradictory provenance fail closed.
 
 Passing this validator proves only that the supplied local receipt and files
 meet this evidence contract. It is not an organizer score, full-validation

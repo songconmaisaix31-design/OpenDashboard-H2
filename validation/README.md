@@ -113,17 +113,21 @@ separate executions. Q09 is bound to the exact question/run/event, deterministic
 answer and report provenance, one matching report citation, the diagnosis
 descriptor/media contract, and the diagnosis bytes. The import defines the
 base provenance identity; analysis may add only its model version, and Q09 plus
-the report may add only their fixed renderer versions. Every layer preserves
-the same source, generation time, fingerprint, rule, configuration, and
-limitations.
+the report may add only their fixed renderer versions. Import and analysis
+preserve the dataset-analysis `generatedAt`; the completed analysis identity
+records `status`, `startedAt`, and `completedAt`. Q09 and report descriptor
+timestamps use that exact `completedAt`, while their source, fingerprint,
+model, rule, configuration, and limitations inherit the analysis provenance.
 
 The supplied `--output` is the artifacts root itself. It must be fresh and
 separate from the slice-manifest directory; do not append another `/artifacts`
 component. Each run records actual LIVE_ANALYSIS import/run provenance, and
 the runner rechecks the candidate SHA after each run and before receipt
-issuance. The receipt also binds the non-empty evidence target and exact
-non-replayed human-review request, run, event, action, revision, and actor.
-The required positive safety declaration is `所有操作建议均须人工确认`; negation,
+issuance. The receipt also hashes and reopens a canonical evidence-response
+artifact, binding its relative path, run, event, anomaly code, ordered evidence
+IDs, and count. It separately binds the exact non-replayed human-review request,
+run, event, action, revision, and actor. The controlled positive safety field
+must equal `所有操作建议均须人工确认` exactly; suffixes, negation,
 no-confirmation wording, and direct-control claims fail closed. Public labels
 may select the directed demo before analysis but are never included in detector
 input.

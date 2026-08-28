@@ -45,11 +45,11 @@ the 69-field detector CSV is sent to analytics.
 | Stage | Scripted action | Evidence boundary |
 | --- | --- | --- |
 | import | Import the prepared detector CSV. | Require the actual LIVE_ANALYSIS source, source filename, fingerprint, range, row count, and quality. |
-| analysis | Run deterministic analysis and select an overlapping C04 candidate. | Bind actual run provenance to the verified import; labels are absent from the request. |
-| evidence_review | Read the event evidence from the public loopback API. | Persist the exact run/event target and non-empty unique evidence IDs. |
+| analysis | Run deterministic analysis and select an overlapping C04 candidate. | Bind the completed lifecycle and dataset-analysis provenance to the verified import; labels are absent from the request. |
+| evidence_review | Read the event evidence from the public loopback API. | Persist canonical response JSON and bind its relative path, SHA-256, run, event, anomaly code, ordered evidence IDs, and count. |
 | human_review | Confirm the event with revision 0 and a unique request ID. | Bind run, event, request, confirm action, revision 1, local actor, and `replayed=false`; actor attribution remains unverified. |
-| q09_report | Request official Q09 and its deterministic Chinese diagnosis HTML. | Require matching event/report citations and exact positive `所有操作建议均须人工确认` wording. |
-| artifact_export | Export review audit and exact 16-column submission. | Require review only in audit, then run the exact submission checker. |
+| q09_report | Request official Q09 and its deterministic Chinese diagnosis HTML. | Bind renderer timestamps to analysis `completedAt`, require matching event/report citations, and require the exact controlled value `所有操作建议均须人工确认`. |
+| artifact_export | Persist the evidence response and export review audit plus the exact 16-column submission. | Rehash every fresh artifact, require review only in audit, then run the exact submission checker. |
 
 ## Receipt gate
 

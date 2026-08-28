@@ -423,6 +423,10 @@ function structuralEvaluationMatches(value) {
     ...value.matches.map(({ predictionId, code }) => [predictionId, code]),
     ...value.unmatchedPredictions.map(({ id, code }) => [id, code]),
   ])
+  const matchedSameCodePairs = new Set(
+    value.matches.map(({ groundTruthId, predictionId, code }) =>
+      JSON.stringify([groundTruthId, predictionId, code])),
+  )
   if (!ANOMALY_CODES.every((code) => {
     const matched = value.matches.filter((entry) => entry.code === code).length
     const unmatchedTruth = value.unmatchedGroundTruth.filter((entry) => entry.code === code).length
@@ -443,7 +447,15 @@ function structuralEvaluationMatches(value) {
         ['groundTruthId', 'predictionId', 'groundTruthCode', 'predictionCode'],
       ) &&
       groundTruthById.get(pair.groundTruthId) === pair.groundTruthCode &&
-      predictionsById.get(pair.predictionId) === pair.predictionCode) ||
+      predictionsById.get(pair.predictionId) === pair.predictionCode &&
+      (
+        pair.groundTruthCode !== pair.predictionCode ||
+        matchedSameCodePairs.has(JSON.stringify([
+          pair.groundTruthId,
+          pair.predictionId,
+          pair.groundTruthCode,
+        ]))
+      )) ||
     !classification.unmatchedGroundTruth.every((entry) =>
       structuralEventIdentity(entry) && groundTruthById.get(entry.id) === entry.code) ||
     !classification.unmatchedPredictions.every((entry) =>

@@ -13,6 +13,7 @@ import { validateSubmissionText } from './check-submission.mjs'
 import { assertExactCleanCandidate } from './lib/candidate.mjs'
 import { decodeUtf8Strict, parseCsvText } from './lib/csv.mjs'
 import {
+  ANOMALY_CODES,
   assertOfficialTimeseriesColumns,
   isLabelColumn,
   repositoryRoot,
@@ -30,6 +31,7 @@ import {
   assertAnalysisRun,
   assertImportedDataset,
   assertRendererProvenance,
+  documentHasRequiredHumanConfirmation,
   hasRequiredHumanConfirmation,
 } from './lib/runtime-provenance.mjs'
 import { validateDemoReceipt } from '../tests/h2-sentinel/scripts/validate-demo-receipt.mjs'
@@ -201,7 +203,15 @@ function assertArtifactHash(artifact, label) {
 
 export function assertQ09Answer(
   answer,
-  { runId, eventId, sourceFilename, fingerprint, displayLabel, analysisProvenance },
+  {
+    runId,
+    eventId,
+    sourceFilename,
+    fingerprint,
+    displayLabel,
+    analysisProvenance,
+    completedAt,
+  },
 ) {
   const report = answer?.generatedReport
   const descriptor = report?.descriptor
@@ -211,6 +221,7 @@ export function assertQ09Answer(
     answer.runId !== runId ||
     answer.eventId !== eventId ||
     answer.mode !== 'DETERMINISTIC_TEMPLATE' ||
+    answer.generatedAt !== completedAt ||
     answer.refusedControlClaim !== true ||
     descriptor?.schemaVersion !== 1 ||
     descriptor.runId !== runId ||
@@ -218,6 +229,7 @@ export function assertQ09Answer(
     descriptor.kind !== 'single_event_diagnosis' ||
     descriptor.format !== 'html' ||
     descriptor.status !== 'ready' ||
+    descriptor.generatedAt !== completedAt ||
     report.mediaType !== 'text/html' ||
     typeof descriptor.reportId !== 'string' || descriptor.reportId.trim() === '' ||
     typeof descriptor.filename !== 'string' || !descriptor.filename.endsWith('-diagnosis.html')
@@ -226,12 +238,14 @@ export function assertQ09Answer(
   assertRendererProvenance(
     answer.provenance,
     analysisProvenance,
+    completedAt,
     'deterministic-assistant-p1-v1',
     'Q09 answer provenance',
   )
   assertRendererProvenance(
     descriptor.provenance,
     analysisProvenance,
+    completedAt,
     'jinja-report-p1-v1',
     'Q09 report provenance',
   )
@@ -251,7 +265,7 @@ export function assertQ09Answer(
     !answer.sections.some(({ text }) => hasRequiredHumanConfirmation(text)) ||
     typeof descriptor.safetyDisclaimer !== 'string' ||
     !hasRequiredHumanConfirmation(descriptor.safetyDisclaimer) ||
-    !hasRequiredHumanConfirmation(report.content)
+    !documentHasRequiredHumanConfirmation(report.content)
   ) throw new Error('Q09 must retain the required human-confirmation text.')
   for (const requiredBinding of [eventId, sourceFilename, fingerprint, displayLabel]) {
     if (!report.content.includes(requiredBinding)) {
@@ -278,15 +292,25 @@ export function assertQ09Answer(
 }
 
 export function assertEvidenceReviewIdentity(event, runId, eventId) {
-  if (event?.eventId !== eventId || !Array.isArray(event.evidence) || event.evidence.length === 0) {
+  if (
+    event?.eventId !== eventId ||
+    (event.code !== undefined && !ANOMALY_CODES.includes(event.code)) ||
+    !Array.isArray(event.evidence) || event.evidence.length === 0
+  ) {
     throw new Error('The evidence review does not match the selected run event.')
   }
-  const evidenceIds = event.evidence.map(({ evidenceId }) => evidenceId)
+  const evidenceIds = event.evidence.map((entry) => entry?.evidenceId)
   if (
     evidenceIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
     new Set(evidenceIds).size !== evidenceIds.length
   ) throw new Error('The selected event has invalid detector evidence identities.')
-  return { runId, eventId, evidenceIds }
+  return {
+    runId,
+    eventId,
+    anomalyCode: event.code ?? null,
+    evidenceIds,
+    evidenceCount: evidenceIds.length,
+  }
 }
 
 export function assertHumanReviewIdentity(receipt, request) {
@@ -384,6 +408,7 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       analysis.runId,
       candidate.eventId,
     )
+    const evidenceResponseContent = `${JSON.stringify(evidenceEvent, null, 2)}\n`
 
     const reviewRequest = {
       schemaVersion: 1,
@@ -425,6 +450,7 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       fingerprint: analysisRun.fingerprint,
       displayLabel: 'LIVE_ANALYSIS · 验证集切片',
       analysisProvenance: analysisRun.provenance,
+      completedAt: analysisRun.completedAt,
     })
 
     const artifacts = await measuredStage(stages, 'artifact_export', async () => {
@@ -445,13 +471,16 @@ async function runOnce({ sequence, slice, outputDirectory }) {
         throw new Error(`Submission checker failed: ${submissionCheck.issues.slice(0, 3).join(' | ')}`)
       }
       const diagnosisPath = `${runDirectoryName}/diagnosis.html`
+      const evidencePath = `${runDirectoryName}/evidence-response.json`
       const auditPath = `${runDirectoryName}/review-audit.json`
       const submissionPath = `${runDirectoryName}/submission.csv`
       writeFileAtomic(resolve(outputDirectory, diagnosisPath), answer.generatedReport.content)
+      writeFileAtomic(resolve(outputDirectory, evidencePath), evidenceResponseContent)
       writeFileAtomic(resolve(outputDirectory, auditPath), audit.content)
       writeFileAtomic(resolve(outputDirectory, submissionPath), submission.content)
       return {
         diagnosisReport: artifactRecord(diagnosisPath, answer.generatedReport.content),
+        evidenceResponse: artifactRecord(evidencePath, evidenceResponseContent),
         reviewAudit: artifactRecord(auditPath, audit.content),
         submissionCsv: artifactRecord(submissionPath, submission.content),
       }
@@ -473,7 +502,10 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       stageDurations: stages,
       importedDataset,
       analysisRun,
-      evidenceReview,
+      evidenceReview: {
+        ...evidenceReview,
+        artifact: { ...artifacts.evidenceResponse },
+      },
       humanReview,
       q09,
       publicLabelsUsedAsDetectorInput: false,

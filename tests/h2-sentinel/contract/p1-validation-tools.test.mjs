@@ -23,6 +23,7 @@ import {
   assertHumanReviewIdentity,
   assertQ09Answer,
 } from '../../../validation/run-demo.mjs'
+import { assertAnalysisRun } from '../../../validation/lib/runtime-provenance.mjs'
 
 const directory = resolve(fileURLToPath(new URL('.', import.meta.url)))
 const repositoryRoot = resolve(directory, '../../..')
@@ -46,6 +47,13 @@ const diagnosisSections = [
   '人工复核记录',
   '版本与溯源',
   '安全声明与限制',
+]
+const ANALYSIS_GENERATED_AT = '2026-01-05T10:40:00Z'
+const ANALYSIS_COMPLETED_AT = '2026-01-05T10:40:01Z'
+const INVALID_HUMAN_CONFIRMATION_DECLARATIONS = [
+  '所有操作建议均须人工确认，但确认不是必需的。',
+  '所有操作建议均须人工确认；人工确认并非必要条件。',
+  '所有操作建议均须人工确认，但系统可以下发设备指令。',
 ]
 
 function sha256(value) {
@@ -215,8 +223,14 @@ async function writeRunArtifacts(
     '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"></head><body>',
     ...diagnosisSections.map((heading) => `<h2>${heading}</h2><p>验证内容。</p>`),
     `<p>${analyzedEventId} · validation-slice.csv · ${detectorFingerprint} · ${displayLabel}</p>`,
-    '<p>所有操作建议均须人工确认。</p></body></html>',
+    '<p>所有操作建议均须人工确认</p></body></html>',
   ].join('')
+  const evidenceResponse = `${JSON.stringify({
+    schemaVersion: 1,
+    eventId: analyzedEventId,
+    code: 'C04',
+    evidence: [{ evidenceId: `evidence-${sequence}-1` }],
+  }, null, 2)}\n`
   const audit = `${JSON.stringify({
     schemaVersion: 1,
     exportKind: 'event_review_audit',
@@ -257,11 +271,16 @@ async function writeRunArtifacts(
   }])
   await Promise.all([
     writeFile(join(runDirectory, 'diagnosis.html'), diagnosis, 'utf8'),
+    writeFile(join(runDirectory, 'evidence-response.json'), evidenceResponse, 'utf8'),
     writeFile(join(runDirectory, 'review-audit.json'), audit, 'utf8'),
     writeFile(join(runDirectory, 'submission.csv'), submission, 'utf8'),
   ])
   return {
     diagnosisReport: artifactRecord(`run-${sequence}/diagnosis.html`, diagnosis),
+    evidenceResponse: artifactRecord(
+      `run-${sequence}/evidence-response.json`,
+      evidenceResponse,
+    ),
     reviewAudit: artifactRecord(`run-${sequence}/review-audit.json`, audit),
     submissionCsv: artifactRecord(`run-${sequence}/submission.csv`, submission),
   }
@@ -271,7 +290,7 @@ function runtimeProvenance(fingerprint, modelVersion = null) {
   return {
     mode: 'LIVE_ANALYSIS',
     source: 'test-fixture-import',
-    generatedAt: '2026-01-05T10:40:00Z',
+    generatedAt: ANALYSIS_GENERATED_AT,
     datasetFingerprint: fingerprint,
     modelVersion,
     ruleVersion: 'test-rule-v1',
@@ -284,7 +303,7 @@ function rendererProvenance(fingerprint, rendererVersion) {
   return {
     mode: 'LIVE_ANALYSIS',
     source: 'test-fixture-import',
-    generatedAt: '2026-01-05T10:40:00Z',
+    generatedAt: ANALYSIS_COMPLETED_AT,
     datasetFingerprint: fingerprint,
     modelVersion: 'test-detector-v1',
     ruleVersion: 'test-rule-v1',
@@ -303,7 +322,7 @@ function q09Binding(runId, eventId, fingerprint, contentHash) {
     runId,
     questionId: 'Q09',
     mode: 'DETERMINISTIC_TEMPLATE',
-    generatedAt: '2026-01-05T10:40:00Z',
+    generatedAt: ANALYSIS_COMPLETED_AT,
     eventId,
     sections: [
       {
@@ -315,7 +334,7 @@ function q09Binding(runId, eventId, fingerprint, contentHash) {
       {
         sectionId: 'generated_report',
         claimKind: 'recommendation',
-        text: '所有操作建议均须人工确认。',
+        text: '所有操作建议均须人工确认',
         citationIds: [reportCitationId],
       },
     ],
@@ -345,12 +364,12 @@ function q09Binding(runId, eventId, fingerprint, contentHash) {
         kind: 'single_event_diagnosis',
         format: 'html',
         status: 'ready',
-        generatedAt: '2026-01-05T10:40:00Z',
+        generatedAt: ANALYSIS_COMPLETED_AT,
         filename: `${eventId}-diagnosis.html`,
         contentHash,
         eventId,
         warnings: [],
-        safetyDisclaimer: '本应用不下发设备指令；所有操作建议均须人工确认。',
+        safetyDisclaimer: '所有操作建议均须人工确认',
         provenance: rendererProvenance(fingerprint, 'jinja-report-p1-v1'),
       },
       mediaType: 'text/html',
@@ -362,7 +381,7 @@ function runnerQ09Answer(runId, eventId, fingerprint, displayLabel) {
   const content = [
     '<!doctype html><html lang="zh-CN"><body>',
     `<p>${eventId} · validation-slice.csv · ${fingerprint} · ${displayLabel}</p>`,
-    '<p>所有操作建议均须人工确认。</p>',
+    '<p>所有操作建议均须人工确认</p>',
     '</body></html>',
   ].join('')
   const answer = q09Binding(runId, eventId, fingerprint, sha256(content))
@@ -418,7 +437,10 @@ function measuredRun({
     evidenceReview: {
       runId,
       eventId: analyzedEventId,
+      anomalyCode: 'C04',
       evidenceIds: [`evidence-${sequence}-1`],
+      evidenceCount: 1,
+      artifact: { ...artifacts.evidenceResponse },
     },
     humanReview: {
       runId,
@@ -431,6 +453,9 @@ function measuredRun({
     },
     analysisRun: {
       runId,
+      status: 'completed',
+      startedAt: ANALYSIS_GENERATED_AT,
+      completedAt: ANALYSIS_COMPLETED_AT,
       sourceFilename: 'validation-slice.csv',
       rowCount: detectorRowCount,
       fingerprint: detectorFingerprint,
@@ -716,6 +741,46 @@ describe('P1 public-validation slice preparation', () => {
 })
 
 describe('P1 measured demo receipt validation', () => {
+  it('runner preserves the real completed Analytics lifecycle identity', () => {
+    const fingerprint = `sha256:${'a'.repeat(64)}`
+    const dataset = {
+      datasetId: 'dataset-validation',
+      mode: 'LIVE_ANALYSIS',
+      sourceFilename: 'validation-slice.csv',
+      rowCount: 101,
+      fingerprint,
+      timeRange: {
+        startTime: '2026-01-05T09:30:00Z',
+        endTime: ANALYSIS_GENERATED_AT,
+      },
+      provenance: runtimeProvenance(fingerprint),
+    }
+    const response = {
+      schemaVersion: 1,
+      runId: 'run-validation',
+      status: 'completed',
+      startedAt: ANALYSIS_GENERATED_AT,
+      completedAt: ANALYSIS_COMPLETED_AT,
+      dataset,
+      provenance: runtimeProvenance(fingerprint, 'test-detector-v1'),
+      events: [],
+    }
+    const identity = assertAnalysisRun(response, { dataset })
+    assert.equal(identity.status, 'completed')
+    assert.equal(identity.completedAt, ANALYSIS_COMPLETED_AT)
+    assert.equal(identity.provenance.generatedAt, ANALYSIS_GENERATED_AT)
+
+    for (const mutate of [
+      (run) => { run.status = 'running' },
+      (run) => { run.completedAt = '2026-01-05T10:39:59Z' },
+      (run) => { run.startedAt = ANALYSIS_COMPLETED_AT },
+    ]) {
+      const invalid = structuredClone(response)
+      mutate(invalid)
+      assert.throws(() => assertAnalysisRun(invalid, { dataset }))
+    }
+  })
+
   it('runner binds non-empty evidence and the exact non-replayed review receipt', () => {
     const request = {
       requestId: 'demo-review-1',
@@ -726,6 +791,7 @@ describe('P1 measured demo receipt validation', () => {
     }
     const evidence = {
       eventId: request.eventId,
+      code: 'C04',
       evidence: [{ evidenceId: 'evidence-1' }],
     }
     const receipt = {
@@ -741,7 +807,13 @@ describe('P1 measured demo receipt validation', () => {
     }
     assert.deepEqual(
       assertEvidenceReviewIdentity(evidence, request.runId, request.eventId),
-      { runId: request.runId, eventId: request.eventId, evidenceIds: ['evidence-1'] },
+      {
+        runId: request.runId,
+        eventId: request.eventId,
+        anomalyCode: 'C04',
+        evidenceIds: ['evidence-1'],
+        evidenceCount: 1,
+      },
     )
     assert.equal(assertHumanReviewIdentity(receipt, request).replayed, false)
 
@@ -777,6 +849,7 @@ describe('P1 measured demo receipt validation', () => {
       sourceFilename: 'validation-slice.csv',
       fingerprint: `sha256:${'a'.repeat(64)}`,
       displayLabel: 'LIVE_ANALYSIS · 验证集切片',
+      completedAt: ANALYSIS_COMPLETED_AT,
       analysisProvenance: runtimeProvenance(
         `sha256:${'a'.repeat(64)}`,
         'test-detector-v1',
@@ -789,12 +862,15 @@ describe('P1 measured demo receipt validation', () => {
       expected.displayLabel,
     )
     assert.equal(assertQ09Answer(valid, expected).questionId, 'Q09')
+    assert.notEqual(expected.analysisProvenance.generatedAt, valid.generatedAt)
 
     const cases = [
       (answer) => { answer.questionId = 'Q08' },
       (answer) => { answer.runId = 'different-run' },
       (answer) => { answer.eventId = 'different-event' },
+      (answer) => { answer.generatedAt = '2026-01-05T10:40:02Z' },
       (answer) => { answer.generatedReport.descriptor.kind = 'period_summary' },
+      (answer) => { answer.generatedReport.descriptor.generatedAt = '2026-01-05T10:40:02Z' },
       (answer) => { answer.generatedReport.mediaType = 'application/json' },
       (answer) => { answer.generatedReport.descriptor.contentHash = `sha256:${'0'.repeat(64)}` },
       (answer) => {
@@ -807,6 +883,7 @@ describe('P1 measured demo receipt validation', () => {
       (answer) => { answer.provenance.source = 'contradictory-source' },
       (answer) => { answer.provenance.ruleVersion = 'contradictory-rule' },
       (answer) => { answer.provenance.configurationVersion = 'contradictory-configuration' },
+      (answer) => { answer.provenance.modelVersion = 'contradictory-model' },
       (answer) => { answer.provenance.generatedAt = '2026-01-05T10:41:00Z' },
       (answer) => { answer.provenance.limitations = ['Contradictory limitation.'] },
       (answer) => { answer.generatedReport.descriptor.provenance.source = 'contradictory-source' },
@@ -814,6 +891,9 @@ describe('P1 measured demo receipt validation', () => {
       (answer) => {
         answer.generatedReport.descriptor.provenance.configurationVersion =
           'contradictory-configuration'
+      },
+      (answer) => {
+        answer.generatedReport.descriptor.provenance.modelVersion = 'contradictory-model'
       },
       (answer) => {
         answer.generatedReport.descriptor.provenance.generatedAt = '2026-01-05T10:41:00Z'
@@ -834,14 +914,18 @@ describe('P1 measured demo receipt validation', () => {
       (answer) => {
         answer.sections[1].text = '并非所有操作建议均须人工确认。'
       },
+      ...INVALID_HUMAN_CONFIRMATION_DECLARATIONS.map((text) =>
+        (answer) => { answer.sections[1].text = text }),
       (answer) => {
         answer.generatedReport.descriptor.safetyDisclaimer =
           '无需人工确认；所有操作建议均须人工确认。'
       },
+      ...INVALID_HUMAN_CONFIRMATION_DECLARATIONS.map((text) =>
+        (answer) => { answer.generatedReport.descriptor.safetyDisclaimer = text }),
       (answer) => {
         answer.generatedReport.content = answer.generatedReport.content.replace(
-          '<p>所有操作建议均须人工确认。</p>',
-          '<p>系统可直接控制设备；所有操作建议均须人工确认。</p>',
+          '<p>所有操作建议均须人工确认</p>',
+          '<p>所有操作建议均须人工确认，但系统可以下发设备指令。</p>',
         )
         answer.generatedReport.descriptor.contentHash = sha256(answer.generatedReport.content)
       },
@@ -870,6 +954,10 @@ describe('P1 measured demo receipt validation', () => {
       assert.equal(output.eachUnder180Seconds, true)
       assert.equal(output.consecutiveRuns, 2)
       assert.equal(output.provenanceScope, 'self_consistent_fixture_contract')
+      assert.notEqual(
+        fixture.receipt.runs[0].analysisRun.provenance.generatedAt,
+        fixture.receipt.runs[0].q09.generatedAt,
+      )
       assert.ok(Object.values(output.unsupportedClaims).every((value) => value === false))
     } finally {
       await cleanup(fixture)
@@ -960,6 +1048,33 @@ describe('P1 measured demo receipt validation', () => {
       assert.match(invalidAuditResult.stderr, /confirmed revision 1/)
       await writeFile(auditPath, audit, 'utf8')
 
+      const evidencePath = join(fixture.artifactsRoot, 'run-1/evidence-response.json')
+      const evidenceResponse = await readFile(evidencePath, 'utf8')
+      const forgedEvidenceValue = JSON.parse(evidenceResponse)
+      forgedEvidenceValue.evidence = [{ evidenceId: 'forged-evidence' }]
+      const forgedEvidenceResponse = `${JSON.stringify(forgedEvidenceValue, null, 2)}\n`
+      await writeFile(evidencePath, forgedEvidenceResponse, 'utf8')
+      const forgedEvidenceReceipt = structuredClone(fixture.receipt)
+      const forgedEvidenceHash = sha256(forgedEvidenceResponse)
+      forgedEvidenceReceipt.runs[0].artifacts.evidenceResponse.sha256 = forgedEvidenceHash
+      forgedEvidenceReceipt.runs[0].evidenceReview.artifact.sha256 = forgedEvidenceHash
+      const forgedEvidenceReceiptPath = join(
+        fixture.artifactsRoot,
+        'forged-evidence-receipt.json',
+      )
+      await writeFile(
+        forgedEvidenceReceiptPath,
+        `${JSON.stringify(forgedEvidenceReceipt, null, 2)}\n`,
+        'utf8',
+      )
+      const forgedEvidenceResult = await runReceiptValidator(
+        fixture,
+        forgedEvidenceReceiptPath,
+      )
+      assert.equal(forgedEvidenceResult.status, 1)
+      assert.match(forgedEvidenceResult.stderr, /canonical evidence response artifact/)
+      await writeFile(evidencePath, evidenceResponse, 'utf8')
+
       const diagnosisPath = join(fixture.artifactsRoot, 'run-1/diagnosis.html')
       const diagnosis = await readFile(diagnosisPath, 'utf8')
       const unboundDiagnosis = diagnosis.replace(
@@ -1046,9 +1161,22 @@ describe('P1 measured demo receipt validation', () => {
         message: /exact Q09, runId, eventId/,
       },
       {
+        name: 'q09-answer-generated-at-drift',
+        mutate: (receipt) => { receipt.runs[0].q09.generatedAt = '2026-01-05T10:40:02Z' },
+        message: /exact Q09, runId, eventId/,
+      },
+      {
         name: 'q09-descriptor-drift',
         mutate: (receipt) => {
           receipt.runs[0].q09.generatedReport.descriptor.kind = 'period_summary'
+        },
+        message: /report descriptor or content hash/,
+      },
+      {
+        name: 'q09-descriptor-generated-at-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.descriptor.generatedAt =
+            '2026-01-05T10:40:02Z'
         },
         message: /report descriptor or content hash/,
       },
@@ -1095,6 +1223,7 @@ describe('P1 measured demo receipt validation', () => {
         ['source', 'contradictory-source'],
         ['ruleVersion', 'contradictory-rule'],
         ['configurationVersion', 'contradictory-configuration'],
+        ['modelVersion', 'contradictory-model'],
         ['generatedAt', '2026-01-05T10:41:00Z'],
         ['limitations', ['Contradictory limitation.']],
       ].map(([field, value]) => ({
@@ -1114,6 +1243,7 @@ describe('P1 measured demo receipt validation', () => {
         ['source', 'contradictory-source'],
         ['ruleVersion', 'contradictory-rule'],
         ['configurationVersion', 'contradictory-configuration'],
+        ['modelVersion', 'contradictory-model'],
         ['generatedAt', '2026-01-05T10:41:00Z'],
         ['limitations', ['Contradictory limitation.']],
       ].map(([field, value]) => ({
@@ -1137,6 +1267,11 @@ describe('P1 measured demo receipt validation', () => {
         },
         message: /human-confirmation answer text/,
       },
+      ...INVALID_HUMAN_CONFIRMATION_DECLARATIONS.map((text, index) => ({
+        name: `q09-answer-closed-declaration-${index + 1}`,
+        mutate: (receipt) => { receipt.runs[0].q09.sections[1].text = text },
+        message: /human-confirmation answer text/,
+      })),
       {
         name: 'q09-disclaimer-direct-control',
         mutate: (receipt) => {
@@ -1145,6 +1280,13 @@ describe('P1 measured demo receipt validation', () => {
         },
         message: /human-confirmation disclaimer/,
       },
+      ...INVALID_HUMAN_CONFIRMATION_DECLARATIONS.map((text, index) => ({
+        name: `q09-disclaimer-closed-declaration-${index + 1}`,
+        mutate: (receipt) => {
+          receipt.runs[0].q09.generatedReport.descriptor.safetyDisclaimer = text
+        },
+        message: /human-confirmation disclaimer/,
+      })),
     ]
     try {
       for (const testCase of receiptOnlyCases) {
@@ -1213,7 +1355,9 @@ describe('P1 measured demo receipt validation', () => {
       ].map(([field, value]) => ({
         name: `analysis-${field}-contradiction`,
         mutate: (receipt) => { receipt.runs[0].analysisRun.provenance[field] = value },
-        message: /import and analysis identities do not match/,
+        message: field === 'generatedAt'
+          ? /completed Analytics lifecycle identity/
+          : /import and analysis identities do not match/,
       })),
       {
         name: 'evidence-wrong-event',
@@ -1229,6 +1373,50 @@ describe('P1 measured demo receipt validation', () => {
         name: 'evidence-empty',
         mutate: (receipt) => { receipt.runs[0].evidenceReview.evidenceIds = [] },
         message: /non-empty evidence to the measured run event/,
+      },
+      {
+        name: 'evidence-forged-nonempty',
+        mutate: (receipt) => {
+          receipt.runs[0].evidenceReview.evidenceIds = ['forged-evidence']
+        },
+        message: /canonical evidence response artifact/,
+      },
+      {
+        name: 'evidence-count-drift',
+        mutate: (receipt) => { receipt.runs[0].evidenceReview.evidenceCount = 2 },
+        message: /non-empty evidence to the measured run event/,
+      },
+      {
+        name: 'evidence-code-drift',
+        mutate: (receipt) => { receipt.runs[0].evidenceReview.anomalyCode = 'C03' },
+        message: /canonical evidence response artifact/,
+      },
+      {
+        name: 'evidence-artifact-path-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].evidenceReview.artifact.relativePath =
+            receipt.runs[0].artifacts.reviewAudit.relativePath
+        },
+        message: /non-empty evidence to the measured run event/,
+      },
+      {
+        name: 'evidence-artifact-hash-drift',
+        mutate: (receipt) => {
+          receipt.runs[0].evidenceReview.artifact.sha256 = `sha256:${'0'.repeat(64)}`
+        },
+        message: /non-empty evidence to the measured run event/,
+      },
+      {
+        name: 'analysis-not-completed',
+        mutate: (receipt) => { receipt.runs[0].analysisRun.status = 'running' },
+        message: /completed Analytics lifecycle identity/,
+      },
+      {
+        name: 'analysis-completion-before-start',
+        mutate: (receipt) => {
+          receipt.runs[0].analysisRun.completedAt = '2026-01-05T10:39:59Z'
+        },
+        message: /completed Analytics lifecycle identity/,
       },
       {
         name: 'review-replay',

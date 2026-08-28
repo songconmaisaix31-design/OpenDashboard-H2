@@ -208,6 +208,47 @@ function evaluationReportWithMatch() {
   return report
 }
 
+function evaluationReportWithForgedClassificationMatch() {
+  const report = evaluationReport()
+  const groundTruth = report.unmatchedGroundTruth.find(({ code }) => code === 'C02')
+  const prediction = { id: 'C02-prediction-unmatched', code: 'C02' }
+  report.unmatchedPredictions.push(prediction)
+  report.predictions.rawCount = 1
+  report.predictions.mergedCount = 1
+  report.predictions.byCode.C02 = 1
+  report.dataset.chunks[0].predictionCount = 1
+  report.metrics.overall = computeMetrics({ tp: 0, fp: 1, fn: report.groundTruth.count })
+  report.metrics.byCode.C02 = {
+    code: 'C02',
+    groundTruth: report.groundTruth.byCode.C02,
+    predictions: 1,
+    ...computeMetrics({ tp: 0, fp: 1, fn: report.groundTruth.byCode.C02 }),
+  }
+  const classificationPrecision = 1
+  const classificationRecall = 1 / report.groundTruth.count
+  report.metrics.classification = {
+    matches: 1,
+    correctCode: 1,
+    detectionPrecision: classificationPrecision,
+    detectionRecall: classificationRecall,
+    detectionF1: (2 * classificationPrecision * classificationRecall) /
+      (classificationPrecision + classificationRecall),
+    classificationAccuracy: 1,
+    eventAccuracy: 1 / report.groundTruth.count,
+    matchedPairs: [{
+      groundTruthId: groundTruth.id,
+      predictionId: prediction.id,
+      groundTruthCode: 'C02',
+      predictionCode: 'C02',
+    }],
+    unmatchedGroundTruth: report.metrics.classification.unmatchedGroundTruth.filter(
+      ({ id }) => id !== groundTruth.id,
+    ),
+    unmatchedPredictions: [],
+  }
+  return report
+}
+
 describe('H2 Sentinel overfit report binding', () => {
   it('accepts a complete finite report bound to the candidate and official source', () => {
     const report = evaluationReport()
@@ -217,6 +258,14 @@ describe('H2 Sentinel overfit report binding', () => {
   it('accepts metrics reconstructed from one structural match', () => {
     const report = evaluationReportWithMatch()
     assert.equal(assertEvaluationIdentity(report, 'validation', candidateCommit), report)
+  })
+
+  it('rejects a forged same-code classification match whose events remain unmatched', () => {
+    const report = evaluationReportWithForgedClassificationMatch()
+    assert.throws(
+      () => assertEvaluationIdentity(report, 'validation', candidateCommit),
+      /stale or mismatched identity/,
+    )
   })
 
   it('fails closed on stale candidate, complete source/provenance mismatch, and non-finite values', () => {

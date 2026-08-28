@@ -2,15 +2,19 @@ import { toInstant } from './metrics.mjs'
 
 export const REQUIRED_HUMAN_CONFIRMATION_DECLARATION = '所有操作建议均须人工确认'
 
-const unsafeControlText = /(?:并非|不是|否认|无需|不需|不须|不必|免于|绕过).{0,12}(?:人工|确认)|(?:自动|直接).{0,12}(?:执行|控制|下发|操作)|(?:无需|不经|绕过)人工确认/u
-const exactPositiveDeclaration = new RegExp(
-  `(?:^|[\\s>；。！？:：])${REQUIRED_HUMAN_CONFIRMATION_DECLARATION}(?=$|[\\s<；。！？,，])`,
+const unsafeControlText = /(?:并非|不是|否认|无需|不需|不须|不必|免于|绕过).{0,12}(?:人工|确认)|(?:人工确认|确认).{0,8}(?:并非|不是|不再是).{0,8}(?:必需|必要|条件)|(?:自动|直接).{0,12}(?:执行|控制|下发|操作)|(?:系统|应用).{0,12}(?:可以|可|能够|将会).{0,12}(?:执行|控制|下发).{0,12}(?:设备|指令|操作)?|(?:无需|不经|绕过)人工确认/u
+const standaloneDeclaration = new RegExp(
+  `>\\s*${REQUIRED_HUMAN_CONFIRMATION_DECLARATION}\\s*<`,
   'u',
 )
 
 export function hasRequiredHumanConfirmation(value) {
-  return typeof value === 'string' && !unsafeControlText.test(value) &&
-    exactPositiveDeclaration.test(value)
+  return value === REQUIRED_HUMAN_CONFIRMATION_DECLARATION
+}
+
+export function documentHasRequiredHumanConfirmation(value) {
+  return typeof value === 'string' && standaloneDeclaration.test(value) &&
+    !unsafeControlText.test(value)
 }
 
 function nonEmptyString(value) {
@@ -25,7 +29,6 @@ function sameArray(left, right) {
 function sameBaseProvenance(left, right) {
   return (
     left.mode === right.mode && left.source === right.source &&
-    left.generatedAt === right.generatedAt &&
     left.datasetFingerprint === right.datasetFingerprint &&
     left.ruleVersion === right.ruleVersion &&
     left.configurationVersion === right.configurationVersion &&
@@ -104,7 +107,8 @@ export function assertImportedDataset(imported, { filename, rowCount, fingerprin
 export function assertAnalysisRun(run, imported) {
   const dataset = imported.dataset
   if (
-    !nonEmptyString(run?.runId) || run?.dataset?.datasetId !== dataset.datasetId ||
+    !nonEmptyString(run?.runId) || run?.status !== 'completed' ||
+    run?.dataset?.datasetId !== dataset.datasetId ||
     run.dataset.mode !== 'LIVE_ANALYSIS' ||
     run.dataset.sourceFilename !== dataset.sourceFilename ||
     run.dataset.rowCount !== dataset.rowCount ||
@@ -117,13 +121,21 @@ export function assertAnalysisRun(run, imported) {
   const timeRange = snapshotTimeRange(run.dataset.timeRange, 'Analysis run')
   const importProvenance = snapshotLiveProvenance(dataset.provenance, 'Import')
   const analysisProvenance = snapshotLiveProvenance(run.provenance, 'Analysis')
+  const startedAt = toInstant(run.startedAt)
+  const completedAt = toInstant(run.completedAt)
   if (
+    !Number.isFinite(startedAt) || !Number.isFinite(completedAt) ||
+    startedAt > completedAt || run.startedAt !== analysisProvenance.generatedAt ||
     importProvenance.modelVersion !== null ||
     !nonEmptyString(analysisProvenance.modelVersion) ||
+    importProvenance.generatedAt !== analysisProvenance.generatedAt ||
     !sameBaseProvenance(importProvenance, analysisProvenance)
   ) throw new Error('Analysis provenance must inherit the exact verified import identity.')
   return {
     runId: run.runId,
+    status: run.status,
+    startedAt: run.startedAt,
+    completedAt: run.completedAt,
     sourceFilename: run.dataset.sourceFilename,
     rowCount: run.dataset.rowCount,
     fingerprint: run.dataset.fingerprint,
@@ -132,7 +144,13 @@ export function assertAnalysisRun(run, imported) {
   }
 }
 
-export function assertRendererProvenance(value, analysisProvenance, rendererVersion, label) {
+export function assertRendererProvenance(
+  value,
+  analysisProvenance,
+  completedAt,
+  rendererVersion,
+  label,
+) {
   const expectedKeys = [
     'mode', 'source', 'generatedAt', 'datasetFingerprint', 'modelVersion',
     'ruleVersion', 'configurationVersion', 'rendererVersion', 'limitations',
@@ -145,6 +163,7 @@ export function assertRendererProvenance(value, analysisProvenance, rendererVers
     actualKeys.length !== expectedKeys.length ||
     actualKeys.some((key, index) => key !== expectedKeys[index]) ||
     value.rendererVersion !== rendererVersion ||
+    renderer.generatedAt !== completedAt ||
     renderer.modelVersion !== analysisProvenance.modelVersion ||
     !sameBaseProvenance(renderer, analysisProvenance)
   ) throw new Error(`${label} must inherit the exact analysis provenance and renderer identity.`)
