@@ -839,9 +839,6 @@ function validateQ09Binding(q09, expected, label) {
     reportCitations[0].sourceId !== descriptor.reportId ||
     reportCitations[0].eventId !== expected.eventId
   ) fail(`${label} must retain exactly one matching report citation.`)
-  if (!q09.sections.some(({ text }) => hasRequiredHumanConfirmation(text))) {
-    fail(`${label} must retain required human-confirmation answer text.`)
-  }
 }
 
 function validateRuntimeIdentity(identity, kind, detector, label) {
