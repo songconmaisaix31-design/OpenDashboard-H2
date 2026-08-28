@@ -85,6 +85,97 @@ describe('H2 Sentinel remediation evidence boundaries', () => {
     }
   })
 
+  it('reports only bounded fields from failed loopback API envelopes', async () => {
+    const sensitiveValue = 'C:\\Users\\operator\\.env token=private-value'
+    const server = createServer((request, response) => {
+      response.setHeader('content-type', 'application/json')
+      if (request.url === '/success') {
+        response.end(JSON.stringify({ ok: true, data: { runId: 'run-1' } }))
+        return
+      }
+      if (request.url === '/malformed') {
+        response.writeHead(500, { 'content-type': 'text/plain' })
+        response.end(`<html>${sensitiveValue}</html>`)
+        return
+      }
+      if (request.url === '/unsafe') {
+        response.writeHead(400)
+        response.end(JSON.stringify({
+          ok: false,
+          error: {
+            code: 'token-private-value',
+            message: sensitiveValue,
+            details: [sensitiveValue],
+          },
+        }))
+        return
+      }
+      if (request.url === '/legacy') {
+        response.writeHead(409)
+        response.end(JSON.stringify({
+          ok: false,
+          code: 'request.conflict',
+          message: 'The request conflicts with current state.',
+          details: ['Refresh local state and retry.'],
+        }))
+        return
+      }
+      response.writeHead(422)
+      response.end(JSON.stringify({
+        ok: false,
+        error: {
+          code: 'validation.invalid_request',
+          message: 'Validation request was rejected.',
+          details: ['datasetId is required.', 'retry with a valid local identifier.'],
+        },
+        provenance: { source: sensitiveValue },
+      }))
+    })
+    await new Promise((resolvePromise) => server.listen(0, '127.0.0.1', resolvePromise))
+    try {
+      const address = server.address()
+      const baseUrl = `http://127.0.0.1:${address.port}/`
+      assert.deepEqual(
+        await requestEnvelope(baseUrl, '/success'),
+        { runId: 'run-1' },
+      )
+      await assert.rejects(
+        requestEnvelope(baseUrl, '/invalid'),
+        (error) => {
+          assert.match(error.message, /^\/invalid returned HTTP 422 /)
+          assert.match(error.message, /validation\.invalid_request/)
+          assert.match(error.message, /Validation request was rejected\./)
+          assert.match(error.message, /datasetId is required\./)
+          assert.match(error.message, /retry with a valid local identifier\./)
+          assert.doesNotMatch(error.message, /provenance|Users|private-value|token/i)
+          return true
+        },
+      )
+      await assert.rejects(
+        requestEnvelope(baseUrl, '/malformed'),
+        (error) => {
+          assert.match(error.message, /^\/malformed returned HTTP 500: unknown error$/)
+          assert.doesNotMatch(error.message, /html|Users|private-value|token/i)
+          return true
+        },
+      )
+      await assert.rejects(
+        requestEnvelope(baseUrl, '/unsafe'),
+        (error) => {
+          assert.equal(error.message, '/unsafe returned HTTP 400: unknown error')
+          assert.doesNotMatch(error.message, /Users|private-value|token/i)
+          return true
+        },
+      )
+      await assert.rejects(
+        requestEnvelope(baseUrl, '/legacy'),
+        /\/legacy returned HTTP 409 request\.conflict: The request conflicts with current state\. Refresh local state and retry\./,
+      )
+    } finally {
+      await new Promise((resolvePromise) => server.close(resolvePromise))
+    }
+  })
+
   it('listens for spawn errors and terminates only the exact launched child PID', async () => {
     const spawnFailure = new EventEmitter()
     spawnFailure.exitCode = null
