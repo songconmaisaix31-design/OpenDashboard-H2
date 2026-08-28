@@ -201,6 +201,11 @@ function assertArtifactHash(artifact, label) {
   }
 }
 
+function escapeHtmlText(value) {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
+}
+
 export function assertQ09Answer(
   answer,
   {
@@ -211,6 +216,8 @@ export function assertQ09Answer(
     displayLabel,
     analysisProvenance,
     completedAt,
+    expectedCode,
+    evidenceIds,
   },
 ) {
   const report = answer?.generatedReport
@@ -230,6 +237,7 @@ export function assertQ09Answer(
     descriptor.format !== 'html' ||
     descriptor.status !== 'ready' ||
     descriptor.generatedAt !== completedAt ||
+    expectedCode !== 'C04' ||
     report.mediaType !== 'text/html' ||
     typeof descriptor.reportId !== 'string' || descriptor.reportId.trim() === '' ||
     typeof descriptor.filename !== 'string' || !descriptor.filename.endsWith('-diagnosis.html')
@@ -272,6 +280,18 @@ export function assertQ09Answer(
       throw new Error('Q09 diagnosis report does not bind the selected event and actual service provenance.')
     }
   }
+  if (
+    !Array.isArray(evidenceIds) || evidenceIds.length === 0 ||
+    new Set(evidenceIds).size !== evidenceIds.length ||
+    !report.content.includes(
+      `<code>${escapeHtmlText(eventId)}</code> · ${expectedCode} /`,
+    ) ||
+    evidenceIds.some((evidenceId) =>
+      typeof evidenceId !== 'string' || evidenceId.trim() === '' ||
+      !report.content.includes(`<code>${escapeHtmlText(evidenceId)}</code>`))
+  ) {
+    throw new Error('Q09 diagnosis report does not bind the selected C04 evidence identities.')
+  }
   return {
     schemaVersion: answer.schemaVersion,
     answerId: answer.answerId,
@@ -291,10 +311,11 @@ export function assertQ09Answer(
   }
 }
 
-export function assertEvidenceReviewIdentity(event, runId, eventId) {
+export function assertEvidenceReviewIdentity(event, runId, eventId, expectedCode) {
   if (
     event?.eventId !== eventId ||
-    (event.code !== undefined && !ANOMALY_CODES.includes(event.code)) ||
+    expectedCode !== 'C04' || event.code !== expectedCode ||
+    !ANOMALY_CODES.includes(event.code) ||
     !Array.isArray(event.evidence) || event.evidence.length === 0
   ) {
     throw new Error('The evidence review does not match the selected run event.')
@@ -307,7 +328,7 @@ export function assertEvidenceReviewIdentity(event, runId, eventId) {
   return {
     runId,
     eventId,
-    anomalyCode: event.code ?? null,
+    anomalyCode: event.code,
     evidenceIds,
     evidenceCount: evidenceIds.length,
   }
@@ -407,6 +428,7 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       evidenceEvent,
       analysis.runId,
       candidate.eventId,
+      slice.manifest.selectedEvent.code,
     )
     const evidenceResponseContent = `${JSON.stringify(evidenceEvent, null, 2)}\n`
 
@@ -451,6 +473,8 @@ async function runOnce({ sequence, slice, outputDirectory }) {
       displayLabel: 'LIVE_ANALYSIS · 验证集切片',
       analysisProvenance: analysisRun.provenance,
       completedAt: analysisRun.completedAt,
+      expectedCode: slice.manifest.selectedEvent.code,
+      evidenceIds: evidenceReview.evidenceIds,
     })
 
     const artifacts = await measuredStage(stages, 'artifact_export', async () => {

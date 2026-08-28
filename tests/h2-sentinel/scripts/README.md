@@ -79,7 +79,10 @@ revision, actor, run, and event. The evidence-review identity must name the
 same run/event and at least one unique evidence ID. It must also bind a
 canonical evidence-response JSON artifact by relative path and SHA-256,
 anomaly code, ordered evidence IDs, and count; the validator reopens and hashes
-those bytes. The submission must pass the official vocabulary/equipment
+those bytes. The anomaly code must remain the manifest-selected C04 code, and
+the ordered evidence IDs must also occur in the separately hashed diagnosis
+HTML, preventing coordinated artifact/receipt substitution. The submission
+must pass the official vocabulary/equipment
 checker. The diagnosis
 HTML must name the selected event, source filename, detector fingerprint, and
 rendered provenance scope.
@@ -93,13 +96,15 @@ must equal the manifest observed range, remain inside the verified source
 range, and equal its peer. Q09 must retain exact question/run/event identity,
 the `single_event_diagnosis` HTML descriptor and content hash, actual answer
 and report provenance, exactly one matching report citation, and explicit
-positive `所有操作建议均须人工确认` field. Import provenance defines the base;
+positive standalone declaration. The real Analytics Q09 section and disclaimer
+use `本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。`
+exactly. Import provenance defines the base;
 analysis inherits its dataset-analysis timestamp exactly, records a completed
 lifecycle identity, and adds only a model version. Q09/report timestamps equal
 that run `completedAt`; their provenance inherits the analysis source,
 fingerprint, model, rule, configuration, and limitations plus only the fixed
-renderer version. Suffixes, negation, no-confirmation wording, direct-control
-claims, or contradictory provenance fail closed.
+renderer version. Suffixes, negation, no-confirmation wording,
+equipment-control authorization, or contradictory provenance fail closed.
 
 Passing this validator proves only that the supplied local receipt and files
 meet this evidence contract. It is not an organizer score, full-validation

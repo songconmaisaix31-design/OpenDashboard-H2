@@ -46,9 +46,9 @@ the 69-field detector CSV is sent to analytics.
 | --- | --- | --- |
 | import | Import the prepared detector CSV. | Require the actual LIVE_ANALYSIS source, source filename, fingerprint, range, row count, and quality. |
 | analysis | Run deterministic analysis and select an overlapping C04 candidate. | Bind the completed lifecycle and dataset-analysis provenance to the verified import; labels are absent from the request. |
-| evidence_review | Read the event evidence from the public loopback API. | Persist canonical response JSON and bind its relative path, SHA-256, run, event, anomaly code, ordered evidence IDs, and count. |
+| evidence_review | Read the event evidence from the public loopback API. | Persist canonical response JSON; bind its relative path, SHA-256, run, event, selected C04 code, ordered evidence IDs, and count; require the same IDs in the diagnosis HTML. |
 | human_review | Confirm the event with revision 0 and a unique request ID. | Bind run, event, request, confirm action, revision 1, local actor, and `replayed=false`; actor attribution remains unverified. |
-| q09_report | Request official Q09 and its deterministic Chinese diagnosis HTML. | Bind renderer timestamps to analysis `completedAt`, require matching event/report citations, and require the exact controlled value `所有操作建议均须人工确认`. |
+| q09_report | Request official Q09 and its deterministic Chinese diagnosis HTML. | Bind renderer timestamps to analysis `completedAt`, require matching event/report citations, and require the exact complete safety statement `本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。`. |
 | artifact_export | Persist the evidence response and export review audit plus the exact 16-column submission. | Rehash every fresh artifact, require review only in audit, then run the exact submission checker. |
 
 ## Receipt gate
@@ -95,6 +95,9 @@ mode, answer and report provenance, `single_event_diagnosis` HTML descriptor,
 content hash, and exactly one matching report citation. Import and analysis
 ranges must be canonical ordered UTC ranges, equal each other and the manifest
 observed range, and remain within the frozen source range.
+The safety statement is closed: suffixes, negation, or any claim that the
+system/app is authorized to control equipment or send commands invalidate the
+receipt.
 
 ## Fixture fallback
 

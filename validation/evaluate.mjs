@@ -279,6 +279,21 @@ export async function evaluateOfficialData(options) {
     predictions: merged,
     graceMinutes: options.graceMinutes,
   })
+  const evaluatedEvents = {
+    groundTruth: groundTruth.map(({ id, code, startTime, endTime }) => ({
+      id,
+      code,
+      startTime,
+      endTime,
+    })),
+    predictions: merged.map(({ id, code, startTime, endTime, firstDetectionTime }) => ({
+      id,
+      code,
+      startTime,
+      endTime,
+      ...(firstDetectionTime === undefined ? {} : { firstDetectionTime }),
+    })),
+  }
   const byCodeMetrics = Object.fromEntries(
     matching.byCode.map((entry) => [entry.code, entry]),
   )
@@ -332,6 +347,7 @@ export async function evaluateOfficialData(options) {
       runtime,
       byCode: codeCounts(merged),
     },
+    evaluatedEvents,
     metrics: {
       overall: {
         tp: matching.tp,

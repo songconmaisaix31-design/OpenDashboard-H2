@@ -43,7 +43,10 @@ boundary errors. Precision is zero when `tp + fp` is zero, recall is zero when
 `tp + fn` is zero, and F1 is zero when precision plus recall is zero; evaluator
 reports record this rule and the overfit gate recomputes every claimed count,
 per-code metric, classification metric, and timing summary from unique matched
-and unmatched event identities. Negative
+and unmatched event identities. The report retains the canonical timed
+ground-truth and merged-prediction events so the gate can rerun the same
+overlap/grace/greedy policies; an arbitrary cross-code or cross-time pairing
+cannot be made valid by changing only classification scalars. Negative
 first-detection delay denotes an early warning. These are local contract
 metrics, not an organizer score.
 
@@ -125,10 +128,15 @@ component. Each run records actual LIVE_ANALYSIS import/run provenance, and
 the runner rechecks the candidate SHA after each run and before receipt
 issuance. The receipt also hashes and reopens a canonical evidence-response
 artifact, binding its relative path, run, event, anomaly code, ordered evidence
-IDs, and count. It separately binds the exact non-replayed human-review request,
+IDs, and count. Those identities must also appear in the already-hashed C04
+diagnosis report, so coordinated receipt and evidence-response changes fail.
+It separately binds the exact non-replayed human-review request,
 run, event, action, revision, and actor. The controlled positive safety field
-must equal `所有操作建议均须人工确认` exactly; suffixes, negation,
-no-confirmation wording, and direct-control claims fail closed. Public labels
+may equal `所有操作建议均须人工确认` exactly, while the Analytics Q09
+section and report disclaimer use the exact complete statement
+`本应用仅提供监视、诊断、量化和建议，不下发设备指令；所有操作建议均须人工确认。`.
+Suffixes, negation, no-confirmation wording, and any equipment-control
+authorization fail closed. Public labels
 may select the directed demo before analysis but are never included in detector
 input.
 
