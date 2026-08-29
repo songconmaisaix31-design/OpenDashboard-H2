@@ -56,8 +56,13 @@ mounts the feature behind an existing router.
 - Unknown safety is distinct from passed safety.
 - Assistant and report actions call only their injected data-source methods.
 - Q01-Q10 remain exact deterministic prompts. The free-text follow-up router
-  resolves only one unambiguous supported intent and refuses unknown or mixed
-  requests without fabricating facts.
+  uses an injected feature-local `resolveNlu` capability when available and a
+  clearly labeled closed local resolver otherwise. Both paths resolve only one
+  supported intent, validate current event context, and refuse unknown, mixed,
+  stale, or equipment-control requests before calling `ask`.
+- Optional LLM rendering is requested only through the existing single `ask`
+  call. The returned answer mode and provenance label rendered, deterministic,
+  or fallback output without a transient answer-ID follow-up request.
 
 ## Hugo Stack presentation refactor
 

@@ -712,6 +712,18 @@
   font-weight: 700;
 }
 
+.h2-import-progress { display: grid; gap: 0.55rem; padding: 0.8rem; border: 1px solid var(--h2-border); border-radius: 0.65rem; background: rgb(255 255 255 / 3%); }
+.h2-import-progress > div { display: flex; justify-content: space-between; gap: 1rem; }
+.h2-import-progress progress { width: 100%; accent-color: var(--h2-mint); }
+.h2-import-progress p { margin: 0; color: var(--h2-text-muted); font-size: 0.75rem; }
+.h2-import-progress .h2-button { justify-self: start; }
+.h2-llm-toggle { display: flex; align-items: flex-start; gap: 0.65rem; }
+.h2-llm-toggle input { margin-top: 0.2rem; }
+.h2-llm-toggle span { display: grid; gap: 0.2rem; }
+.h2-llm-toggle small { color: var(--h2-text-muted); }
+.h2-llm-rendering { border-inline-start: 3px solid var(--h2-amber); }
+.h2-llm-rendering--fallback, .h2-llm-rendering--deterministic { border-inline-start-color: var(--h2-border); }
+
 .h2-filter-panel input,
 .h2-filter-panel select,
 .h2-inline-select select {
