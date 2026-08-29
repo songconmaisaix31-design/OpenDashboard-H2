@@ -40,10 +40,10 @@ def llm_rendering_config_from_environment(
     if environment.get("H2_LLM_ENABLED") != "true":
         return LlmRenderingConfig()
     api_key = environment.get("STEPFUN_API_KEY")
-    model = environment.get("STEPFUN_MODEL")
+    model = environment.get("H2_LLM_MODEL")
     if not api_key or not model:
         raise RuntimeError(
-            "H2_LLM_ENABLED=true requires STEPFUN_API_KEY and STEPFUN_MODEL."
+            "H2_LLM_ENABLED=true requires STEPFUN_API_KEY and H2_LLM_MODEL."
         )
     return LlmRenderingConfig(
         enabled=True,

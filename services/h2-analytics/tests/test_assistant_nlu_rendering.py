@@ -270,7 +270,7 @@ def test_llm_environment_requires_exact_opt_in_and_redacts_secret() -> None:
         {
             "H2_LLM_ENABLED": "true",
             "STEPFUN_API_KEY": secret,
-            "STEPFUN_MODEL": "step-test",
+            "H2_LLM_MODEL": "step-test",
         }
     )
     assert enabled.enabled is True
@@ -278,8 +278,14 @@ def test_llm_environment_requires_exact_opt_in_and_redacts_secret() -> None:
     assert secret not in repr(enabled)
 
     with pytest.raises(RuntimeError) as captured:
-        llm_rendering_config_from_environment({"H2_LLM_ENABLED": "true"})
+        llm_rendering_config_from_environment(
+            {
+                "H2_LLM_ENABLED": "true",
+                "STEPFUN_API_KEY": secret,
+            }
+        )
     assert "STEPFUN_API_KEY" in str(captured.value)
+    assert "H2_LLM_MODEL" in str(captured.value)
     assert secret not in str(captured.value)
 
 
