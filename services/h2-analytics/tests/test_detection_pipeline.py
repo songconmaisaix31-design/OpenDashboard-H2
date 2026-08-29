@@ -77,12 +77,30 @@ def test_c04_fires_on_bess_marker_or_tracking_loss(valid_csv: str) -> None:
     baseline = imported.rows[0]
     detector = RuleRowDetector()
 
+    # T07 三分支矩阵：合成行需带齐纠偏通道字段（BESS 双向限额 + 运行中
+    # 且有双向爬坡空间的 ELZ），否则按"数据缺失"降观察、不产候选。
+    executable_channels = {
+        "bess_power_actual_kw": 0.0,
+        "bess_charge_power_limit_kw": 500.0,
+        "bess_discharge_power_limit_kw": 500.0,
+        "elz1_power_actual_kw": 500.0,
+        "elz2_power_actual_kw": 500.0,
+        "elz3_power_actual_kw": 500.0,
+        "elz1_actual_available_capacity_kw": 1000.0,
+        "elz2_actual_available_capacity_kw": 1000.0,
+        "elz3_actual_available_capacity_kw": 1000.0,
+        "elz1_run_state": 2.0,
+        "elz2_run_state": 2.0,
+        "elz3_run_state": 2.0,
+    }
+
     # BESS forced to its 450 kW level fires
     # even when no violation column is reported.
     marker = replace(
         baseline,
         values={
             **baseline.values,
+            **executable_channels,
             "bess_power_cmd_kw": 450.0,
             "pcc_export_power_violation_kw": 0.0,
             "pcc_import_power_violation_kw": 0.0,
@@ -94,6 +112,7 @@ def test_c04_fires_on_bess_marker_or_tracking_loss(valid_csv: str) -> None:
         baseline,
         values={
             **baseline.values,
+            **executable_channels,
             "bess_power_cmd_kw": 0.0,
             "pcc_export_power_violation_kw": 700.0,
             "pcc_import_power_violation_kw": 0.0,
@@ -195,8 +214,19 @@ def test_rule_detector_covers_all_seven_codes(valid_csv: str) -> None:
             bess_soc_pct=40.0,
             soc_target_pct=60.0,
         ),
-        # C04: BESS forced to the 450 kW level.
-        "C04": single(bess_power_cmd_kw=450.0),
+        # C04: BESS forced to the 450 kW level（通道字段带齐以满足三分支矩阵）。
+        "C04": single(
+            bess_power_cmd_kw=450.0,
+            bess_power_actual_kw=0.0,
+            bess_charge_power_limit_kw=500.0,
+            bess_discharge_power_limit_kw=500.0,
+            elz1_power_actual_kw=500.0,
+            elz2_power_actual_kw=500.0,
+            elz3_power_actual_kw=500.0,
+            elz1_run_state=2.0,
+            elz2_run_state=2.0,
+            elz3_run_state=2.0,
+        ),
         # C05: low export quota and its causal positive BESS signature agree.
         "C05": (
             replace(
@@ -929,6 +959,222 @@ def test_c06_inefficient_capacity_pinned_elz3_path(valid_csv: str) -> None:
     )
 
     assert len(candidates) == 35
+
+
+def _t07_c04_row(
+    baseline: DataRow,
+    *,
+    bess_actual: float | None,
+    charge_limit: float | None,
+    discharge_limit: float | None,
+    elz_running: bool | None,
+    export_violation: float = 700.0,
+) -> DataRow:
+    """T07 矩阵测试共用行：EXPORT 型 C04 marker + 可配置纠偏通道。
+
+    elz_running=True 运行中（上调通道 500kW）；False 全停（通道 0）；
+    None 字段缺失（通道不可算）。
+    """
+    if elz_running is None:
+        elz_values: dict[str, float] = {
+            f"elz{index}_{field}": None  # type: ignore[misc]
+            for index in (1, 2, 3)
+            for field in (
+                "power_actual_kw",
+                "actual_available_capacity_kw",
+                "run_state",
+            )
+        }
+    else:
+        elz_values = {
+            f"elz{index}_power_actual_kw": 500.0 if elz_running else 0.0
+            for index in (1, 2, 3)
+        } | {
+            f"elz{index}_actual_available_capacity_kw": (
+                1000.0 if elz_running else 0.0
+            )
+            for index in (1, 2, 3)
+        } | {
+            f"elz{index}_run_state": 2.0 if elz_running else 1.0
+            for index in (1, 2, 3)
+        }
+    return replace(
+        baseline,
+        values={
+            **baseline.values,
+            "bess_power_cmd_kw": -450.0,
+            "bess_power_actual_kw": bess_actual,
+            "bess_charge_power_limit_kw": charge_limit,
+            "bess_discharge_power_limit_kw": discharge_limit,
+            "pcc_export_power_violation_kw": export_violation,
+            "pcc_import_power_violation_kw": 0.0,
+            **elz_values,
+        },
+    )
+
+
+def test_c04_execurability_matrix_three_branches(valid_csv: str) -> None:
+    """T07/A-4：C04 三分支——充足全置信 / 顶格降档 / 全通道缺失降观察。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    detector = RuleRowDetector()
+
+    def c04_candidates(row: DataRow) -> tuple[DetectionCandidate, ...]:
+        return tuple(
+            item for item in detector.detect((row,)) if item.code == "C04"
+        )
+
+    # 分支 1 裕量充足：BESS 空闲（充电通道 500kW）→ 原置信度。
+    sufficient = c04_candidates(
+        _t07_c04_row(
+            baseline,
+            bess_actual=0.0,
+            charge_limit=500.0,
+            discharge_limit=500.0,
+            elz_running=True,
+        )
+    )
+    assert len(sufficient) == 1
+    assert sufficient[0].subtype == "EXPORT_POWER_LIMIT_NOT_TRACKED"
+    assert sufficient[0].confidence == pytest.approx(0.91)
+
+    # 分支 2 裕量不足：BESS 充电顶格（-500/500 → 空间 0）+ ELZ 全停
+    # （上调通道 0）→ 候选保留但降档。
+    constrained = c04_candidates(
+        _t07_c04_row(
+            baseline,
+            bess_actual=-500.0,
+            charge_limit=500.0,
+            discharge_limit=500.0,
+            elz_running=False,
+        )
+    )
+    assert len(constrained) == 1
+    assert constrained[0].confidence == pytest.approx(0.8)
+
+    # 分支 3 数据缺失：两通道字段全缺 → 降"观察"，不产候选。
+    unobservable = c04_candidates(
+        _t07_c04_row(
+            baseline,
+            bess_actual=None,
+            charge_limit=None,
+            discharge_limit=None,
+            elz_running=None,
+        )
+    )
+    assert unobservable == ()
+
+
+def test_c04_execurability_single_missing_channel_still_decides(
+    valid_csv: str,
+) -> None:
+    """T07：单通道缺失不降级——BESS 字段缺但 ELZ 上调通道充足仍全置信。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+
+    row = _t07_c04_row(
+        baseline,
+        bess_actual=None,
+        charge_limit=None,
+        discharge_limit=None,
+        elz_running=True,
+    )
+    candidates = tuple(
+        item for item in RuleRowDetector().detect((row,)) if item.code == "C04"
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0].confidence == pytest.approx(0.91)
+
+
+def test_c07_execurability_matrix_three_branches(valid_csv: str) -> None:
+    """T07/A-4：C07 三分支——充足全置信 / 顶格降档 / 全通道缺失降观察。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    detector = RuleRowDetector()
+
+    def c07_row(
+        *,
+        soc: float,
+        soc_target: float,
+        bess_actual: float | None,
+        charge_limit: float | None,
+        discharge_limit: float | None,
+    ) -> DataRow:
+        # CHARGE_HEADROOM_SHORTFALL：SOC 低于目标 15 个百分点（越过 10% 门）。
+        return replace(
+            baseline,
+            values={
+                **baseline.values,
+                "bess_soc_pct": soc,
+                "soc_target_pct": soc_target,
+                "bess_regulation_reserve_target_kwh": 400.0,
+                "bess_power_actual_kw": bess_actual,
+                "bess_charge_power_limit_kw": charge_limit,
+                "bess_discharge_power_limit_kw": discharge_limit,
+            },
+        )
+
+    def c07_candidates(row: DataRow) -> tuple[DetectionCandidate, ...]:
+        return tuple(
+            item for item in detector.detect((row,)) if item.code == "C07"
+        )
+
+    # 分支 1：BESS 空闲（充电通道 500kW）→ 原置信度。
+    sufficient = c07_candidates(
+        c07_row(
+            soc=75.0,
+            soc_target=90.0,
+            bess_actual=0.0,
+            charge_limit=500.0,
+            discharge_limit=500.0,
+        )
+    )
+    assert len(sufficient) == 1
+    assert sufficient[0].subtype == "CHARGE_HEADROOM_SHORTFALL"
+    assert sufficient[0].confidence == pytest.approx(0.86)
+
+    # 分支 2：BESS 充电顶格（空间 0）+ SOC 贴上限（90-89.6=0.4 < 0.5）→ 降档。
+    constrained = c07_candidates(
+        c07_row(
+            soc=89.6,
+            soc_target=104.6,
+            bess_actual=-500.0,
+            charge_limit=500.0,
+            discharge_limit=500.0,
+        )
+    )
+    assert len(constrained) == 1
+    assert constrained[0].confidence == pytest.approx(0.75)
+
+    # 分支 3（函数级）：行级全缺不可达——SOC 通道依赖的 soc 是主判据必读
+    # 字段，BESS 字段全缺时 SOC 通道仍可用。直接对矩阵函数构造全缺行，
+    # 断言防御路径降"观察"。
+    from h2_analytics.detection.execurability import (
+        HeadroomGrade,
+        c07_headroom_grade,
+    )
+    from h2_analytics.settings import DEFAULT_CONSTRAINTS
+
+    unobservable_row = replace(
+        baseline,
+        values={
+            **baseline.values,
+            "bess_soc_pct": None,
+            "bess_power_actual_kw": None,
+            "bess_charge_power_limit_kw": None,
+        },
+    )
+    assert (
+        c07_headroom_grade(
+            unobservable_row,
+            "CHARGE_HEADROOM_SHORTFALL",
+            DEFAULT_CONSTRAINTS,
+            bess_floor_kw=1.0,
+            soc_floor_pct=0.5,
+        )
+        is HeadroomGrade.UNVERIFIABLE
+    )
 
 
 def test_runtime_c03_rejects_opposite_feedback_without_frozen_causal_gate(

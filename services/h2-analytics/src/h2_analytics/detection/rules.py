@@ -19,6 +19,7 @@ from h2_analytics.settings import (
 from .base import DetectionCandidate
 from .c03 import c03_causal_row_keys
 from .c06 import c06_inefficient_row_keys, inefficient_allocation_signature
+from .execurability import HeadroomGrade, c04_headroom_grade, c07_headroom_grade
 
 _ELZ_IDS = ("1", "2", "3")
 _ELZ_POWER_CMD = tuple(f"elz{index}_power_cmd_kw" for index in _ELZ_IDS)
@@ -64,6 +65,12 @@ _C04_BESS_LOW_KW = _threshold("C04", "bessMarkerMinimumKw")
 _C04_BESS_HIGH_KW = _threshold("C04", "bessMarkerMaximumKw")
 _PCC_VIOLATION_MIN_KW = _threshold("C04", "pccViolationMinimumKw")
 _C04_COMMAND_GAP_KW = _threshold("C04", "fixtureCommandGapKw")
+# T07 可执行性判定矩阵（A-4）：三分支阈值与降档置信度，见校准记录块。
+_C04_EXEC_BESS_FLOOR_KW = _threshold("C04", "execurabilityBessChannelFloorKw")
+_C04_EXEC_ELZ_FLOOR_KW = _threshold("C04", "execurabilityElzChannelFloorKw")
+_C04_EXEC_CONSTRAINED_CONFIDENCE = _threshold(
+    "C04", "execurabilityConstrainedConfidence"
+)
 _C05_EXPORT_QUOTA_MIN_KWH = _threshold("C05", "exportQuotaMinimumKwh")
 _C05_IMPORT_QUOTA_MIN_KWH = _threshold("C05", "importQuotaMinimumKwh")
 # T05 去签名带（ADR-003）：±300±1kW 绝对带替换为"相对限额带 + 方向一致 +
@@ -88,6 +95,12 @@ _C06_START_STOP_TWO_UNIT_MARGIN = _threshold(
 )
 _SOC_TARGET_DEVIATION_PCT = _threshold("C07", "socTargetDeviationPct")
 _C07_RESERVE_MIN_KWH = _threshold("C07", "reserveTargetMinimumKwh")
+# T07 可执行性判定矩阵（A-4）：三分支阈值与降档置信度，见校准记录块。
+_C07_EXEC_BESS_FLOOR_KW = _threshold("C07", "execurabilityBessChannelFloorKw")
+_C07_EXEC_SOC_FLOOR_PCT = _threshold("C07", "execurabilitySocChannelFloorPct")
+_C07_EXEC_CONSTRAINED_CONFIDENCE = _threshold(
+    "C07", "execurabilityConstrainedConfidence"
+)
 # 前瞻判据（T03a）：SOC 轨迹按滑窗速率外推至确认视界，预计越限即预警。
 _C07_FORECAST_HORIZON_MINUTES = _threshold("C07", "forecastHorizonMinutes")
 _C07_FORECAST_SOC_WINDOW_ROWS = int(
@@ -287,25 +300,36 @@ class RuleRowDetector:
         )
         if not (bess_marker or command_gap):
             return ()
+        subtype = None
         if reported_violation:
             if export_violation is not None and export_violation > 0:
-                return (
-                    self._candidate(
-                        row, "C04", "EXPORT_POWER_LIMIT_NOT_TRACKED", 0.91
-                    ),
-                )
-            if import_violation is not None and import_violation > 0:
-                return (
-                    self._candidate(
-                        row, "C04", "IMPORT_POWER_LIMIT_NOT_TRACKED", 0.91
-                    ),
-                )
-        subtype = (
-            "IMPORT_POWER_LIMIT_NOT_TRACKED"
-            if (pcc_actual or 0) < 0
-            else "EXPORT_POWER_LIMIT_NOT_TRACKED"
+                subtype = "EXPORT_POWER_LIMIT_NOT_TRACKED"
+            elif import_violation is not None and import_violation > 0:
+                subtype = "IMPORT_POWER_LIMIT_NOT_TRACKED"
+        if subtype is None:
+            # violation 两分支未命中（或列缺失）时按 PCC 实际方向定 subtype
+            # （保持既有冻结行为：marker 分支 + 方向判定）。
+            subtype = (
+                "IMPORT_POWER_LIMIT_NOT_TRACKED"
+                if (pcc_actual or 0) < 0
+                else "EXPORT_POWER_LIMIT_NOT_TRACKED"
+            )
+        # T07 三分支矩阵：数据缺失→降"观察"删候选；裕量不足→降档建议强度。
+        grade = c04_headroom_grade(
+            row,
+            subtype,
+            self._constraints,
+            bess_floor_kw=_C04_EXEC_BESS_FLOOR_KW,
+            elz_floor_kw=_C04_EXEC_ELZ_FLOOR_KW,
         )
-        return (self._candidate(row, "C04", subtype, 0.91),)
+        if grade is HeadroomGrade.UNVERIFIABLE:
+            return ()
+        confidence = (
+            0.91
+            if grade is HeadroomGrade.SUFFICIENT
+            else _C04_EXEC_CONSTRAINED_CONFIDENCE
+        )
+        return (self._candidate(row, "C04", subtype, confidence),)
 
     def _detect_c05(
         self,
@@ -623,7 +647,22 @@ class RuleRowDetector:
             if not shortfalls:
                 return ()
             subtype = max(shortfalls, key=lambda item: item[0])[1]
-        return (self._candidate(row, "C07", subtype, 0.86),)
+        # T07 三分支矩阵：数据缺失→降"观察"删候选；裕量不足→降档建议强度。
+        grade = c07_headroom_grade(
+            row,
+            subtype,
+            self._constraints,
+            bess_floor_kw=_C07_EXEC_BESS_FLOOR_KW,
+            soc_floor_pct=_C07_EXEC_SOC_FLOOR_PCT,
+        )
+        if grade is HeadroomGrade.UNVERIFIABLE:
+            return ()
+        confidence = (
+            0.86
+            if grade is HeadroomGrade.SUFFICIENT
+            else _C07_EXEC_CONSTRAINED_CONFIDENCE
+        )
+        return (self._candidate(row, "C07", subtype, confidence),)
 
     def _c07_forecast_candidate(
         self,
@@ -654,7 +693,22 @@ class RuleRowDetector:
             subtype = "DISCHARGE_RESERVE_SHORTFALL"
         if subtype is None:
             return ()
-        return (self._candidate(row, "C07", subtype, 0.86),)
+        # T07 三分支矩阵（前瞻路径同静态路径口径）。
+        grade = c07_headroom_grade(
+            row,
+            subtype,
+            self._constraints,
+            bess_floor_kw=_C07_EXEC_BESS_FLOOR_KW,
+            soc_floor_pct=_C07_EXEC_SOC_FLOOR_PCT,
+        )
+        if grade is HeadroomGrade.UNVERIFIABLE:
+            return ()
+        confidence = (
+            0.86
+            if grade is HeadroomGrade.SUFFICIENT
+            else _C07_EXEC_CONSTRAINED_CONFIDENCE
+        )
+        return (self._candidate(row, "C07", subtype, confidence),)
 
     def _soc_rate(
         self,

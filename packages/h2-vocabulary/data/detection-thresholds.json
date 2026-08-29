@@ -77,7 +77,22 @@
       "bessMarkerMinimumKw": 425.0,
       "bessMarkerMaximumKw": 475.0,
       "pccViolationMinimumKw": 600.0,
-      "fixtureCommandGapKw": 500.0
+      "fixtureCommandGapKw": 500.0,
+      "execurabilityBessChannelFloorKw": 1.0,
+      "execurabilityElzChannelFloorKw": 1.0,
+      "execurabilityConstrainedConfidence": 0.8,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "execurabilityMatrix": {
+          "design": "T07/A-4 three-branch executability matrix applied per candidate row: SUFFICIENT_HEADROOM keeps the candidate at full confidence when either direction-matched corrective channel has headroom (EXPORT: BESS charge channel charge_limit - charging usage, or ELZ upward headroom on a running unit; IMPORT: BESS discharge channel, or ELZ downward headroom above minimum stable power); a channel with missing data is ignored and the remaining channels decide; CONSTRAINED_HEADROOM keeps the candidate at 0.8 confidence when all available channels are pinned; UNVERIFIABLE_DATA drops the candidate to observation when every channel's data is missing.",
+          "constraintSource": "SOC 20-90 pct, BESS 500 kW charge/discharge limits, ELZ 300-1000 kW stable band via H2Constraints, frozen from the official control-constraints table in h2-vocabulary.",
+          "trainEvidence": "All 40 public TRAIN C04 event rows carry the 425-475 kW BESS marker, so the opposite-direction BESS channel alone holds at least 25 kW headroom - every TRAIN row grades SUFFICIENT and TRAIN outputs stay byte-identical.",
+          "normalContextGuard": "N04 contexts (PCC dynamic limit correctly executed) produce no C04 candidates before the matrix, so the matrix cannot fire there; the pcc_export/import_power_limit_kw columns are absent across all 525600 TRAIN rows and are deliberately not used by the matrix.",
+          "limitation": "The 1 kW channel floors are non-zero presence checks, not tuned margins; held-out data pinning both channels exactly would need the enterprise Q2 answer to adjudicate the CONSTRAINED semantics."
+        },
+        "heldOutPolicy": "Validation is acceptance-only and does not set C04 thresholds or matrix parameters."
+      }
     },
     "C05": {
       "aggregation": {
@@ -244,6 +259,9 @@
       "reserveTargetMinimumKwh": 350.0,
       "forecastHorizonMinutes": 30.0,
       "forecastSocRateWindowRows": 15,
+      "execurabilityBessChannelFloorKw": 1.0,
+      "execurabilitySocChannelFloorPct": 0.5,
+      "execurabilityConstrainedConfidence": 0.75,
       "calibration": {
         "split": "public_train",
         "competitionPackageVersion": "public-v4.0",
@@ -258,6 +276,13 @@
           "thresholdsRationale": "The 15-row (15-minute) rate window matches the one-minute sampling contract and matches the C05 forecast window; 30 minutes is the confirmation horizon, sized so TRAIN events' post-jump sustained rows remain inside the window while EMS corrective reversals inside N07 contexts need a full horizon to be excluded.",
           "trainEvidence": "All 40 public TRAIN C07 intervals satisfied a static branch on their first inclusive row (jump-type onset: deviation within +-8 pct across the preceding 120 minutes, then -35..-45 pct or +8..+16 pct at the official start), so the forecast branch is a pure fallback that leaves TRAIN outputs byte-identical.",
           "normalContextGuard": "Every TRAIN N07 context carries reserve 250-300 kWh, below the 350 kWh gate shared with the static shortfall branch, so the forecast branch cannot fire there; the one deteriorating N07 trajectory (context ending at deviation -8.94 pct, ~0.13 pct/min) was verified to stay excluded by this gate alone."
+        },
+        "execurabilityMatrix": {
+          "design": "T07/A-4 three-branch executability matrix applied per candidate row on both static and forecast paths: SUFFICIENT_HEADROOM keeps the candidate at full confidence when either direction-matched corrective channel has headroom (CHARGE_HEADROOM: BESS charge channel, or SOC upper boundary distance to 90 pct; DISCHARGE_RESERVE: BESS discharge channel, or SOC lower boundary distance to 20 pct); a channel with missing data is ignored and the remaining channels decide; CONSTRAINED_HEADROOM keeps the candidate at 0.75 confidence when all available channels are pinned; UNVERIFIABLE_DATA drops the candidate to observation when every channel's data is missing.",
+          "constraintSource": "SOC 20-90 pct and BESS 500 kW limits via H2Constraints, frozen from the official control-constraints table in h2-vocabulary.",
+          "trainEvidence": "TRAIN C07 event rows hold the BESS at a constant 250 kW corrective command, leaving at least 250 kW on the opposite-direction channel, and event SOC sits far from the violated boundary, so every TRAIN row grades SUFFICIENT and TRAIN outputs stay byte-identical (40/40 events, FN 0, FP 0).",
+          "normalContextGuard": "N07 contexts produce no C07 candidates (reserve below the 350 kWh gate) before the matrix, so the matrix cannot fire there.",
+          "limitation": "The 1 kW / 0.5 pct channel floors are non-zero presence checks, not tuned margins; held-out data pinning both channels exactly would need the enterprise Q2 answer to adjudicate the CONSTRAINED semantics."
         },
         "finding": "Official C07 intervals are jump-onset sustained-recovery windows: BESS holds a constant 250 kW corrective command (negative for CHARGE_HEADROOM, positive for DISCHARGE_RESERVE) throughout, so onset cannot precede the official start and 'early warning' means confirming well before deep-discharge consequences while keeping lead_time_minutes>0.",
         "limitation": "The reserve gate that separates events from N07 contexts is empirical TRAIN-only calibration; held-out contexts combining reserve >=350 kWh with a deteriorating-but-benign SOC trend would need the enterprise Q2 answer to adjudicate.",
