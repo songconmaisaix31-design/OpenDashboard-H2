@@ -1,4 +1,4 @@
-# H2 Sentinel Submission Package
+# H2 Sentinel P2 B-Line Submission Package
 
 ## Current evidence status
 
@@ -7,18 +7,25 @@ does not issue equipment commands. Every operational recommendation requires
 human confirmation, and local actor labels are unverified attribution rather
 than authenticated identity.
 
-The integrated P1 baseline provides official Q01-Q10 behavior, deterministic
-Chinese reports, append-only human review, review-audit export, and an exact
-review-free 16-column submission. Lane C provides official-data evaluation,
-overfit, submission-checker, offline-smoke, and scripted-demo tooling plus
-fail-closed fixtures.
+The integrated P1 baseline remains frozen: official Q01-Q10 behavior,
+deterministic Chinese reports, append-only human review, review-audit export,
+and an exact review-free 16-column submission. Reviewed P2 commits add bounded
+session upload, bounded NLU, optional StepFun restatement, dedicated C01-C07
+charts, a read-only doctor, check-all, checker hardening, and provider-free CI.
+See the implementation record for the exact commit chain and unresolved
+runtime gate.
 
 The official package was not modified. A bounded read-only check found that
 all data/material entries plus the workbook match, 21 of 24 total manifest
 entries; the three top-level requirement/README Markdown or DOCX files differ.
 No final official metric, generated slice, retained screenshot, measured
-receipt, organizer result, deployment, remote CI result, or final candidate
-SHA is included or claimed.
+receipt, organizer result, deployment, clean-machine result, remote CI result,
+or final candidate SHA is included or claimed. Full-file session routes and
+strict `H2_STREAMING_IMPORT_ENABLED=true` runtime opt-in are integrated. A
+coordinator-reported local standard-launcher HTTP run imported the exact
+236991870-byte training file in 29 chunks with 525,600 rows, finalized the
+session, and passed quality; browser file-picker and all external evidence
+classes remain pending.
 
 ## Evidence classes
 
@@ -47,6 +54,8 @@ SHA is included or claimed.
 
 ## Contents
 
+- [P2 B-line operator runbook](OPERATOR_RUNBOOK.md)
+- [P2 B-line implementation record](../../docs/competition/h2-sentinel/P2-B-IMPLEMENTATION-RECORD.md)
 - [Product and architecture narrative](PRODUCT_AND_ARCHITECTURE.md)
 - [Ten-page project narrative](TEN_PAGE_PROJECT_NARRATIVE.md)
 - [Three-minute demo and fallback script](DEMO_SCRIPT.md)
@@ -57,8 +66,10 @@ SHA is included or claimed.
 - [Runtime evidence checklist](RUNTIME_EVIDENCE_CHECKLIST.md)
 - [Worker handoff](HANDOFF.md)
 
-## Lane C validation commands
+## Current validation commands
 
+    node scripts/h2-sentinel/doctor.mjs --mode local
+    node scripts/h2-sentinel/check-all.mjs
     node --test "tests/h2-sentinel/contract/*.test.mjs"
     npm run h2:qa
     npm run h2:launcher:test

@@ -1,4 +1,4 @@
-# H2 Sentinel P1 Runtime Evidence Checklist
+# H2 Sentinel P2 B-Line Runtime Evidence Checklist
 
 ## Candidate record
 
@@ -33,9 +33,16 @@
 | R14 | Desktop and iPhone 12 rendering | Visual QA locally evidenced across all six Fixture routes; Local empty/loading/error theme tokens were corrected | Repeat final-SHA visual QA for overflow, clipping, overlap, scrolling, theme states, and official field identities; screenshots and HTTP success remain bounded local evidence. |
 | R15 | Required project checks | Pre-documentation baseline passed: 132 repository; 117 H2; 75 contract QA; 5 static QA; 6 assembled QA; 9 launcher; 169 Python; Ruff; Mypy on 45 files; 686-module build; 9-scenario smoke | Coordinator reruns the exact final gate, package wording/evidence boundaries, Markdown validation, ignored-output checks, and changed-path/diff audits. |
 | R16 | Organizer result, hidden testing, deployment, production, clean-machine, and remote CI | Not evidenced; all corresponding claims remain false | Require separate authoritative evidence. Do not derive an official D01-D13 completion score because no authoritative mapping or weight table was supplied. |
+| R17 | Full training-file session import | Local standard-launcher HTTP run passed with provider environment cleared: 236991870 bytes, 29 chunks, 525,600 rows, exact SHA-256, finalized session, and passed quality | Retain this as bounded local HTTP evidence; separately capture browser file-picker and require independent evidence for clean machine, organizer, production, remote CI, or official score. |
+| R18 | Bounded NLU and control refusal | Backend/Web source and focused tests reported | Probe Q01-Q10 paraphrases, ambiguity, overlength, stale context, and equipment-control requests in final integrated Local runtime. |
+| R19 | Optional StepFun restatement | Strict opt-in, bounded payload, validation, disclosure, and fallback are implemented; no live-provider evidence | Verify deterministic off/fallback locally. Treat any authorized live-provider run as separate external evidence and never record a secret. |
+| R20 | C01-C07 dedicated charts | Canonical requirements and Web configurations are implemented; final integrated visual QA pending | Inspect every code plus missing-series fallback at desktop and 390x844, including signs, units, overflow, and no fabricated measurements. |
+| R21 | Doctor/check-all/CI | Source and worker checks reported | Run doctor and check-all on final SHA; record clean-machine and named remote CI only after those environments actually pass. |
 
-## Lane C command set
+## Current documentation-lane command set
 
+    node scripts/h2-sentinel/doctor.mjs --mode local
+    node scripts/h2-sentinel/check-all.mjs
     node --test "tests/h2-sentinel/contract/*.test.mjs"
     npm run h2:qa
     npm run h2:launcher:test

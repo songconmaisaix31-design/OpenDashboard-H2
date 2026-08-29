@@ -1,7 +1,8 @@
-# H2 Sentinel P1 Project Narrative
+# H2 Sentinel P2 B-Line Project Narrative
 
-This narrative describes the P1 design and the evidence still required from the
-final integrated commit. It does not claim an official-data run, timed pass,
+This narrative describes the frozen P1 design, P2 B-line additions, and the
+evidence still required from the final integrated commit. It does not claim an
+official-data run, timed pass,
 full validation, hidden test, organizer result, deployment, production
 readiness, remote CI, or committed screenshots.
 
@@ -28,9 +29,11 @@ derived, and what still requires judgment.
 ## Page 3 — Official assistant questions
 
 P1 standardizes the official Q01 through Q10 identifiers and exact Chinese
-prompts. Answers are deterministic and evidence-cited whether the compatibility
-LLM flag is true or false. Event-specific questions reject missing or mismatched
-context instead of silently returning a generic answer.
+prompts. P2 adds bounded NLU that can only select those questions or refuse.
+Optional StepFun output is a labeled restatement of bounded deterministic text
+and citation IDs; it cannot alter authoritative facts or actions and always has
+an offline deterministic fallback. Event-specific questions reject missing or
+mismatched context instead of silently returning a generic answer.
 
 Q09 generates one matching Chinese event report. Every answer explicitly
 refuses direct control authority.
@@ -98,9 +101,14 @@ remain separate evidence gates.
 
 ## Page 10 — Current truth and release boundary
 
-W1, W2, P1-W3 QA, and the provenance correction are integrated. The assembled
-suite now passes all six groups, and the coordinator completed the required
-local project checks plus primary Fixture visual review.
+W1, W2, P1-W3 QA, and the provenance correction are integrated. Reviewed P2
+commits add upload sessions, bounded NLU, optional rendering, C01-C07 charts,
+and delivery checks. Strict `H2_STREAMING_IMPORT_ENABLED=true` runtime opt-in
+is integrated while the default stays disabled; final integrated P2 checks and
+browser file-picker inspection remain pending. The coordinator reported a
+successful local standard-launcher HTTP import of the exact full training file:
+29 chunks, 525,600 rows, finalized session, and passed quality. This is not
+clean-machine, organizer, production, remote-CI, or official-score evidence.
 
 The official package received a bounded read-only integrity check, not an
 official runtime evaluation: all data/material entries plus the workbook
