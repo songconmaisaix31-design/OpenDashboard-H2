@@ -22,6 +22,8 @@ from h2_analytics.detection import (
     filter_c03_candidates,
     sanitized_fixture_c03_candidates,
 )
+from h2_analytics.detection.ml_verification import ml_supplemental_candidates
+from h2_analytics.settings import H2_ML_ENABLED
 from h2_analytics.diagnosis import DiagnosisBuilder
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.events import EventAggregator
@@ -131,18 +133,31 @@ class AnalyticsService:
                 details=tuple(imported.quality["blockingReasons"]),
             )
         candidates = self._detector.detect(imported.rows)
+        fixture_candidates = (
+            sanitized_fixture_c03_candidates(
+                manifest=imported.manifest,
+                rows=imported.rows,
+            )
+            if self._uses_default_detector
+            else ()
+        )
+        if self._uses_default_detector and _ml_verification_enabled():
+            # P1-9c ML 校验层（ADR-001 灰度混合）：规则为主、ML 只补充——
+            # 规则候选原样保留，补充候选与规则/fixture 候选 (row, code, subtype) 排他。
+            candidates = (
+                *candidates,
+                *fixture_candidates,
+                *ml_supplemental_candidates(
+                    imported.rows,
+                    (*candidates, *fixture_candidates),
+                ),
+            )
+        else:
+            candidates = (*candidates, *fixture_candidates)
         if imported.manifest["mode"] == "LIVE_ANALYSIS":
             candidates = filter_c03_candidates(
                 rows=imported.rows,
                 candidates=candidates,
-            )
-        if self._uses_default_detector:
-            candidates = (
-                *candidates,
-                *sanitized_fixture_c03_candidates(
-                    manifest=imported.manifest,
-                    rows=imported.rows,
-                ),
             )
         windows = self._aggregator.aggregate(
             rows=imported.rows,
@@ -462,6 +477,16 @@ def streaming_import_enabled_from_environment(
     if value not in {"true", "false"}:
         raise RuntimeError("H2_STREAMING_IMPORT_ENABLED must be true or false.")
     return value == "true"
+
+
+def _ml_verification_enabled() -> bool:
+    """P1-9c 灰度开关：settings 预置 False；env ``H2_ML_ENABLED=true`` 为灰度
+    评测通道（evaluate.mjs → launcher → ``uv run`` 全链 env 透传，与
+    ``H2_LLM_ENABLED`` 同式）。默认（无 env、常量 False）= 纯规则模式。
+    """
+    if os.environ.get("H2_ML_ENABLED", "").strip().lower() == "true":
+        return True
+    return H2_ML_ENABLED
 
 
 def _plus_one_second(value: str) -> str:
