@@ -27,7 +27,7 @@
 | T08 | [A2] | P1-9a：特征工程 `tools/features.py` | T04 | 特征覆盖清单 + 单测 | ✓ A2 完成：六族 69 特征（全因果窗防泄漏，docstring 清单+--catalog），纯标准库，单测 23/23 + 真实数据冒烟过；tools/tests/ 目录为领土字面扩展已备案，feat/a2-evalml @ 652696a |
 | T09 | [A2] | P1-9b：训练 + 3 seed + MODELS_REGISTRY 登记 | T08 | 训练报告落盘 | ✓ A2 完成：h2-lgbm-row-v1 三模型（validation macro-F1 3×1.0，rolling 首折 0.8）+ Registry 五要素登记 + 1.0 成因消融在案；tools/tests 39/39；T11 依赖解除，feat/a2-evalml @ 4b3ea51 |
 | T10 | [A3] | P0-7：影响量化 7/7 四元组 + 验证集对账表 | T04（宜后） | A-5 门禁 | ✓ A3 完成：TRAIN 280/280 + VALIDATION 70/70 对账全绿，C01/C02 修订 v2，feat/a3-diag @ c05d419 |
-| T11 | [A1] | P1-9c：`service.py` 接线 + 灰度验证 + IF-3 口径交付 B | T09, T10 | 灰度五条全绿 → D12 go/no-go | ☐ |
+| T11 | [A1] | P1-9c：`service.py` 接线 + 灰度验证 + IF-3 口径交付 B | T09, T10 | 灰度五条全绿 → D12 go/no-go | ✓ A1 完成：ML 校验层接线（规则为主只补充，同键排他）；灰度五条全绿——off TRAIN byte-equal+F1=0.9718 逐位零回退、on F1 同值零新事件（rawCount 75→91 证 ML 真实执行、merged 72=72）、哨兵 on 0.012 绿、N01-N07 77 窗 0 FP、特征/方差引用 registry；IF-3 口径已产出待 I4 交付，feat/a1-t11-ml @ edcfab3 |
 | T12 | [A3] | P1-8：根因数据驱动文本 + IF-2 冻结 | T10 | A-6 门禁 | ✓ A3 完成：五模式归因+引用回溯断言全过，基线 TRAIN 17.9%/VAL 15.7%（数据上限），feat/a3-diag @ e3f62e7 |
 | T13 | [A3] | 每个 M-Gate 出评审报告 `docs/reviews/gate-<n>.md` + 校准记录块补全督促 | T02 起 | 报告与门禁证据齐备 | ½ gate-1 已出具：🟢 放行（A1→A2→A3），独立复跑+合并预演全绿，风险 5 项见 docs/reviews/gate-1.md |
 | T14 | [ALL] | D14 联合冻结：clean commit 重生成全部 ignored 证据 | T01-T13 | tag `gate-s6`；证据包归档 | ☐ |
