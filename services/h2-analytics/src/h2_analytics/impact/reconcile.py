@@ -235,7 +235,7 @@ def _accumulate_rows(path: Path, events: list[_ReconcileEvent]) -> int:
             for name in _RECONCILE_FIELDS:
                 raw = row.get(name)
                 try:
-                    values[name] = None if raw in (None, "") else float(raw)
+                    values[name] = None if raw in (None, "") else float(str(raw))
                 except ValueError:
                     values[name] = None
             for event in active:
