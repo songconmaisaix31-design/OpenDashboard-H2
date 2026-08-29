@@ -15,6 +15,8 @@ from uuid import uuid4
 from h2_analytics.ingestion.csv_loader import CsvImportError, DatasetLoader, _validate_filename
 from h2_analytics.models import ImportedDataset
 from h2_analytics.settings import (
+    MAX_ACTIVE_STREAMING_CSV_SESSIONS,
+    MAX_RETAINED_STREAMING_CSV_SESSIONS,
     MAX_STREAMING_CSV_BYTES,
     STREAMING_CSV_CHUNK_BYTES,
     STREAMING_CSV_SESSION_TTL_SECONDS,
@@ -51,10 +53,14 @@ class CsvUploadSessionManager:
         clock: Callable[[], datetime] | None = None,
         root: Path | None = None,
         ttl_seconds: int = STREAMING_CSV_SESSION_TTL_SECONDS,
+        max_active_sessions: int = MAX_ACTIVE_STREAMING_CSV_SESSIONS,
+        max_retained_sessions: int = MAX_RETAINED_STREAMING_CSV_SESSIONS,
     ) -> None:
         self._loader = loader or DatasetLoader()
         self._clock = clock or (lambda: datetime.now(UTC))
         self._ttl = timedelta(seconds=ttl_seconds)
+        self._max_active_sessions = max_active_sessions
+        self._max_retained_sessions = max_retained_sessions
         self._root = root or Path(tempfile.mkdtemp(prefix="h2-sentinel-upload-"))
         self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
         try:
@@ -99,6 +105,20 @@ class CsvUploadSessionManager:
                         "The requestId is already bound to a different upload request.",
                     )
                 return self._public_session(self._sessions[session_id])
+
+            active_sessions = sum(
+                session.status == "open" for session in self._sessions.values()
+            )
+            if active_sessions >= self._max_active_sessions:
+                raise CsvImportError(
+                    "upload.active_session_limit",
+                    "The active upload session limit has been reached.",
+                )
+            if len(self._sessions) >= self._max_retained_sessions:
+                raise CsvImportError(
+                    "upload.retained_session_limit",
+                    "The retained upload session limit has been reached.",
+                )
 
             now = _utc(self._clock())
             session_id = f"upload-{uuid4().hex}"
@@ -261,6 +281,7 @@ class CsvUploadSessionManager:
                 filename=session.filename, path=session.path
             )
             session.status = "finalized"
+            session.expires_at = _utc(self._clock()) + self._ttl
             session.finalize_request = canonical
             finalized_receipt: dict[str, Any] = {
                 "schemaVersion": 1,
@@ -279,18 +300,38 @@ class CsvUploadSessionManager:
 
     def cleanup_expired(self) -> int:
         now = _utc(self._clock())
-        removed = 0
         with self._lock:
-            for session in self._sessions.values():
-                if session.status == "open" and now >= session.expires_at:
-                    session.status = "expired"
-                    session.path.unlink(missing_ok=True)
-                    removed += 1
-        return removed
+            expired_ids = {
+                session_id
+                for session_id, session in self._sessions.items()
+                if now >= session.expires_at
+            }
+            for session_id in expired_ids:
+                self._sessions.pop(session_id).path.unlink(missing_ok=True)
+            self._create_requests = {
+                request_id: binding
+                for request_id, binding in self._create_requests.items()
+                if binding[1] not in expired_ids
+            }
+            self._chunk_requests = {
+                request_id: binding
+                for request_id, binding in self._chunk_requests.items()
+                if binding[0][0] not in expired_ids
+            }
+            self._finalize_requests = {
+                request_id: request
+                for request_id, request in self._finalize_requests.items()
+                if request[0] not in expired_ids
+            }
+            return len(expired_ids)
 
     def close(self) -> None:
         with self._lock:
             shutil.rmtree(self._root, ignore_errors=True)
+            self._sessions.clear()
+            self._create_requests.clear()
+            self._chunk_requests.clear()
+            self._finalize_requests.clear()
 
     def _session(self, session_id: str) -> _UploadSession:
         try:

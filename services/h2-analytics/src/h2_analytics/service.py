@@ -14,6 +14,7 @@ from h2_analytics.assistant import (
     StepFunRenderer,
     resolve_intent,
 )
+from h2_analytics.assistant.llm_client import llm_rendering_config_from_environment
 from h2_analytics.detection import (
     RowDetector,
     RuleRowDetector,
@@ -107,6 +108,10 @@ class AnalyticsService:
 
     def cleanup_expired_uploads(self) -> int:
         return self._uploads.cleanup_expired() if self._uploads is not None else 0
+
+    def close(self) -> None:
+        if self._uploads is not None:
+            self._uploads.close()
 
     def list_datasets(self) -> list[dict[str, Any]]:
         return [
@@ -437,6 +442,10 @@ class AnalyticsService:
         if self._uploads is None:
             self._uploads = CsvUploadSessionManager(loader=self._loader)
         return self._uploads
+
+
+def create_runtime_service() -> AnalyticsService:
+    return AnalyticsService(llm_config=llm_rendering_config_from_environment())
 
 
 def _plus_one_second(value: str) -> str:

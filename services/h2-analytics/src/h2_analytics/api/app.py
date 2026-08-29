@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -26,7 +27,7 @@ from h2_analytics.api.models import (
 from h2_analytics.api.route_map import ROUTE_MAP
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.ingestion import CsvImportError
-from h2_analytics.service import AnalyticsService
+from h2_analytics.service import AnalyticsService, create_runtime_service
 from h2_analytics.settings import (
     AGGREGATION_VERSION,
     API_NAMESPACE,
@@ -57,7 +58,9 @@ _ERROR_STATUS = {
     "review.invalid_transition": 409,
     "review.note_required": 422,
     "upload.finalize_conflict": 409,
+    "upload.active_session_limit": 429,
     "upload.idempotency_conflict": 409,
+    "upload.retained_session_limit": 429,
     "upload.retry_mismatch": 409,
     "upload.session_expired": 410,
     "upload.session_finalized": 409,
@@ -74,13 +77,22 @@ _ERROR_MESSAGE_ZH = {
 
 
 def create_app(service: AnalyticsService | None = None) -> FastAPI:
-    analytics = service or AnalyticsService()
+    analytics = service or create_runtime_service()
+
+    @asynccontextmanager
+    async def lifespan(_application: FastAPI):
+        try:
+            yield
+        finally:
+            analytics.close()
+
     application = FastAPI(
         title="H2 Sentinel Analytics",
         version=SERVICE_VERSION,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     @application.middleware("http")

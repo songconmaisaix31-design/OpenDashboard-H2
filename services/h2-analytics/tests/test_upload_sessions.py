@@ -5,7 +5,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from fastapi.testclient import TestClient
 
+from h2_analytics.api import create_app
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.ingestion import CsvImportError, CsvUploadSessionManager
 from h2_analytics.service import AnalyticsService
@@ -203,7 +205,95 @@ def test_expiry_removes_private_partial_file(valid_csv: str, tmp_path) -> None:
     assert not list(root.glob("*.part"))
     with pytest.raises(CsvImportError) as captured:
         _append(manager, session["sessionId"], content)
-    assert captured.value.code == "upload.session_expired"
+    assert captured.value.code == "upload.session_not_found"
+
+
+def test_upload_session_limits_bound_active_and_retained_sessions(
+    valid_csv: str, tmp_path
+) -> None:
+    content = valid_csv.encode()
+    active_manager = CsvUploadSessionManager(
+        root=tmp_path / "active", max_active_sessions=1
+    )
+    _create(active_manager, content)
+    with pytest.raises(CsvImportError) as active_error:
+        _create(active_manager, content, request_id="create-2")
+    assert active_error.value.code == "upload.active_session_limit"
+
+    retained_manager = CsvUploadSessionManager(
+        root=tmp_path / "retained",
+        max_active_sessions=2,
+        max_retained_sessions=1,
+    )
+    session = _create(retained_manager, content)
+    _append(retained_manager, session["sessionId"], content)
+    retained_manager.finalize(
+        request_id="finalize-1",
+        session_id=session["sessionId"],
+        total_chunks=1,
+        total_bytes=len(content),
+        content_hash=_hash(content),
+    )
+    with pytest.raises(CsvImportError) as retained_error:
+        _create(retained_manager, content, request_id="create-2")
+    assert retained_error.value.code == "upload.retained_session_limit"
+
+
+def test_expiry_purges_session_and_idempotency_mappings(valid_csv: str, tmp_path) -> None:
+    current = [datetime(2026, 8, 29, tzinfo=UTC)]
+    manager = CsvUploadSessionManager(
+        root=tmp_path / "uploads", clock=lambda: current[0], ttl_seconds=5
+    )
+    content = valid_csv.encode()
+    session = _create(manager, content)
+    _append(manager, session["sessionId"], content)
+    manager.finalize(
+        request_id="finalize-1",
+        session_id=session["sessionId"],
+        total_chunks=1,
+        total_bytes=len(content),
+        content_hash=_hash(content),
+    )
+
+    current[0] += timedelta(seconds=6)
+    assert manager.cleanup_expired() == 1
+    replacement = manager.create(
+        request_id="create-1",
+        filename="replacement.csv",
+        declared_bytes=len(content),
+        expected_content_hash=_hash(content),
+    )
+    _append(manager, replacement["sessionId"], content, request_id="chunk-1")
+    receipt, _dataset = manager.finalize(
+        request_id="finalize-1",
+        session_id=replacement["sessionId"],
+        total_chunks=1,
+        total_bytes=len(content),
+        content_hash=_hash(content),
+    )
+    assert receipt["replayed"] is False
+
+
+def test_app_shutdown_closes_upload_resources(valid_csv: str, tmp_path) -> None:
+    root = tmp_path / "uploads"
+    manager = CsvUploadSessionManager(root=root)
+    service = AnalyticsService(streaming_import_enabled=True, upload_manager=manager)
+    content = valid_csv.encode()
+    with TestClient(create_app(service), base_url="http://127.0.0.1") as client:
+        response = client.post(
+            "/api/v1/h2-sentinel/ingest/sessions",
+            json={
+                "schemaVersion": 1,
+                "requestId": "create-shutdown",
+                "filename": "train.csv",
+                "declaredBytes": len(content),
+                "expectedContentHash": _hash(content),
+            },
+        )
+        assert response.status_code == 200
+        assert root.exists()
+        assert list(root.glob("*.part"))
+    assert not root.exists()
 
 
 def test_racing_first_chunks_cannot_corrupt_session(valid_csv: str, tmp_path) -> None:

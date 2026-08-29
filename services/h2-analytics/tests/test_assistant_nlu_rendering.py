@@ -3,6 +3,8 @@ from __future__ import annotations
 import pytest
 
 from h2_analytics.assistant import LlmRenderingConfig, StepFunRenderer, resolve_intent
+from h2_analytics.assistant.llm_client import llm_rendering_config_from_environment
+from h2_analytics.api import create_app
 from h2_analytics.service import AnalyticsService
 
 _MATCH_CASES = [
@@ -137,7 +139,7 @@ def test_renderer_accepts_only_bounded_restatement(valid_csv: str) -> None:
             "choices": [
                 {
                     "message": {
-                        "content": "依据现有证据，所有建议仍须人工确认；限制是不能自动形成控制命令。"
+                        "content": "依据现有证据，所有建议仍须人工确认；限制是只能用于诊断参考。"
                     }
                 }
             ]
@@ -163,7 +165,7 @@ def test_ask_applies_rendering_without_changing_citations(valid_csv: str) -> Non
             "choices": [
                 {
                     "message": {
-                        "content": "依据当前证据，所有建议均须人工确认；证据限制不支持设备控制。"
+                        "content": "依据当前证据，所有建议均须人工确认；证据限制仅支持诊断参考。"
                     }
                 }
             ]
@@ -249,3 +251,128 @@ def test_renderer_timeout_falls_back_deterministically(valid_csv: str) -> None:
     assert fallback["sections"] == deterministic["sections"]
     assert fallback["citations"] == deterministic["citations"]
     assert fallback["provenance"]["rendererVersion"].endswith(":timeout")
+
+
+def test_llm_environment_requires_exact_opt_in_and_redacts_secret() -> None:
+    class DisabledEnvironment(dict[str, str]):
+        def get(self, key: str, default: str | None = None) -> str | None:
+            if key != "H2_LLM_ENABLED":
+                raise AssertionError("disabled configuration must not read provider values")
+            return super().get(key, default)
+
+    disabled = llm_rendering_config_from_environment(
+        DisabledEnvironment({"H2_LLM_ENABLED": "TRUE"})
+    )
+    assert disabled == LlmRenderingConfig()
+
+    secret = "test-secret-that-must-not-appear"
+    enabled = llm_rendering_config_from_environment(
+        {
+            "H2_LLM_ENABLED": "true",
+            "STEPFUN_API_KEY": secret,
+            "STEPFUN_MODEL": "step-test",
+        }
+    )
+    assert enabled.enabled is True
+    assert enabled.model == "step-test"
+    assert secret not in repr(enabled)
+
+    with pytest.raises(RuntimeError) as captured:
+        llm_rendering_config_from_environment({"H2_LLM_ENABLED": "true"})
+    assert "STEPFUN_API_KEY" in str(captured.value)
+    assert secret not in str(captured.value)
+
+
+def test_create_app_wires_environment_only_for_default_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def configured() -> LlmRenderingConfig:
+        nonlocal calls
+        calls += 1
+        return LlmRenderingConfig()
+
+    monkeypatch.setattr(
+        "h2_analytics.service.llm_rendering_config_from_environment", configured
+    )
+    create_app()
+    assert calls == 1
+    create_app(AnalyticsService())
+    assert calls == 1
+
+
+def test_renderer_restricts_provider_to_official_endpoint(valid_csv: str) -> None:
+    answer = _answer(valid_csv)
+    calls: list[str] = []
+
+    def transport(url, *_args):
+        calls.append(url)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "依据现有证据，所有建议仍须人工确认；限制是仅供诊断参考。"
+                    }
+                }
+            ]
+        }
+
+    invalid_endpoints = (
+        "http://api.stepfun.com/v1/chat/completions",
+        "https://api.stepfun.com.evil.test/v1/chat/completions",
+        "https://api.stepfun.com/v1/chat/completions/../other",
+        "https://api.stepfun.com/v1/chat/completions?target=other",
+    )
+    for endpoint in invalid_endpoints:
+        result = StepFunRenderer(
+            LlmRenderingConfig(
+                enabled=True,
+                api_key="test-key",
+                model="test-model",
+                base_url=endpoint,
+            ),
+            transport=transport,
+        ).render(deterministic_answer=answer, requested=True)
+        assert result["status"] == "disabled"
+        assert result["reason"] == "policy_disabled"
+    assert calls == []
+
+    result = StepFunRenderer(
+        LlmRenderingConfig(
+            enabled=True, api_key="test-key", model="test-model"
+        ),
+        transport=transport,
+    ).render(deterministic_answer=answer, requested=True)
+    assert result["status"] == "rendered"
+    assert calls == ["https://api.stepfun.com/v1/chat/completions"]
+
+
+@pytest.mark.parametrize(
+    "unsafe_text",
+    [
+        "依据证据，系统下发设备指令，仍须人工确认。",
+        "依据证据，设备指令由系统下发，仍须人工确认。",
+        "依据证据，本服务不下发指令，但系统可远程控制开机，仍须人工确认。",
+        "依据证据，平台将启停设备，仍须人工确认。",
+        "依据证据，设备将被关机，仍须人工确认。",
+        "依据证据，助手可修改设定，仍须人工确认。",
+        "依据证据，平台会切换运行模式，仍须人工确认。",
+        "依据证据，系统可以直接控制设备，仍须人工确认。",
+        "依据证据，系统能够自动控制设备，仍须人工确认。",
+        "依据证据，平台将调功率，仍须人工确认。",
+    ],
+)
+def test_renderer_fails_closed_on_equipment_control_language(
+    valid_csv: str, unsafe_text: str
+) -> None:
+    answer = _answer(valid_csv)
+    renderer = StepFunRenderer(
+        LlmRenderingConfig(enabled=True, api_key="test-key", model="test-model"),
+        transport=lambda *_args: {
+            "choices": [{"message": {"content": unsafe_text}}]
+        },
+    )
+    result = renderer.render(deterministic_answer=answer, requested=True)
+    assert result["status"] == "fallback"
+    assert result["reason"] == "invalid_output"

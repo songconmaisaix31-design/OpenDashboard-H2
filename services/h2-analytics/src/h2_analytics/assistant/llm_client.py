@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import socket
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -18,17 +20,37 @@ Transport = Callable[[str, bytes, dict[str, str], float], dict[str, Any]]
 _NUMBER = re.compile(r"(?<![A-Za-z])[-+]?\d+(?:\.\d+)?")
 _CITATION = re.compile(r"citation-[A-Za-z0-9_-]+")
 _UNSAFE_CONTROL = re.compile(
-    r"(?:系统|平台|模型|助手).{0,10}(?:可|能|将|会|已经|已).{0,8}(?:下发|控制|启停|修改设定|切换模式)"
+    r"(?:下发|启停|开机|关机|修改.{0,4}设定|切换.{0,4}模式|控制|调(?:整)?功率|设备(?:指令|命令))"
 )
 
 
 @dataclass(frozen=True, slots=True)
 class LlmRenderingConfig:
     enabled: bool = False
-    api_key: str | None = None
+    api_key: str | None = field(default=None, repr=False)
     model: str | None = None
     base_url: str = H2_LLM_BASE_URL
     timeout_seconds: float = H2_LLM_TIMEOUT_SECONDS
+
+
+def llm_rendering_config_from_environment(
+    environ: Mapping[str, str] | None = None,
+) -> LlmRenderingConfig:
+    environment = os.environ if environ is None else environ
+    if environment.get("H2_LLM_ENABLED") != "true":
+        return LlmRenderingConfig()
+    api_key = environment.get("STEPFUN_API_KEY")
+    model = environment.get("STEPFUN_MODEL")
+    if not api_key or not model:
+        raise RuntimeError(
+            "H2_LLM_ENABLED=true requires STEPFUN_API_KEY and STEPFUN_MODEL."
+        )
+    return LlmRenderingConfig(
+        enabled=True,
+        api_key=api_key,
+        model=model,
+        base_url=environment.get("H2_LLM_BASE_URL", H2_LLM_BASE_URL),
+    )
 
 
 class StepFunRenderer:
@@ -55,7 +77,7 @@ class StepFunRenderer:
             return {**base, "status": "disabled", "reason": "policy_disabled"}
         if not self._config.api_key or not self._config.model:
             return {**base, "status": "disabled", "reason": "not_configured"}
-        if not self._config.base_url.startswith("https://"):
+        if self._config.base_url != H2_LLM_BASE_URL:
             return {**base, "status": "disabled", "reason": "policy_disabled"}
 
         source_text = "\n".join(
