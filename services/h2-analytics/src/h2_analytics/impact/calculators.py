@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import statistics
 from dataclasses import dataclass
 
 from h2_analytics import vocabulary
@@ -9,9 +8,17 @@ from h2_analytics.events import EventWindow
 from h2_analytics.models import DataRow
 
 _ELZ_IDS = ("1", "2", "3")
-_ELZ_POWER_ACTUAL = tuple(f"elz{index}_power_actual_kw" for index in _ELZ_IDS)
-_ELZ_POWER_CMD = tuple(f"elz{index}_power_cmd_kw" for index in _ELZ_IDS)
+# 内部设备 ID（ELZ01/ELZ02/ELZ03）→ 时序列前缀（elz1/elz2/elz3）的映射，
+# 供 C02 受影响设备过滤使用（口径见 impact-formulas.json classes.C02）。
+_ELZ_ID_TO_INDEX = {"ELZ01": "1", "ELZ02": "2", "ELZ03": "3"}
 _IMPACT_CONFIG = vocabulary.impact_formulas()
+_C01_FORMULA = _IMPACT_CONFIG["classes"]["C01"]
+_C01_FORMULA_VERSION = str(_C01_FORMULA["formulaVersion"])
+_C01_SOC_TRACKING_GAIN_KW_PER_PCT = float(
+    _C01_FORMULA["socTrackingGainKwPerPct"]
+)
+_C02_FORMULA = _IMPACT_CONFIG["classes"]["C02"]
+_C02_FORMULA_VERSION = str(_C02_FORMULA["formulaVersion"])
 _C03_FORMULA = _IMPACT_CONFIG["classes"]["C03"]
 _C03_FORMULA_VERSION = str(_C03_FORMULA["formulaVersion"])
 _C03_SOC_TRACKING_GAIN_KW_PER_PCT = float(
@@ -36,8 +43,8 @@ class ImpactCalculation:
 
 
 DECLARED_IMPACT_METRICS = {
-    "C01": ("bess_extra_regulation_energy_kwh", "impact-c01-v1"),
-    "C02": ("unserved_elz_energy_kwh", "impact-c02-v1"),
+    "C01": ("bess_extra_regulation_energy_kwh", _C01_FORMULA_VERSION),
+    "C02": ("unserved_elz_energy_kwh", _C02_FORMULA_VERSION),
     "C03": ("abnormal_grid_exchange_energy_kwh", _C03_FORMULA_VERSION),
     "C04": ("pcc_power_limit_violation_energy_kwh", "impact-c04-v1"),
     "C05": ("grid_energy_quota_deviation_kwh", "impact-c05-v1"),
@@ -71,21 +78,32 @@ class ImpactCalculator:
     def _calculate_c01(
         window: EventWindow, sampling_interval_minutes: float
     ) -> ImpactCalculation:
-        values = [
-            value
-            for row in window.rows
-            if (value := row.value("bess_power_actual_kw")) is not None
-        ]
-        baseline = statistics.median(values) if values else 0.0
-        deviations = sum(abs(value - baseline) for value in values)
+        # 官方口径复核（impact-c01-v2）：参考基线储能功率 = SOC 跟踪反事实响应
+        # gain×(SOC−SOC目标)，与 C03 共用同一 TRAIN 冻结系数；窗内中位数旧口径
+        # 在 TRAIN 上仅 36/40 对账通过，反事实基线 40/40（见 impact-formulas.json）。
+        deviations = 0.0
+        for row in window.rows:
+            actual = row.value("bess_power_actual_kw")
+            soc = row.value("bess_soc_pct")
+            soc_target = row.value("soc_target_pct")
+            if actual is None or soc is None or soc_target is None:
+                continue
+            counterfactual = _C01_SOC_TRACKING_GAIN_KW_PER_PCT * (
+                soc - soc_target
+            )
+            deviations += abs(actual - counterfactual)
         return ImpactCalculation(
             "bess_extra_regulation_energy_kwh",
             deviations * sampling_interval_minutes / 60,
             "kWh",
-            "impact-c01-v1",
+            _C01_FORMULA_VERSION,
             (
-                "Baseline is the median BESS power within the event window.",
-                "Extra regulation energy is the integrated absolute deviation from baseline.",
+                str(_C01_FORMULA["formula"]),
+                str(_C01_FORMULA["rationale"]),
+                str(_C01_FORMULA["limitation"]),
+                str(_C01_FORMULA["heldOutPolicy"]),
+                "Rows missing BESS actual power or either SOC value contribute no estimate.",
+                str(_C01_FORMULA["roundingPolicy"]),
             ),
         )
 
@@ -93,26 +111,40 @@ class ImpactCalculator:
     def _calculate_c02(
         window: EventWindow, sampling_interval_minutes: float
     ) -> ImpactCalculation:
+        # 官方口径复核（impact-c02-v2）：只累计受影响电解槽（implicated_equipment_ids）
+        # 的正缺口；全机组旧口径在 TRAIN 上仅 23/40 对账通过，受影响设备口径 40/40
+        # （见 impact-formulas.json classes.C02）。无归因时退回全机组，避免盲测集崩溃。
+        implicated_indexes = tuple(
+            _ELZ_ID_TO_INDEX[equipment_id]
+            for equipment_id in window.implicated_equipment_ids
+            if equipment_id in _ELZ_ID_TO_INDEX
+        ) or _ELZ_IDS
         unserved: list[float] = []
         for row in window.rows:
             row_unserved = 0.0
-            for cmd_field, actual_field in zip(
-                _ELZ_POWER_CMD, _ELZ_POWER_ACTUAL, strict=True
-            ):
-                command = row.value(cmd_field)
-                actual = row.value(actual_field)
+            for index in implicated_indexes:
+                command = row.value(f"elz{index}_power_cmd_kw")
+                actual = row.value(f"elz{index}_power_actual_kw")
                 if command is None or actual is None:
                     continue
                 row_unserved += max(command - actual, 0.0)
             unserved.append(row_unserved)
+        scope_note = (
+            "Only the affected electrolyzer(s) attributed to this event are summed."
+            if implicated_indexes != _ELZ_IDS
+            else "No electrolyzer attribution was provided, so all three units are summed."
+        )
         return ImpactCalculation(
             "unserved_elz_energy_kwh",
             sum(unserved) * sampling_interval_minutes / 60,
             "kWh",
-            "impact-c02-v1",
+            _C02_FORMULA_VERSION,
             (
-                "Unserved electrolyzer energy is the positive command-actual gap.",
-                "Each included row contributes its configured sampling interval.",
+                str(_C02_FORMULA["formula"]),
+                scope_note,
+                str(_C02_FORMULA["rationale"]),
+                str(_C02_FORMULA["heldOutPolicy"]),
+                str(_C02_FORMULA["roundingPolicy"]),
             ),
         )
 

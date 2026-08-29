@@ -11,6 +11,7 @@ from h2_analytics.detection.c06 import (
 )
 from h2_analytics.detection.fixture import FIXTURE_C03_DETECTOR_VERSION
 from h2_analytics.evidence import EvidenceContext
+from h2_analytics.diagnosis.root_cause import attribute_root_cause
 from h2_analytics.events import EventWindow
 from h2_analytics.impact import ImpactCalculator
 from h2_analytics.safety import SafetyEvaluator
@@ -342,6 +343,13 @@ class DiagnosisBuilder:
         )
         identity = window.code if window.event_id.endswith("-001") else window.event_id
         recommendation_id = f"{identity}-REC-001"
+        # P1-8：根因数据驱动归因（操作日志模式映射 + IF-2 引用；无支撑回退"证据不足"）。
+        attribution = attribute_root_cause(
+            code=window.code,
+            window_start=window.start_time,
+            template=metadata["rootCause"],
+            context=self._evidence_context,
+        )
         return {
             "schemaVersion": 1,
             "eventId": window.event_id,
@@ -389,8 +397,9 @@ class DiagnosisBuilder:
                     "provenance": provenance,
                 }
             ],
-            "rootCause": metadata["rootCause"],
+            "rootCause": attribution.statement,
             "rootCauseKind": "inference",
+            "rootCauseCitations": [dict(citation) for citation in attribution.citations],
             "reviewState": "open",
             "provenance": provenance,
             "requiresHumanConfirmation": True,

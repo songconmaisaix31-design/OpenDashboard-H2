@@ -31,6 +31,7 @@ def _window(
     rows: Iterable[DataRow],
     *,
     subtype: str = "TEST_SUBTYPE",
+    implicated_equipment_ids: tuple[str, ...] = (),
 ) -> EventWindow:
     return EventWindow(
         event_id=f"{code}-20260105-001",
@@ -42,6 +43,7 @@ def _window(
         first_detection_time=_START,
         confidence=0.9,
         detector_version="test-detector-v1",
+        implicated_equipment_ids=implicated_equipment_ids,
     )
 
 
@@ -74,29 +76,48 @@ def test_every_code_reports_its_declared_metric_and_unit() -> None:
         assert calculation.assumptions, code
 
 
-def test_c01_integrates_absolute_deviation_from_the_median_baseline() -> None:
-    # Median of (100, 100, 100, 400) is 100, so only the last row deviates.
+def test_c01_integrates_deviation_from_the_train_calibrated_soc_response() -> None:
+    """官方参考基线 = SOC 跟踪反事实：gain×(SOC−SOC目标)，与 C03 同族（impact-c01-v2）。"""
+    # gain=17.892、SOC−目标=5pp → 反事实 89.46 kW；两行分别偏离 10.54 与 300 kW。
     window = _window(
         "C01",
-        [_row(index, bess_power_actual_kw=value)
-         for index, value in enumerate((100.0, 100.0, 100.0, 400.0), start=1)],
-    )
-
-    assert _calculate(window).value == pytest.approx(300.0)
-
-
-def test_c02_integrates_only_the_positive_command_gap() -> None:
-    window = _window(
-        "C02",
         [
-            # Shortfall of 200 kW on unit 1 counts.
-            _row(1, elz1_power_cmd_kw=600.0, elz1_power_actual_kw=400.0),
-            # Overshoot must not net off against the shortfall above.
-            _row(2, elz1_power_cmd_kw=300.0, elz1_power_actual_kw=500.0),
+            _row(1, bess_power_actual_kw=100.0, bess_soc_pct=45.0, soc_target_pct=40.0),
+            _row(2, bess_power_actual_kw=389.46, bess_soc_pct=45.0, soc_target_pct=40.0),
         ],
     )
 
-    assert _calculate(window).value == pytest.approx(200.0)
+    calculation = _calculate(window)
+
+    assert calculation.value == pytest.approx(310.54)
+    assert calculation.formula_version == "impact-c01-v2"
+    # 假设链必须携带公式原文（含反事实增益）与 held-out 纪律声明。
+    assert any("socTrackingGainKwPerPct" in item for item in calculation.assumptions)
+    assert any("acceptance-only" in item for item in calculation.assumptions)
+
+
+def test_c02_integrates_only_the_affected_units_positive_command_gap() -> None:
+    """官方口径只计受影响设备的正缺口（impact-c02-v2）；无归因时回退全机组。"""
+    rows = [
+        # ELZ1 缺口 200 kW（未归因到该机，不计入）；ELZ2 缺口 200 kW（计入）。
+        _row(1, elz1_power_cmd_kw=600.0, elz1_power_actual_kw=400.0,
+             elz2_power_cmd_kw=500.0, elz2_power_actual_kw=300.0),
+        # 反向超出不得与缺口净抵。
+        _row(2, elz1_power_cmd_kw=300.0, elz1_power_actual_kw=500.0,
+             elz2_power_cmd_kw=200.0, elz2_power_actual_kw=200.0),
+    ]
+    affected_only = _window("C02", rows, implicated_equipment_ids=("ELZ02",))
+    fallback_all = _window("C02", rows)
+
+    affected_calculation = _calculate(affected_only)
+    fallback_calculation = _calculate(fallback_all)
+
+    assert affected_calculation.value == pytest.approx(200.0)
+    assert affected_calculation.formula_version == "impact-c02-v2"
+    assert any("affected electrolyzer" in item for item in affected_calculation.assumptions)
+    # 回退分支：无归因时 ELZ1 行 1 缺口 200 也计入（旧全机口语义作为降级路径保留）。
+    assert fallback_calculation.value == pytest.approx(400.0)
+    assert any("all three units" in item for item in fallback_calculation.assumptions)
 
 
 def test_c03_integrates_deviation_from_train_calibrated_soc_response() -> None:
@@ -305,6 +326,27 @@ def test_impact_formula_config_declares_train_calibration_and_held_out_policy() 
         assert subtype_statistics["roundedReferenceMatchCount"] == (
             subtype_statistics["eventCount"]
         )
+
+
+def test_impact_formula_config_declares_c01_c02_revision_blocks() -> None:
+    """C01/C02 修订块：TRAIN 推导、统计计数与 C03 共享增益（见 impact-formulas.json）。"""
+    config = vocabulary.impact_formulas()
+
+    c01 = config["classes"]["C01"]
+    assert c01["formulaVersion"] == "impact-c01-v2"
+    c01_stats = c01["calibrationStatistics"]
+    assert c01_stats["socTrackingBaselineWithin10PercentCount"] == c01_stats["eventCount"]
+    assert c01["socTrackingGainKwPerPct"] == config["classes"]["C03"][
+        "socTrackingGainKwPerPct"
+    ]
+    assert "acceptance-only" in c01["heldOutPolicy"]
+
+    c02 = config["classes"]["C02"]
+    assert c02["formulaVersion"] == "impact-c02-v2"
+    c02_stats = c02["calibrationStatistics"]
+    assert c02_stats["affectedOnlyScopeWithin10PercentCount"] == c02_stats["eventCount"]
+    assert c02_stats["allUnitsScopeWithin10PercentCount"] < c02_stats["eventCount"]
+    assert "acceptance-only" in c02["heldOutPolicy"]
 
 
 def test_missing_inputs_yield_zero_rather_than_raising() -> None:
