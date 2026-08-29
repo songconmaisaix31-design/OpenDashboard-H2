@@ -17,7 +17,13 @@ import {
 } from './lib/official-sources.mjs'
 import { streamOfficialTimeseriesWindow } from './lib/official-timeseries.mjs'
 import { freeLoopbackPort, requestEnvelope, startLauncher } from './lib/launcher.mjs'
-import { classifyEvents, matchEvents, mergePredictions, toInstant } from './lib/metrics.mjs'
+import {
+  classifyEvents,
+  detectionExpectationMetrics,
+  matchEvents,
+  mergePredictions,
+  toInstant,
+} from './lib/metrics.mjs'
 import {
   createGeneratedRunDirectory,
   ensureIgnoredOutputPath,
@@ -279,6 +285,12 @@ export async function evaluateOfficialData(options) {
     predictions: merged,
     graceMinutes: options.graceMinutes,
   })
+  // 官方 detection_expectation 指标（ADR-004 / api.md IF-4）：C05/C07 lead_time + 其余 5 类 10 分钟检出率
+  const detectionExpectation = detectionExpectationMetrics({
+    groundTruth,
+    matches: matching.matches,
+    withinMinutes: 10,
+  })
   const evaluatedEvents = {
     groundTruth: groundTruth.map(({ id, code, startTime, endTime }) => ({
       id,
@@ -302,7 +314,7 @@ export async function evaluateOfficialData(options) {
     throw new Error('Candidate state changed during official evaluation.')
   }
   const report = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     reportKind: 'h2_official_validation_evaluation',
     contractVersion: 'event-match-v2',
     evaluationRunId: randomUUID(),
@@ -317,6 +329,7 @@ export async function evaluateOfficialData(options) {
       matching: 'greedy one-to-one same-code interval overlap with symmetric grace',
       chunking: 'UTC calendar day; adjacent same-code predictions merge across boundaries',
       firstDetectionDelayMinutes: 'prediction first_detection_time minus ground-truth start; negative means early warning',
+      detectionExpectation: 'C05/C07 lead_time_minutes = prediction first_detection_time minus matched ground-truth start_time in minutes, target > 0; remaining five codes detection_within_10min_rate over all their ground-truth events, target 1; per ADR-004 / api.md IF-4',
       boundaryErrorMinutes: 'prediction boundary minus corresponding ground-truth boundary',
       zeroDenominatorMetrics: 'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0',
       macroAveraging: 'unweighted arithmetic mean across C01-C07 precision, recall, and f1',
@@ -359,6 +372,7 @@ export async function evaluateOfficialData(options) {
       },
       timing: matching.timing,
       classification,
+      detectionExpectation,
       macro: macroMetrics(byCodeMetrics),
       byCode: byCodeMetrics,
     },

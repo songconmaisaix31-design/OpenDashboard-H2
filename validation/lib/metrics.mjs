@@ -229,6 +229,107 @@ export function classifyEvents({ groundTruth, predictions, graceMinutes = 10 }) 
   }
 }
 
+// —— ADR-004 / api.md IF-4：官方 detection_expectation 指标（P0-5）——
+// C05/C07 测提前预警 lead_time（first_detection − GT start，目标 >0）；
+// 其余 5 类测"开始后 10 分钟内检出率"（分母 = 该 5 类全部 GT 事件，目标 1）。
+export const ADVANCE_WARNING_CODES = ['C05', 'C07']
+
+// 从单一事实源 ANOMALY_CODES 派生，避免手写 5 类清单漂移
+const WITHIN_WINDOW_CODES = ANOMALY_CODES.filter(
+  (code) => !ADVANCE_WARNING_CODES.includes(code),
+)
+
+function leadTimeSummary(advanceTruth, matchByTruthId) {
+  const perEvent = []
+  const unmatchedEventIds = []
+  let unmeasurableMatches = 0
+  for (const truth of advanceTruth) {
+    const match = matchByTruthId.get(truth.id)
+    if (match === undefined) {
+      unmatchedEventIds.push(truth.id)
+      continue
+    }
+    if (!Number.isFinite(match.firstDetectionDelayMinutes)) {
+      unmeasurableMatches += 1
+      continue
+    }
+    perEvent.push({
+      groundTruthId: truth.id,
+      code: truth.code,
+      leadTimeMinutes: match.firstDetectionDelayMinutes,
+    })
+  }
+  const values = perEvent.map(({ leadTimeMinutes }) => leadTimeMinutes)
+  const nonPositiveCount = values.filter((value) => value <= 0).length
+  return {
+    codes: ADVANCE_WARNING_CODES,
+    target: 'lead_time_minutes > 0',
+    groundTruthEvents: advanceTruth.length,
+    unmatchedEventIds,
+    unmeasurableMatches,
+    measuredEvents: values.length,
+    minMinutes: values.length === 0 ? null : Math.min(...values),
+    meanMinutes: values.length === 0
+      ? null
+      : values.reduce((total, value) => total + value, 0) / values.length,
+    maxMinutes: values.length === 0 ? null : Math.max(...values),
+    nonPositiveCount,
+    allPositive: values.length > 0 && nonPositiveCount === 0,
+    perEvent,
+  }
+}
+
+function withinWindowSummary(windowTruth, matchByTruthId, withinMinutes) {
+  let detectedWithinWindow = 0
+  const unmatchedEventIds = []
+  let unmeasurableMatches = 0
+  const overdueEventIds = []
+  for (const truth of windowTruth) {
+    const match = matchByTruthId.get(truth.id)
+    if (match === undefined) {
+      unmatchedEventIds.push(truth.id)
+      continue
+    }
+    if (!Number.isFinite(match.firstDetectionDelayMinutes)) {
+      unmeasurableMatches += 1
+      continue
+    }
+    // 负值（先于官方 start 检出）同样满足"开始后 10 分钟内发现"
+    if (match.firstDetectionDelayMinutes <= withinMinutes) detectedWithinWindow += 1
+    else overdueEventIds.push(truth.id)
+  }
+  return {
+    codes: WITHIN_WINDOW_CODES,
+    withinMinutes,
+    target: 'rate = 1',
+    groundTruthEvents: windowTruth.length,
+    unmatchedEventIds,
+    unmeasurableMatches,
+    detectedWithinWindow,
+    overdueEventIds,
+    rate: windowTruth.length === 0
+      ? null
+      : detectedWithinWindow / windowTruth.length,
+    meetsTarget: windowTruth.length === 0
+      ? null
+      : detectedWithinWindow === windowTruth.length,
+  }
+}
+
+export function detectionExpectationMetrics({ groundTruth, matches, withinMinutes = 10 }) {
+  if (!Number.isFinite(withinMinutes) || withinMinutes < 0) {
+    throw new Error('detectionExpectationMetrics requires a non-negative withinMinutes.')
+  }
+  const matchByTruthId = new Map(matches.map((match) => [match.groundTruthId, match]))
+  const advanceTruth = groundTruth.filter(({ code }) => ADVANCE_WARNING_CODES.includes(code))
+  const windowTruth = groundTruth.filter(({ code }) => WITHIN_WINDOW_CODES.includes(code))
+  return {
+    definition: 'official detection_expectation per ADR-004 / api.md IF-4; lead_time uses matched predictions only; the within-window rate counts every ground-truth event of the five codes in its denominator',
+    leadTime: leadTimeSummary(advanceTruth, matchByTruthId),
+    detectionWithinWindow: withinWindowSummary(windowTruth, matchByTruthId, withinMinutes),
+  }
+}
+
 export function mergePredictions(predictions, { gapMinutes = 2 } = {}) {
   const gapMs = gapMinutes * 60_000
   const merged = []
