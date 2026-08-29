@@ -7,7 +7,12 @@ import type {
   H2SentinelDataSource,
 } from '@opendashboard/h2-contracts'
 import { H2SentinelView } from './H2SentinelView.tsx'
-import { getH2AssistantEventRequirement } from './model/assistant.ts'
+import {
+  getH2AssistantEventRequirement,
+  submitH2AssistantFollowUp,
+  type H2AssistantDataSource,
+  type H2AssistantSubmissionResult,
+} from './model/assistant.ts'
 import { createH2ReportRequest } from './model/reporting.ts'
 import {
   createH2ReviewRequestId,
@@ -21,6 +26,7 @@ import {
 import {
   beginH2ArtifactExport,
   failH2ArtifactExport,
+  getH2AssistantModeDisplay,
   INITIAL_H2_COMMAND_STATE,
   INITIAL_H2_REVIEW_COMMAND_STATE,
   type H2CommandState,
@@ -31,8 +37,10 @@ import {
 import {
   H2_CSV_MAX_BYTES,
   H2CsvInputError,
+  h2CsvImportFailureMessage,
   hydrateH2Workspace,
   importH2CsvWorkspace,
+  importH2StreamingCsvWorkspace,
 } from './model/workspace-loader.ts'
 import {
   parseH2SentinelHash,
@@ -46,7 +54,7 @@ import './styles/hugo-stack-refactor.css'
 
 export interface H2SentinelAppProps {
   /** H6 resolves the statically reviewed H2 plugin service and injects it here. */
-  readonly dataSource: H2SentinelDataSource
+  readonly dataSource: H2AssistantDataSource
   readonly initialEventId?: string
   readonly initialRoute?: H2SentinelRoute
   readonly syncHash?: boolean
@@ -77,6 +85,8 @@ export function H2SentinelApp({
   )
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [reviewLoadAttempt, setReviewLoadAttempt] = useState(0)
+  const importAbortRef = useRef<AbortController | null>(null)
+  const assistantOperationRef = useRef(0)
 
   const hydrateWorkspace = useCallback(
     (datasets: readonly H2DatasetManifest[], dataset: H2DatasetManifest): Promise<H2Workspace> =>
@@ -86,6 +96,7 @@ export function H2SentinelApp({
 
   useEffect(() => {
     let disposed = false
+    assistantOperationRef.current += 1
     setWorkspaceState({
       status: 'loading',
       message: '正在通过注入的 H2SentinelDataSource 读取运行与事件。',
@@ -131,6 +142,16 @@ export function H2SentinelApp({
   const activeRunId = workspaceState.status === 'ready'
     ? workspaceState.workspace.run.runId
     : null
+  const assistantContextRef = useRef({
+    runId: activeRunId,
+    route: navigation.route,
+    selectedEventId,
+  })
+  assistantContextRef.current = {
+    runId: activeRunId,
+    route: navigation.route,
+    selectedEventId,
+  }
   const currentReviewTarget: H2ReviewTarget | null =
     activeRunId &&
     selectedEventId &&
@@ -186,6 +207,7 @@ export function H2SentinelApp({
     if (!syncHash || typeof window === 'undefined') return
     const handleHashChange = (): void => {
       const target = parseH2SentinelHash(window.location.hash)
+      invalidateAssistantOperation()
       setNavigation(target)
       if (target.eventId) setSelectedEventId(target.eventId)
     }
@@ -194,6 +216,7 @@ export function H2SentinelApp({
   }, [syncHash])
 
   function navigate(target: H2NavigationTarget): void {
+    invalidateAssistantOperation()
     setNavigation(target)
     if (target.eventId) setSelectedEventId(target.eventId)
     if (syncHash && typeof window !== 'undefined') {
@@ -201,7 +224,10 @@ export function H2SentinelApp({
     }
   }
 
-  async function ask(questionId: Parameters<H2SentinelDataSource['ask']>[0]['questionId']): Promise<void> {
+  async function ask(
+    questionId: Parameters<H2SentinelDataSource['ask']>[0]['questionId'],
+    allowLlmRendering = false,
+  ): Promise<void> {
     if (workspaceState.status !== 'ready' || commandState.pending) return
     const selectedEvent = selectedEventId
       ? workspaceState.workspace.events.find(({ eventId }) => eventId === selectedEventId) ?? null
@@ -212,21 +238,84 @@ export function H2SentinelApp({
       return
     }
 
-    setCommandState((current) => ({ ...current, pending: 'assistant', error: null, notice: null }))
+    const operationId = ++assistantOperationRef.current
+    setCommandState((current) => ({ ...current, pending: 'assistant', error: null, notice: null, assistantMode: null }))
     try {
       const request = selectedEvent
-        ? { runId: workspaceState.workspace.run.runId, questionId, eventId: selectedEvent.eventId, allowLlmRendering: false }
-        : { runId: workspaceState.workspace.run.runId, questionId, allowLlmRendering: false }
+        ? { runId: workspaceState.workspace.run.runId, questionId, eventId: selectedEvent.eventId, allowLlmRendering }
+        : { runId: workspaceState.workspace.run.runId, questionId, allowLlmRendering }
       const assistantAnswer = await dataSource.ask(request)
+      if (assistantOperationRef.current !== operationId) return
       setCommandState((current) => ({
         ...current,
         pending: null,
         assistantAnswer,
         ...(assistantAnswer.generatedReport ? { artifact: assistantAnswer.generatedReport } : {}),
+        assistantMode: getH2AssistantModeDisplay(assistantAnswer, allowLlmRendering),
       }))
     } catch {
+      if (assistantOperationRef.current !== operationId) return
       setCommandState((current) => ({ ...current, pending: null, error: '运行助手未能返回符合合同的确定性中文答案；没有调用外部语言模型。' }))
     }
+  }
+
+  async function submitFollowUp(
+    input: string,
+    allowLlmRendering: boolean,
+  ): Promise<H2AssistantSubmissionResult> {
+    if (workspaceState.status !== 'ready' || commandState.pending) {
+      return { status: 'stale' }
+    }
+    const operationId = ++assistantOperationRef.current
+    const snapshot = assistantContextRef.current
+    const selectedEvent = selectedEventId
+      ? workspaceState.workspace.events.find(({ eventId }) => eventId === selectedEventId) ?? null
+      : null
+    const isCurrent = (): boolean => {
+      const current = assistantContextRef.current
+      return assistantOperationRef.current === operationId &&
+        current.runId === snapshot.runId &&
+        current.route === snapshot.route &&
+        current.selectedEventId === snapshot.selectedEventId
+    }
+    setCommandState((current) => ({ ...current, pending: 'assistant', error: null, notice: null, assistantMode: null }))
+    try {
+      const result = await submitH2AssistantFollowUp({
+        allowLlmRendering,
+        dataSource,
+        event: selectedEvent,
+        events: workspaceState.workspace.events,
+        input,
+        isCurrent,
+        runId: workspaceState.workspace.run.runId,
+      })
+      if (result.status === 'stale' || !isCurrent()) return { status: 'stale' }
+      if (result.status === 'refused') {
+        setCommandState((current) => ({ ...current, pending: null, error: null }))
+        return result
+      }
+      if (result.eventId) setSelectedEventId(result.eventId)
+      setCommandState((current) => ({
+        ...current,
+        pending: null,
+        assistantAnswer: result.answer,
+        ...(result.answer.generatedReport ? { artifact: result.answer.generatedReport } : {}),
+        assistantMode: getH2AssistantModeDisplay(result.answer, allowLlmRendering),
+      }))
+      return result
+    } catch {
+      if (!isCurrent()) return { status: 'stale' }
+      const result = { status: 'refused', message: '本地语义服务暂不可用；未请求助手答案。' } as const
+      setCommandState((current) => ({ ...current, pending: null, error: null }))
+      return result
+    }
+  }
+
+  function invalidateAssistantOperation(): void {
+    assistantOperationRef.current += 1
+    setCommandState((current) => current.pending === 'assistant'
+      ? { ...current, pending: null }
+      : current)
   }
 
   async function exportArtifact(definition: ReportDefinition): Promise<void> {
@@ -338,9 +427,16 @@ export function H2SentinelApp({
       commandState.pending
     ) return
 
-    setCommandState((current) => ({ ...current, pending: 'import', error: null, notice: null }))
+    const abortController = new AbortController()
+    importAbortRef.current = abortController
+    setCommandState((current) => ({ ...current, pending: 'import', error: null, notice: null, importProgress: null }))
     try {
-      const { workspace, qualityStatus } = await importH2CsvWorkspace(dataSource, file)
+      const { workspace, qualityStatus } = file.size > H2_CSV_MAX_BYTES
+        ? await importH2StreamingCsvWorkspace(dataSource, file, {
+            signal: abortController.signal,
+            onProgress: (importProgress) => setCommandState((current) => ({ ...current, importProgress })),
+          })
+        : await importH2CsvWorkspace(dataSource, file)
       setWorkspaceState({ status: 'ready', workspace })
       setSelectedEventId(
         workspace.events.find(({ code }) => code === 'C03')?.eventId
@@ -349,15 +445,15 @@ export function H2SentinelApp({
       )
       setCommandState({
         ...INITIAL_H2_COMMAND_STATE,
-        notice: `已导入 ${workspace.run.dataset.name}；质量状态：${qualityStatus}。`,
+        notice: `已导入 ${workspace.run.dataset.name}；来源文件 ${workspace.run.dataset.sourceFilename}，SHA-256 ${workspace.run.dataset.fingerprint}；质量状态：${qualityStatus}。这是本地运行来源记录，不代表官方、组织方或生产验证。`,
       })
     } catch (error) {
       const message = error instanceof H2CsvInputError
-        ? error.code === 'too_large'
-          ? `CSV 超过 ${H2_CSV_MAX_BYTES / (1024 * 1024)} MiB 上限；未开始导入。`
-          : '只接受明确选择的 .csv 文件。'
+        ? h2CsvImportFailureMessage(error)
         : 'CSV 导入或分析失败；当前运行保持不变。'
-      setCommandState((current) => ({ ...current, pending: null, error: message }))
+      setCommandState((current) => ({ ...current, pending: null, error: message, importProgress: null }))
+    } finally {
+      if (importAbortRef.current === abortController) importAbortRef.current = null
     }
   }
 
@@ -366,15 +462,20 @@ export function H2SentinelApp({
       commandState={commandState}
       dataSource={dataSource}
       navigation={navigation}
-      onAsk={(questionId) => void ask(questionId)}
+      onAsk={(questionId, allowLlmRendering) => void ask(questionId, allowLlmRendering)}
+      onSubmitFollowUp={submitFollowUp}
       onDownload={downloadArtifact}
       onExport={(definition) => void exportArtifact(definition)}
       onImport={(file) => void importCsv(file)}
+      onCancelImport={() => importAbortRef.current?.abort()}
       onNavigate={navigate}
       onReloadReview={() => setReviewLoadAttempt((attempt) => attempt + 1)}
       onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
       onReview={(draft) => void reviewEvent(draft)}
-      onSelectEvent={setSelectedEventId}
+      onSelectEvent={(eventId) => {
+        invalidateAssistantOperation()
+        setSelectedEventId(eventId)
+      }}
       reviewState={reviewState}
       selectedEventId={selectedEventId}
       workspaceState={workspaceState}

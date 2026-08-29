@@ -38,6 +38,14 @@ Complete the judge-facing P1 layer before broader P0 convergence:
 - `.env` files are ignored and must not be read during ordinary project work.
 - Final integration requires TypeScript checks, focused H2 tests, full repository tests, Python tests, production build, diff checks, and desktop/mobile runtime inspection when available.
 
+## P2 B-Line Foundation (2026-08-29)
+
+- P2 B-line work starts from `f61f99681462195f3d73af6d797e561ba47dc839` and extends contracts additively; existing P1 Q01-Q10, Q09, review, provenance, and submission semantics remain frozen.
+- Full training-file import uses ordered, sessioned chunks with immutable idempotent retries and hash-checked finalization. The legacy import remains available; streaming import defaults off and is bounded to 256 MiB and 600,000 rows.
+- Bounded NLU may only select Q01-Q10 or refuse. Optional LLM output is a provenance-bearing presentation layer over deterministic answers and must fall back without changing evidence, safety, review, reports, or submission data.
+- Event visualization publishes C01-C07 requirements using canonical vocabulary fields and retains the evidence-series fallback when required data is unavailable.
+- The official training CSV size and SHA-256 are external verification inputs only; the file is not bundled and local checks do not establish organizer or production proof.
+
 ## P1 Integration Result (2026-08-28)
 
 - The coordinator integrated W1 contracts/backend, W2 Web/runtime behavior, P1-W3 QA and evidence tooling, and the prepared-slice provenance correction on `codex/p1-coordinator-20260828`.

@@ -1,4 +1,4 @@
-# H2 Sentinel: P1 Product and Architecture
+# H2 Sentinel: P2 B-Line Product and Architecture
 
 ## Product boundary
 
@@ -34,8 +34,11 @@ contract.
 
 The official assistant surface uses Q01 through Q10 and deterministic Chinese
 templates. Q03 and Q09 require event context; Q09 returns exactly one matching
-Chinese single-event diagnosis report. The compatibility flag for LLM rendering
-does not change the result or trigger network/model access.
+Chinese single-event diagnosis report. Local free text uses bounded NLU that
+can only select Q01-Q10 or refuse. Optional StepFun rendering is strict opt-in
+and may restate only bounded deterministic answer text and citation IDs; it
+cannot change facts, citations, safety, review, reports, or submission data.
+Failure retains the deterministic answer.
 
 Human review overlays an immutable detector event. Request IDs provide replay
 idempotency, expected revisions prevent silent concurrent overwrite, and
@@ -80,6 +83,16 @@ entries, while three top-level requirement/README Markdown or DOCX files
 differ. No official runtime artifacts or timed receipt were generated, so
 this automated result is not a claim that the primary validation demo ran.
 
+Reviewed P2 commits add session ingestion, NLU, optional rendering, C01-C07
+chart selection, and delivery tooling. Coordinator integration wires the
+routes and adapter; `40b3d391` adds strict
+`H2_STREAMING_IMPORT_ENABLED=true` runtime opt-in while retaining a disabled
+default. Full training-file claims require runtime observation rather than
+source presence alone. The coordinator reported that the standard-launcher
+HTTP path imported the exact external file
+in 29 chunks with 525,600 rows, finalized the session, and passed quality.
+Browser file-picker and external-environment evidence remain pending.
+
 ## Evidence sources
 
 - [P1 API contract](../../docs/competition/h2-sentinel/P1_API_CONTRACT.md)
@@ -88,3 +101,5 @@ this automated result is not a claim that the primary validation demo ran.
 - [P1 QA script contract](../../tests/h2-sentinel/scripts/README.md)
 - [Claims ledger](CLAIMS_LEDGER.md)
 - [Runtime evidence checklist](RUNTIME_EVIDENCE_CHECKLIST.md)
+- [P2 operator runbook](OPERATOR_RUNBOOK.md)
+- [P2 implementation record](../../docs/competition/h2-sentinel/P2-B-IMPLEMENTATION-RECORD.md)

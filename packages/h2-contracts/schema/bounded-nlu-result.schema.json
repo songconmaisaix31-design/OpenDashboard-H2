@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/bounded-nlu-result.schema.json",
+  "title": "H2NluResult",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "status", "questionId", "confidence"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "status": { "const": "matched" },
+        "questionId": {
+          "enum": ["Q01", "Q02", "Q03", "Q04", "Q05", "Q06", "Q07", "Q08", "Q09", "Q10"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "eventId": { "type": "string", "minLength": 1 },
+        "timeRange": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["startTime", "endTime"],
+          "properties": {
+            "startTime": { "type": "string", "minLength": 1 },
+            "endTime": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "status", "reason", "confidence", "allowedQuestionIds"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "status": { "const": "refused" },
+        "reason": {
+          "enum": ["input_too_long", "unsupported_intent", "ambiguous_intent", "low_confidence"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "allowedQuestionIds": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["Q01", "Q02", "Q03", "Q04", "Q05", "Q06", "Q07", "Q08", "Q09", "Q10"]
+          }
+        }
+      }
+    }
+  ]
+}

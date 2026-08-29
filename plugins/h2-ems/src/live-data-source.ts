@@ -1,9 +1,16 @@
 import type {
   H2AssistantAnswer,
   H2AssistantRequest,
+  H2CsvUploadChunkReceipt,
+  H2CsvUploadChunkRequest,
+  H2CsvUploadFinalizeReceipt,
+  H2CsvUploadFinalizeRequest,
+  H2CsvUploadSessionCreateRequest,
+  H2NluRequest,
+  H2NluResult,
   H2ReviewEventRequest,
   H2ReviewMutationReceipt,
-  H2SentinelDataSource,
+  H2StreamingCsvDataSource,
   H2SeriesRequest,
   H2SeriesResponse,
 } from '@opendashboard/h2-contracts'
@@ -12,12 +19,16 @@ import { H2EmsAdapterError } from './errors.ts'
 import {
   isAnalysisRun,
   isAssistantAnswer,
+  isCsvUploadChunkReceipt,
+  isCsvUploadFinalizeReceipt,
+  isCsvUploadSession,
   isCsvImportResult,
   isDatasetArray,
   isDatasetMode,
   isEvent,
   isEventArray,
   isQualityReport,
+  isNluResult,
   isReportArtifact,
   isSeriesResponse,
   unwrapRemoteEnvelope,
@@ -56,6 +67,9 @@ export const H2_EMS_LIVE_ROUTES = {
   mode: '/api/v1/h2-sentinel/mode',
   datasets: '/api/v1/h2-sentinel/datasets',
   importCsv: '/api/v1/h2-sentinel/datasets:import',
+  createUploadSession: '/api/v1/h2-sentinel/ingest/sessions',
+  uploadChunk: '/api/v1/h2-sentinel/ingest/sessions/{sessionId}/chunks/{chunkIndex}',
+  finalizeUpload: '/api/v1/h2-sentinel/ingest/sessions/{sessionId}/commit',
   quality: '/api/v1/h2-sentinel/datasets/quality',
   analysis: '/api/v1/h2-sentinel/datasets:analyze',
   overview: '/api/v1/h2-sentinel/runs/overview',
@@ -65,9 +79,16 @@ export const H2_EMS_LIVE_ROUTES = {
   reviewEvent: '/api/v1/h2-sentinel/runs/{runId}/events/{eventId}:review',
   series: '/api/v1/h2-sentinel/runs/series',
   assistant: '/api/v1/h2-sentinel/assistant:ask',
+  nlu: '/api/v1/h2-sentinel/assistant/nlu',
   report: '/api/v1/h2-sentinel/reports:export',
   submission: '/api/v1/h2-sentinel/submissions:export',
 } as const
+
+export interface H2NluDataSourceCapability {
+  resolveNlu(request: H2NluRequest): Promise<H2NluResult>
+}
+
+export type H2EmsLiveDataSource = H2StreamingCsvDataSource & H2NluDataSourceCapability
 
 /**
  * Creates the sole Live boundary. It is opt-in, literal-loopback-only, and
@@ -75,7 +96,7 @@ export const H2_EMS_LIVE_ROUTES = {
  */
 export function createLiveH2EmsDataSource(
   options: H2EmsLiveAdapterOptions,
-): H2SentinelDataSource {
+): H2EmsLiveDataSource {
   if (options.enabled !== true) {
     throw new H2EmsAdapterError('live_adapter_disabled', false)
   }
@@ -112,6 +133,51 @@ export function createLiveH2EmsDataSource(
           dataset.fingerprint === expectedFingerprint,
       )
     },
+    createCsvUploadSession: async (input: H2CsvUploadSessionCreateRequest) => verifyRemoteIdentity(
+      await request(H2_EMS_LIVE_ROUTES.createUploadSession, input, isCsvUploadSession),
+      (session) =>
+        session.filename === input.filename &&
+        session.declaredBytes === input.declaredBytes,
+    ),
+    uploadCsvChunk: async (
+      input: H2CsvUploadChunkRequest,
+      bytes: Uint8Array,
+    ): Promise<H2CsvUploadChunkReceipt> => {
+      if (bytes.byteLength !== input.byteLength) {
+        throw new H2EmsAdapterError('remote_response_invalid', false)
+      }
+      const route = uploadChunkRoute(input)
+      return verifyRemoteIdentity(
+        await requestBytesEnvelope(
+          baseUrl,
+          route,
+          bytes,
+          isCsvUploadChunkReceipt,
+          fetchFn,
+          requestTimeoutsMs.importCsv,
+          options.signal,
+        ),
+        (receipt) =>
+          receipt.sessionId === input.sessionId &&
+          receipt.acceptedChunkIndex === input.chunkIndex,
+      )
+    },
+    finalizeCsvUpload: async (
+      input: H2CsvUploadFinalizeRequest,
+    ): Promise<H2CsvUploadFinalizeReceipt> => verifyRemoteIdentity(
+      await request(
+        finalizeUploadRoute(input.sessionId),
+        input,
+        isCsvUploadFinalizeReceipt,
+        requestTimeoutsMs.analysis,
+      ),
+      (receipt) =>
+        receipt.sessionId === input.sessionId &&
+        receipt.totalChunks === input.totalChunks &&
+        receipt.totalBytes === input.totalBytes &&
+        receipt.contentHash === input.contentHash &&
+        receipt.result.dataset.fingerprint === input.contentHash,
+    ),
     getDataQuality: async (datasetId) => verifyRemoteIdentity(
       await request(H2_EMS_LIVE_ROUTES.quality, { datasetId }, isQualityReport),
       (quality) => quality.datasetId === datasetId,
@@ -169,6 +235,11 @@ export function createLiveH2EmsDataSource(
       }
       return answer
     },
+    resolveNlu: (input: H2NluRequest) => request(
+      H2_EMS_LIVE_ROUTES.nlu,
+      input,
+      isNluResult,
+    ),
     exportReport: async (input) => verifyReportIdentity(
       await verifyReportContentHash(
         await request(H2_EMS_LIVE_ROUTES.report, input, isReportArtifact),
@@ -242,6 +313,57 @@ async function requestEnvelope<T>(
   timeoutMs: number,
   upstreamSignal: AbortSignal | undefined,
 ): Promise<T> {
+  const init: RequestInit = payload === undefined
+    ? { method: 'GET', redirect: 'error' }
+    : {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+        redirect: 'error',
+      }
+  return requestEnvelopeWithInit(
+    baseUrl, route, init, guard, fetchFn, timeoutMs, upstreamSignal,
+  )
+}
+
+async function requestBytesEnvelope<T>(
+  baseUrl: URL,
+  route: string,
+  bytes: Uint8Array,
+  guard: (value: unknown) => value is T,
+  fetchFn: typeof fetch,
+  timeoutMs: number,
+  upstreamSignal: AbortSignal | undefined,
+): Promise<T> {
+  const body = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer
+  return requestEnvelopeWithInit(
+    baseUrl,
+    route,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/octet-stream' },
+      body,
+      redirect: 'error',
+    },
+    guard,
+    fetchFn,
+    timeoutMs,
+    upstreamSignal,
+  )
+}
+
+async function requestEnvelopeWithInit<T>(
+  baseUrl: URL,
+  route: string,
+  init: RequestInit,
+  guard: (value: unknown) => value is T,
+  fetchFn: typeof fetch,
+  timeoutMs: number,
+  upstreamSignal: AbortSignal | undefined,
+): Promise<T> {
   const controller = new AbortController()
   let upstreamAbort: (() => void) | undefined
   if (upstreamSignal) {
@@ -254,17 +376,10 @@ async function requestEnvelope<T>(
     if (controller.signal.aborted) {
       throw new H2EmsAdapterError('request_aborted', false)
     }
-    const init: RequestInit =
-      payload === undefined
-        ? { method: 'GET', redirect: 'error', signal: controller.signal }
-        : {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(payload),
-            redirect: 'error',
-            signal: controller.signal,
-          }
-    const response = await fetchFn(new URL(route, baseUrl), init)
+    const response = await fetchFn(
+      new URL(route, baseUrl),
+      { ...init, redirect: 'error', signal: controller.signal },
+    )
     if (!hasExpectedResponseOrigin(response, baseUrl)) {
       throw new H2EmsAdapterError('remote_response_invalid', false)
     }
@@ -303,6 +418,26 @@ async function requestEnvelope<T>(
   }
 }
 
+function uploadChunkRoute(input: H2CsvUploadChunkRequest): string {
+  const route = H2_EMS_LIVE_ROUTES.uploadChunk
+    .replace('{sessionId}', encodeURIComponent(input.sessionId))
+    .replace('{chunkIndex}', encodeURIComponent(String(input.chunkIndex)))
+  const query = new URLSearchParams({
+    requestId: input.requestId,
+    offsetBytes: String(input.offsetBytes),
+    byteLength: String(input.byteLength),
+    contentHash: input.contentHash,
+  })
+  return `${route}?${query.toString()}`
+}
+
+function finalizeUploadRoute(sessionId: string): string {
+  return H2_EMS_LIVE_ROUTES.finalizeUpload.replace(
+    '{sessionId}',
+    encodeURIComponent(sessionId),
+  )
+}
+
 function reviewRoute(template: string, runId: string, eventId: string): string {
   return template
     .replace('{runId}', encodeURIComponent(runId))
@@ -333,7 +468,7 @@ function assistantAnswerMatchesRequest(
     answer.runId === input.runId &&
     answer.questionId === input.questionId &&
     answer.eventId === input.eventId &&
-    answer.mode === 'DETERMINISTIC_TEMPLATE' &&
+    (input.allowLlmRendering || answer.mode === 'DETERMINISTIC_TEMPLATE') &&
     answer.refusedControlClaim
   )
 }

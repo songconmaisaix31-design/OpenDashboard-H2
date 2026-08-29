@@ -8,6 +8,7 @@ import { EmptyDatasetState } from './components/common/EmptyDatasetState.tsx'
 import { ViewState } from './components/common/ViewState.tsx'
 import { findH2Event } from './model/presentation.ts'
 import type { H2ReviewDraft } from './model/review.ts'
+import type { H2AssistantSubmissionResult } from './model/assistant.ts'
 import type {
   H2CommandState,
   H2ReviewCommandState,
@@ -25,10 +26,12 @@ export interface H2SentinelViewProps {
   readonly commandState: H2CommandState
   readonly dataSource: H2SentinelDataSource
   readonly navigation: H2NavigationTarget
-  readonly onAsk: (questionId: H2AssistantQuestionId) => void
+  readonly onAsk: (questionId: H2AssistantQuestionId, allowLlmRendering: boolean) => void
+  readonly onSubmitFollowUp: (input: string, allowLlmRendering: boolean) => Promise<H2AssistantSubmissionResult>
   readonly onDownload: (artifact: H2ReportArtifact) => void
   readonly onExport: (definition: ReportDefinition) => void
   readonly onImport: (file: File) => void
+  readonly onCancelImport: () => void
   readonly onNavigate: (target: H2NavigationTarget) => void
   readonly onReloadReview: () => void
   readonly onRetry: () => void
@@ -44,9 +47,11 @@ export function H2SentinelView({
   dataSource,
   navigation,
   onAsk,
+  onSubmitFollowUp,
   onDownload,
   onExport,
   onImport,
+  onCancelImport,
   onNavigate,
   onReloadReview,
   onRetry,
@@ -83,8 +88,10 @@ export function H2SentinelView({
     return (
       <EmptyDatasetState
         error={commandState.error}
+        importProgress={commandState.importProgress}
         mode={workspaceState.mode}
         onImport={onImport}
+        onCancelImport={onCancelImport}
         onRetry={onRetry}
         pending={commandState.pending === 'import'}
       />
@@ -129,6 +136,8 @@ export function H2SentinelView({
           importError={commandState.error}
           importNotice={commandState.notice}
           importPending={commandState.pending === 'import'}
+          importProgress={commandState.importProgress}
+          onCancelImport={onCancelImport}
           onImport={onImport}
           workspace={workspace}
         />
@@ -136,12 +145,14 @@ export function H2SentinelView({
       {navigation.route === 'assistant' ? (
         <AssistantPage
           answer={commandState.assistantAnswer}
+          modeDisplay={commandState.assistantMode}
           error={commandState.error}
           event={selectedEvent}
           events={workspace.events}
           onAsk={onAsk}
           onDownload={onDownload}
           onSelectEvent={onSelectEvent}
+          onSubmitFollowUp={onSubmitFollowUp}
           pending={commandState.pending === 'assistant'}
         />
       ) : null}

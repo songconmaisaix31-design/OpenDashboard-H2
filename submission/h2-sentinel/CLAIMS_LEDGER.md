@@ -1,4 +1,4 @@
-# H2 Sentinel P1 Claims Ledger
+# H2 Sentinel P2 B-Line Claims Ledger
 
 Use the narrowest wording supported by fresh evidence from the named SHA.
 Historical worker failures and old integration results remain historical; they
@@ -20,6 +20,12 @@ cannot be promoted into final-candidate proof.
 | C12 | “The application passed hidden testing or received organizer approval.” | Prohibited | Only an organizer artifact could support this claim. |
 | C13 | “The application is deployed, online, production-ready, published on main, or remotely CI-verified.” | Pending separate evidence | Requires separate deployment, publication, runtime, and named remote-run evidence. |
 | C14 | “Prepared-slice provenance is preserved across Web and reports.” | Repeatable integrated fact; official-slice rerun pending | Assembled Local QA must pass on the final candidate; Fixture cannot substitute for the official slice. |
+| C15 | “P2 source implements ordered, bounded, hash-checked upload sessions and the Web adapter calls them for large files.” | Reviewed source fact | Dependency commits plus coordinator integration; source and enablement remain separate from runtime evidence. |
+| C16 | “The standard Local HTTP path imported the full 236991870-byte training file.” | Coordinator-reported local runtime evidence | Provider environment cleared; 29 chunks, 525,600 rows, exact external SHA-256, finalized session, and passed quality. Browser file-picker, clean-machine, organizer, production, remote CI, and official score remain unevidenced. |
+| C17 | “Bounded NLU selects only Q01-Q10 or refuses.” | Reviewed source fact; integrated runtime inspection pending | Table-driven backend/Web tests and final Local probes including ambiguity, overlength, and control requests. |
+| C18 | “StepFun is optional presentation only.” | Implemented boundary | Strict opt-in, bounded deterministic text/citation payload, output validation, disclosure, and deterministic fallback. No live-provider or authorization evidence is included. |
+| C19 | “C01-C07 each have a dedicated chart configuration.” | Reviewed source fact; final visual QA pending | Canonical requirements, feature tests, desktop/390x844 final-SHA inspection, and evidence fallback when required series are missing. |
+| C20 | “Doctor, check-all, checker, demo, offline smoke, and CI are implemented.” | Reviewed source fact | Exact scripts/workflow exist. Local or worker passes do not establish clean-machine, remote CI, deployment, or organizer evidence. |
 
 ## Package integrity wording
 
@@ -39,3 +45,7 @@ differ.” Do not shorten this to “the package matches.”
 - HTTP success, routes, document review, or screenshots do not replace
   behavior and artifact verification.
 - Review history never becomes control authority or authenticated identity.
+- A backend session test does not prove that the standard launcher exposes the
+  disabled-by-default streaming capability.
+- Optional provider configuration does not prove network access, account/model
+  entitlement, authorization, or provider correctness.

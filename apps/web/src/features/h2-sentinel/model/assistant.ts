@@ -1,11 +1,17 @@
 import {
   H2_ASSISTANT_QUESTIONS,
+  H2_NLU_MAX_INPUT_CHARS,
   type H2AnomalyCode,
   type H2AnomalyEvent,
+  type H2AssistantAnswer,
   type H2AssistantQuestionId,
+  type H2NluRequest,
+  type H2NluRefusalReason,
+  type H2NluResult,
+  type H2SentinelDataSource,
 } from '@opendashboard/h2-contracts'
 
-export const H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS = 120
+export const H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS = H2_NLU_MAX_INPUT_CHARS
 
 export type H2AssistantFollowUpResolution =
   | {
@@ -18,6 +24,24 @@ export type H2AssistantFollowUpResolution =
       readonly status: 'refused'
       readonly message: string
     }
+
+/** Optional additive capability implemented by Local adapters without widening the shared contract. */
+export interface H2NluCapability {
+  resolveNlu(request: H2NluRequest): Promise<H2NluResult>
+}
+
+export type H2AssistantDataSource = H2SentinelDataSource & Partial<H2NluCapability>
+
+export type H2AssistantSubmissionResult =
+  | {
+      readonly status: 'answered'
+      readonly answer: H2AssistantAnswer
+      readonly questionId: H2AssistantQuestionId
+      readonly eventId?: string
+      readonly routingMessage: string
+    }
+  | { readonly status: 'refused'; readonly message: string }
+  | { readonly status: 'stale' }
 
 const H2_ASSISTANT_FOLLOW_UP_RULES = [
   { questionId: 'Q01', tokenGroups: [['pcc', '并网点'], ['正值', '正负'], ['负值', '正负']] },
@@ -51,6 +75,12 @@ export function resolveH2AssistantFollowUp(
   }
 
   const normalized = normalizeH2FollowUp(trimmed)
+  if (hasH2EquipmentControlIntent(normalized)) {
+    return {
+      status: 'refused',
+      message: '检测到设备控制或设定值请求；氢哨无控制权限，未路由到 Q01–Q10，也未下发任何指令。',
+    }
+  }
   const idMatch = /^q(?:0[1-9]|10|[1-9])$/u.exec(normalized)
   if (idMatch) {
     const questionId = `Q${idMatch[0].slice(1).padStart(2, '0')}` as H2AssistantQuestionId
@@ -80,6 +110,13 @@ export function resolveH2AssistantFollowUp(
   return matchedH2FollowUp(match.questionId)
 }
 
+function hasH2EquipmentControlIntent(normalized: string): boolean {
+  const equipment = ['电解槽', '储能', 'bess', 'pcc', 'ems', '继电器']
+  const actions = ['下发', '执行', '直接控制', '远程控制', '设定值', '调功率', '启停', '开机', '关机']
+  return equipment.some((token) => normalized.includes(normalizeH2FollowUp(token))) &&
+    actions.some((token) => normalized.includes(normalizeH2FollowUp(token)))
+}
+
 /** Resolves wording and current-event compatibility as one fail-closed intent. */
 export function resolveH2AssistantIntent(
   input: string,
@@ -91,6 +128,96 @@ export function resolveH2AssistantIntent(
   return requirement.valid
     ? resolution
     : { status: 'refused', message: requirement.message }
+}
+
+/** Resolves a free-text intent and asks exactly once only while its UI context remains current. */
+export async function submitH2AssistantFollowUp({
+  allowLlmRendering,
+  dataSource,
+  event,
+  events,
+  input,
+  isCurrent,
+  runId,
+}: {
+  readonly allowLlmRendering: boolean
+  readonly dataSource: H2AssistantDataSource
+  readonly event: H2AnomalyEvent | null
+  readonly events: readonly H2AnomalyEvent[]
+  readonly input: string
+  readonly isCurrent: () => boolean
+  readonly runId: string
+}): Promise<H2AssistantSubmissionResult> {
+  const text = input.trim()
+  if (text.length === 0 || text.length > H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS) {
+    const refusal = resolveH2AssistantFollowUp(text)
+    return { status: 'refused', message: refusal.message }
+  }
+  if (hasH2EquipmentControlIntent(normalizeH2FollowUp(text))) {
+    return {
+      status: 'refused',
+      message: '检测到设备控制或设定值请求；氢哨无控制权限，未调用语义服务或助手，也未下发任何指令。',
+    }
+  }
+
+  const result = hasH2NluCapability(dataSource)
+    ? await dataSource.resolveNlu({ schemaVersion: 1, runId, text })
+    : null
+  if (!isCurrent()) return { status: 'stale' }
+
+  if (result?.status === 'refused') {
+    return { status: 'refused', message: h2NluRefusalMessage(result.reason) }
+  }
+
+  const localResolution = result ? null : resolveH2AssistantFollowUp(text)
+  if (localResolution?.status === 'refused') return localResolution
+
+  const questionId = result?.questionId ?? localResolution?.questionId
+  if (!questionId) {
+    return { status: 'refused', message: '未识别为 Q01–Q10 的受支持表达；未调用数据源，也未生成答案。' }
+  }
+  const resolvedEvent = result?.eventId
+    ? events.find(({ eventId }) => eventId === result.eventId) ?? null
+    : event
+  if (result?.eventId && !resolvedEvent) {
+    return { status: 'refused', message: '语义匹配返回了当前运行中不存在的事件；未请求助手答案。' }
+  }
+  const requirement = getH2AssistantEventRequirement(questionId, resolvedEvent)
+  if (!requirement.valid) return { status: 'refused', message: requirement.message }
+  if (!isCurrent()) return { status: 'stale' }
+
+  const answer = await dataSource.ask({
+    runId,
+    questionId,
+    ...(resolvedEvent ? { eventId: resolvedEvent.eventId } : {}),
+    allowLlmRendering,
+  })
+  if (!isCurrent()) return { status: 'stale' }
+  return {
+    status: 'answered',
+    answer,
+    questionId,
+    ...(resolvedEvent ? { eventId: resolvedEvent.eventId } : {}),
+    routingMessage: result
+      ? `本地服务已匹配 ${questionId}；已验证当前事件上下文。`
+      : `本地闭集规则已匹配 ${questionId}；当前适配器未提供语义解析能力。`,
+  }
+}
+
+function hasH2NluCapability(
+  dataSource: H2AssistantDataSource,
+): dataSource is H2SentinelDataSource & H2NluCapability {
+  return typeof dataSource.resolveNlu === 'function'
+}
+
+function h2NluRefusalMessage(reason: H2NluRefusalReason): string {
+  const messages = {
+    input_too_long: `本地语义服务拒绝了超过 ${H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS} 个字符的输入；未请求助手答案。`,
+    unsupported_intent: '本地语义服务判定该请求不属于 Q01–Q10；未请求助手答案，也未执行任何控制。',
+    ambiguous_intent: '本地语义服务判定输入同时存在多个可能意图；请直接选择一个 Q01–Q10。',
+    low_confidence: '本地语义服务无法可靠匹配 Q01–Q10；未请求助手答案。',
+  } as const
+  return messages[reason]
 }
 
 function matchedH2FollowUp(

@@ -1,10 +1,15 @@
 import type { H2DatasetMode } from '@opendashboard/h2-contracts'
-import { H2_CSV_MAX_BYTES, H2_CSV_MAX_ROWS } from '../../model/workspace-loader.ts'
+import { H2_STREAMING_IMPORT_LIMITS } from '@opendashboard/h2-contracts'
+import { H2_CSV_MAX_BYTES } from '../../model/workspace-loader.ts'
+import type { H2ImportProgressState } from '../../model/view-state.ts'
+import { CsvImportProgress } from './CsvImportProgress.tsx'
 import { StatusBadge } from './StatusBadge.tsx'
 
 export interface EmptyDatasetStateProps {
   readonly error: string | null
   readonly mode: H2DatasetMode
+  readonly importProgress: H2ImportProgressState | null
+  readonly onCancelImport: () => void
   readonly onImport: (file: File) => void
   readonly onRetry: () => void
   readonly pending: boolean
@@ -13,6 +18,8 @@ export interface EmptyDatasetStateProps {
 export function EmptyDatasetState({
   error,
   mode,
+  importProgress,
+  onCancelImport,
   onImport,
   onRetry,
   pending,
@@ -56,8 +63,9 @@ export function EmptyDatasetState({
         </button>
       </div>
       <p className="h2-file-policy" id="h2-empty-file-policy">
-        仅接受 .csv，单文件最大 {maxMegabytes} MiB，本地服务单次最多 {H2_CSV_MAX_ROWS.toLocaleString('en-US')} 行；完整训练集仅支持分片导入。不会读取任意本地路径或自动上传其他文件。
+        仅接受 .csv；不超过 {maxMegabytes} MiB 使用旧导入，更大文件按固定 {H2_STREAMING_IMPORT_LIMITS.chunkBytes / (1024 * 1024)} MiB 分片顺序上传，上限 {H2_STREAMING_IMPORT_LIMITS.maxBytes / (1024 * 1024)} MiB / {H2_STREAMING_IMPORT_LIMITS.maxRows.toLocaleString('en-US')} 行。不会读取任意本地路径或把完整训练集转成整段文本。
       </p>
+      {importProgress ? <CsvImportProgress onCancel={onCancelImport} progress={importProgress} /> : null}
       {error ? <p className="h2-message h2-message--error" role="alert">{error}</p> : null}
       <StatusBadge tone={mode === 'LIVE_ANALYSIS' ? 'live' : 'fixture'}>
         {mode === 'LIVE_ANALYSIS' ? 'LIVE · 本地分析' : 'FIXTURE · 固定样例'}

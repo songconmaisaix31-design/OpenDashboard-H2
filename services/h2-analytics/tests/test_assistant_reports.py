@@ -9,6 +9,10 @@ import pytest
 from h2_analytics.contracts import ASSISTANT_QUESTION_IDS, SUBMISSION_COLUMNS
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.service import AnalyticsService
+from h2_analytics.reports.submission import (
+    submission_normalization_trace,
+    submission_rows,
+)
 
 _EVENT_CONTEXT = {
     "Q03": "C03-20260105-001",
@@ -46,7 +50,7 @@ def test_all_ten_answers_are_deterministic_chinese_and_referentially_valid(
     )
     assert all(answer["mode"] == "DETERMINISTIC_TEMPLATE" for answer in answers)
     assert all(answer["refusedControlClaim"] is True for answer in answers)
-    assert answers == [
+    deterministic_answers = [
         service.ask(
             run_id=run_id,
             question_id=question_id,
@@ -55,8 +59,17 @@ def test_all_ten_answers_are_deterministic_chinese_and_referentially_valid(
         )
         for question_id in ASSISTANT_QUESTION_IDS
     ]
+    assert answers == deterministic_answers
     for answer in answers:
         _assert_answer_invariants(answer)
+        context = next(
+            section
+            for section in answer["sections"]
+            if section["sectionId"] == "current_run_context"
+        )
+        assert "22 行数据" in context["text"]
+        assert "1.0 分钟采样间隔" in context["text"]
+        assert "不代表官方评分" in context["text"]
 
 
 def test_assistant_enforces_event_context_and_rejects_legacy_alias(
@@ -260,6 +273,26 @@ def test_validation_metrics_fail_without_labels_and_matching_definition(
 
     assert captured.value.code == "report.metrics_unavailable"
     assert "未生成验证指标" in captured.value.message
+
+
+def test_submission_normalizes_aliases_with_internal_trace(valid_csv: str) -> None:
+    service, run_id = _analyzed(valid_csv)
+    event = dict(service.get_event(run_id, "C03-20260105-001"))
+    event["affectedEquipment"] = [
+        {**item, "id": {"BESS01": "BESS", "PCC01": "PCC"}.get(item["id"], item["id"])}
+        for item in event["affectedEquipment"]
+    ]
+    row = submission_rows([event])[0]
+    assert row["affected_equipment"] == "BESS,PCC"
+    assert submission_normalization_trace([event]) == [
+        {
+            "eventId": "C03-20260105-001",
+            "mappings": [
+                {"original": "BESS", "normalized": "BESS01"},
+                {"original": "PCC", "normalized": "PCC01"},
+            ],
+        }
+    ]
 
 
 @pytest.mark.parametrize(

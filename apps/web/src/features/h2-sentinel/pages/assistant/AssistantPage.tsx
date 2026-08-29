@@ -10,7 +10,7 @@ import {
 import {
   getH2AssistantEventRequirement,
   H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS,
-  resolveH2AssistantIntent,
+  type H2AssistantSubmissionResult,
 } from '../../model/assistant.ts'
 import {
   getH2ProvenanceLabel,
@@ -18,16 +18,22 @@ import {
 } from '../../model/presentation.ts'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
+import {
+  getH2AssistantModeDisplay,
+  type H2AssistantModeDisplay,
+} from '../../model/view-state.ts'
 
 export interface AssistantPageProps {
   readonly answer: H2AssistantAnswer | null
   readonly error: string | null
   readonly event: H2AnomalyEvent | null
   readonly events: readonly H2AnomalyEvent[]
-  readonly onAsk: (questionId: H2AssistantQuestionId) => void
+  readonly onAsk: (questionId: H2AssistantQuestionId, allowLlmRendering: boolean) => void
   readonly onDownload: (artifact: H2ReportArtifact) => void
   readonly onSelectEvent: (eventId: string | null) => void
+  readonly onSubmitFollowUp: (input: string, allowLlmRendering: boolean) => Promise<H2AssistantSubmissionResult>
   readonly pending: boolean
+  readonly modeDisplay?: H2AssistantModeDisplay | null
 }
 
 export function AssistantPage({
@@ -38,10 +44,13 @@ export function AssistantPage({
   onAsk,
   onDownload,
   onSelectEvent,
+  onSubmitFollowUp,
   pending,
+  modeDisplay = null,
 }: AssistantPageProps) {
   const [selectedQuestion, setSelectedQuestion] = useState<H2AssistantQuestionId>('Q03')
   const [followUpInput, setFollowUpInput] = useState('')
+  const [allowLlmRendering, setAllowLlmRendering] = useState(false)
   const [followUpState, setFollowUpState] = useState<{
     readonly tone: 'error' | 'success'
     readonly message: string
@@ -56,17 +65,17 @@ export function AssistantPage({
     ? answer
     : null
 
-  function submitFollowUp(submitEvent: React.FormEvent<HTMLFormElement>): void {
+  async function submitFollowUp(submitEvent: React.FormEvent<HTMLFormElement>): Promise<void> {
     submitEvent.preventDefault()
-    const resolution = resolveH2AssistantIntent(followUpInput, event)
-    if (resolution.status === 'refused') {
-      setFollowUpState({ tone: 'error', message: resolution.message })
+    const result = await onSubmitFollowUp(followUpInput, allowLlmRendering)
+    if (result.status === 'stale') return
+    if (result.status === 'refused') {
+      setFollowUpState({ tone: 'error', message: result.message })
       return
     }
 
-    setSelectedQuestion(resolution.questionId)
-    setFollowUpState({ tone: 'success', message: resolution.message })
-    onAsk(resolution.questionId)
+    setSelectedQuestion(result.questionId)
+    setFollowUpState({ tone: 'success', message: result.routingMessage })
   }
 
   return (
@@ -79,7 +88,7 @@ export function AssistantPage({
           <h2 id="h2-follow-up-title">用自然表述匹配官方问题</h2>
           <p>只路由到 Q01–Q10，不开放通用聊天；未知或含糊输入会安全拒绝。</p>
         </div>
-        <form onSubmit={submitFollowUp}>
+        <form onSubmit={(submitEvent) => void submitFollowUp(submitEvent)}>
           <label>
             <span className="h2-visually-hidden">输入 Q01–Q10 的自然表述</span>
             <input
@@ -102,6 +111,15 @@ export function AssistantPage({
             匹配并回答
           </button>
         </form>
+        <label className="h2-llm-toggle">
+          <input
+            checked={allowLlmRendering}
+            disabled={pending}
+            onChange={(event) => setAllowLlmRendering(event.currentTarget.checked)}
+            type="checkbox"
+          />
+          <span><strong>请求可选语言重述</strong><small>开启后，仅将有界的确定性答案文本和引用 ID 发送至 StepFun 云端用于语言重述；不会发送原始 CSV、测量值、复核备注、报告或控制数据。</small></span>
+        </label>
         <div aria-live="polite">
           {followUpState ? (
             <p className={`h2-message h2-message--${followUpState.tone}`}>
@@ -137,7 +155,7 @@ export function AssistantPage({
         <section aria-labelledby="h2-answer-title" className="h2-panel h2-answer-panel">
           <div className="h2-answer-panel__prompt">
             <div><p className="h2-eyebrow">{question.questionId}</p><h2 id="h2-answer-title">{question.prompt}</h2></div>
-            <button className="h2-button h2-button--primary" disabled={pending || !requirement.valid} onClick={() => onAsk(selectedQuestion)} type="button">{pending ? '正在组装证据…' : '基于证据回答'}</button>
+            <button className="h2-button h2-button--primary" disabled={pending || !requirement.valid} onClick={() => onAsk(selectedQuestion, allowLlmRendering)} type="button">{pending ? '正在组装证据…' : '基于证据回答'}</button>
           </div>
 
           <label className="h2-answer-panel__event-select">
@@ -160,7 +178,7 @@ export function AssistantPage({
           <div aria-live="polite">
             {error ? <p className="h2-message h2-message--error">{error}</p> : null}
             {visibleAnswer ? (
-              <AssistantAnswer answer={visibleAnswer} onDownload={onDownload} />
+              <AssistantAnswer answer={visibleAnswer} modeDisplay={modeDisplay} onDownload={onDownload} />
             ) : (
               <div className="h2-assistant-empty"><span aria-hidden="true">◇</span><strong>等待提问</strong><p>回答将区分事实、计算、推断和建议，并展示可解析的证据或报告引用。</p></div>
             )}
@@ -175,16 +193,21 @@ export function AssistantPage({
 
 export function AssistantAnswer({
   answer,
+  modeDisplay,
   onDownload,
 }: {
   readonly answer: H2AssistantAnswer
+  readonly modeDisplay?: H2AssistantModeDisplay | null
   readonly onDownload: (artifact: H2ReportArtifact) => void
 }) {
   const generatedReport = answer.generatedReport
+  const display = modeDisplay ?? getH2AssistantModeDisplay(answer, false)
   return (
     <article className="h2-assistant-answer">
       <div className="h2-badge-row">
-        <StatusBadge tone="positive">确定性模板</StatusBadge>
+        <StatusBadge tone={display.status === 'rendered' ? 'warning' : display.status === 'fallback' ? 'neutral' : 'positive'}>
+          {display.status === 'rendered' ? 'LLM 语言重述 · 非事实源' : display.status === 'fallback' ? '语言重述降级' : '确定性模板'}
+        </StatusBadge>
         <StatusBadge tone={answer.provenance.mode === 'FIXTURE' ? 'fixture' : 'live'}>{getH2ProvenanceLabel(answer.provenance)}</StatusBadge>
         <StatusBadge tone="danger">拒绝直接控制</StatusBadge>
       </div>
@@ -195,6 +218,10 @@ export function AssistantAnswer({
           <small>引用：{section.citationIds.join('、')}</small>
         </section>
       ))}
+      <section className={`h2-llm-rendering h2-llm-rendering--${display.status}`}>
+        <p>{display.message}</p>
+        <small>答案引用与“拒绝直接控制”状态始终为准。</small>
+      </section>
       {generatedReport ? (
         <section className="h2-assistant-report">
           <div><StatusBadge tone="positive">Q09 报告已生成</StatusBadge><strong>{generatedReport.descriptor.filename}</strong></div>
