@@ -6,6 +6,9 @@
     { "operationId": "getMode", "method": "GET", "path": "/api/v1/h2-sentinel/mode" },
     { "operationId": "listDatasets", "method": "GET", "path": "/api/v1/h2-sentinel/datasets" },
     { "operationId": "importCsv", "method": "POST", "path": "/api/v1/h2-sentinel/datasets:import" },
+    { "operationId": "createCsvUploadSession", "method": "POST", "path": "/api/v1/h2-sentinel/ingest/sessions" },
+    { "operationId": "uploadCsvChunk", "method": "PUT", "path": "/api/v1/h2-sentinel/ingest/sessions/{sessionId}/chunks/{chunkIndex}" },
+    { "operationId": "finalizeCsvUpload", "method": "POST", "path": "/api/v1/h2-sentinel/ingest/sessions/{sessionId}/commit" },
     { "operationId": "getDataQuality", "method": "POST", "path": "/api/v1/h2-sentinel/datasets/quality" },
     { "operationId": "runAnalysis", "method": "POST", "path": "/api/v1/h2-sentinel/datasets:analyze" },
     { "operationId": "getOverview", "method": "POST", "path": "/api/v1/h2-sentinel/runs/overview" },
@@ -15,6 +18,7 @@
     { "operationId": "reviewEvent", "method": "POST", "path": "/api/v1/h2-sentinel/runs/{runId}/events/{eventId}:review" },
     { "operationId": "getSeries", "method": "POST", "path": "/api/v1/h2-sentinel/runs/series" },
     { "operationId": "ask", "method": "POST", "path": "/api/v1/h2-sentinel/assistant:ask" },
+    { "operationId": "resolveIntent", "method": "POST", "path": "/api/v1/h2-sentinel/assistant/nlu" },
     { "operationId": "exportReport", "method": "POST", "path": "/api/v1/h2-sentinel/reports:export" },
     { "operationId": "exportSubmission", "method": "POST", "path": "/api/v1/h2-sentinel/submissions:export" }
   ]

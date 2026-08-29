@@ -8,10 +8,14 @@ import {
   type H2AssistantAnswerSection,
   type H2AssistantCitation,
   type H2CsvImportResult,
+  type H2CsvUploadChunkReceipt,
+  type H2CsvUploadFinalizeReceipt,
+  type H2CsvUploadSession,
   type H2DataQualityReport,
   type H2DatasetFieldRole,
   type H2DatasetManifest,
   type H2DatasetMode,
+  type H2NluResult,
   type H2QualityCheckCode,
   type H2QualitySeverity,
   type H2SeriesResponse,
@@ -68,7 +72,10 @@ const ANALYSIS_STATUSES = ['queued', 'running', 'completed', 'failed'] as const
 const ASSISTANT_QUESTION_IDS = H2_ASSISTANT_QUESTIONS.map(
   ({ questionId }) => questionId,
 )
-const ASSISTANT_MODES = ['DETERMINISTIC_TEMPLATE'] as const
+const ASSISTANT_MODES = ['DETERMINISTIC_TEMPLATE', 'LLM_RENDERED'] as const
+const NLU_REFUSAL_REASONS = [
+  'input_too_long', 'unsupported_intent', 'ambiguous_intent', 'low_confidence',
+] as const
 const ASSISTANT_SOURCE_TYPES = [
   'event', 'evidence', 'constraint', 'variable', 'knowledge_base', 'report',
 ] as const
@@ -92,6 +99,88 @@ export function isCsvImportResult(value: unknown): value is H2CsvImportResult {
     isDataset(value.dataset) &&
     isQualityReport(value.quality) &&
     qualityMatchesDataset(value.quality, value.dataset)
+  )
+}
+
+export function isCsvUploadSession(value: unknown): value is H2CsvUploadSession {
+  return (
+    isClosedRecord(value, [
+      'schemaVersion', 'sessionId', 'filename', 'status', 'declaredBytes',
+      'receivedBytes', 'nextChunkIndex', 'expiresAt',
+    ]) &&
+    value.schemaVersion === 1 &&
+    isNonEmptyString(value.sessionId) &&
+    isSafeUploadFilename(value.filename) &&
+    isOneOf(value.status, ['open', 'finalized', 'expired'] as const) &&
+    isNonNegativeInteger(value.declaredBytes) &&
+    value.declaredBytes > 0 &&
+    isNonNegativeInteger(value.receivedBytes) &&
+    value.receivedBytes <= value.declaredBytes &&
+    isNonNegativeInteger(value.nextChunkIndex) &&
+    isIsoTimestamp(value.expiresAt)
+  )
+}
+
+export function isCsvUploadChunkReceipt(
+  value: unknown,
+): value is H2CsvUploadChunkReceipt {
+  return (
+    isClosedRecord(value, [
+      'schemaVersion', 'sessionId', 'acceptedChunkIndex', 'receivedBytes',
+      'nextChunkIndex', 'replayed',
+    ]) &&
+    value.schemaVersion === 1 &&
+    isNonEmptyString(value.sessionId) &&
+    isNonNegativeInteger(value.acceptedChunkIndex) &&
+    isNonNegativeInteger(value.receivedBytes) &&
+    value.nextChunkIndex === value.acceptedChunkIndex + 1 &&
+    typeof value.replayed === 'boolean'
+  )
+}
+
+export function isCsvUploadFinalizeReceipt(
+  value: unknown,
+): value is H2CsvUploadFinalizeReceipt {
+  return (
+    isClosedRecord(value, [
+      'schemaVersion', 'sessionId', 'status', 'totalChunks', 'totalBytes',
+      'contentHash', 'replayed', 'result',
+    ]) &&
+    value.schemaVersion === 1 &&
+    isNonEmptyString(value.sessionId) &&
+    value.status === 'finalized' &&
+    isNonNegativeInteger(value.totalChunks) &&
+    isNonNegativeInteger(value.totalBytes) &&
+    isHash(value.contentHash) &&
+    typeof value.replayed === 'boolean' &&
+    isCsvImportResult(value.result)
+  )
+}
+
+export function isNluResult(value: unknown): value is H2NluResult {
+  if (!isRecord(value) || value.schemaVersion !== 1) return false
+  if (value.status === 'matched') {
+    return (
+      isClosedRecord(
+        value,
+        ['schemaVersion', 'status', 'questionId', 'confidence'],
+        ['eventId', 'timeRange'],
+      ) &&
+      isOneOf(value.questionId, ASSISTANT_QUESTION_IDS) &&
+      isConfidence(value.confidence) &&
+      isOptionalString(value, 'eventId') &&
+      (!Object.hasOwn(value, 'timeRange') || isTimeRange(value.timeRange))
+    )
+  }
+  return (
+    value.status === 'refused' &&
+    isClosedRecord(value, [
+      'schemaVersion', 'status', 'reason', 'confidence', 'allowedQuestionIds',
+    ]) &&
+    isOneOf(value.reason, NLU_REFUSAL_REASONS) &&
+    isConfidence(value.confidence) &&
+    Array.isArray(value.allowedQuestionIds) &&
+    sameStrings(value.allowedQuestionIds, ASSISTANT_QUESTION_IDS)
   )
 }
 
@@ -199,7 +288,12 @@ export function isAssistantAnswer(value: unknown): value is H2AssistantAnswer {
     isProvenance(value.provenance)
   )) return false
   const answer = value as unknown as H2AssistantAnswer
-  return hasConsistentCitations(answer) && hasConsistentGeneratedReport(answer)
+  return (
+    hasConsistentCitations(answer) &&
+    hasConsistentGeneratedReport(answer) &&
+    ((answer.mode === 'LLM_RENDERED' && answer.provenance.mode === 'LLM_RENDERED') ||
+      (answer.mode === 'DETERMINISTIC_TEMPLATE' && answer.provenance.mode !== 'LLM_RENDERED'))
+  )
 }
 
 function isDataset(value: unknown): value is H2DatasetManifest {
@@ -356,7 +450,7 @@ function hasConsistentGeneratedReport(answer: H2AssistantAnswer): boolean {
     report.mediaType !== 'text/html' ||
     report.descriptor.runId !== answer.runId ||
     report.descriptor.eventId !== answer.eventId ||
-    !hasMatchingDatasetProvenance(report.descriptor.provenance, answer.provenance)
+    !reportProvenanceMatchesAnswer(report.descriptor.provenance, answer)
   ) return false
 
   const reportCitations = answer.citations.filter(
@@ -438,6 +532,19 @@ function sameStrings(
   )
 }
 
+function reportProvenanceMatchesAnswer(
+  report: H2AssistantAnswer['provenance'],
+  answer: H2AssistantAnswer,
+): boolean {
+  return answer.mode === 'LLM_RENDERED'
+    ? report.datasetFingerprint === answer.provenance.datasetFingerprint
+    : hasMatchingDatasetProvenance(report, answer.provenance)
+}
+
+function isConfidence(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0 && value <= 1
+}
+
 function isSafeDatasetSourceFilename(value: unknown): value is string {
   if (typeof value !== 'string') return false
   const candidate = value.trim()
@@ -445,6 +552,22 @@ function isSafeDatasetSourceFilename(value: unknown): value is string {
     candidate === value &&
     candidate.length > 0 &&
     candidate.length <= 128 &&
+    candidate !== '.' &&
+    candidate !== '..' &&
+    !candidate.includes('/') &&
+    !candidate.includes('\\') &&
+    !candidate.includes('\0') &&
+    candidate.toLowerCase().endsWith('.csv')
+  )
+}
+
+function isSafeUploadFilename(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const candidate = value.trim()
+  return (
+    candidate === value &&
+    candidate.length > 0 &&
+    candidate.length <= 255 &&
     candidate !== '.' &&
     candidate !== '..' &&
     !candidate.includes('/') &&

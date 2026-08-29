@@ -6,6 +6,8 @@ export {
   H2_EMS_REQUEST_TIMEOUTS_MS,
   type H2EmsRequestTimeouts,
   type H2EmsLiveAdapterOptions,
+  type H2EmsLiveDataSource,
+  type H2NluDataSourceCapability,
 } from './live-data-source.ts'
 export {
   createH2EmsPlugin,
