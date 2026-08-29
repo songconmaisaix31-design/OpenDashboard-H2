@@ -96,6 +96,25 @@ export type {
   H2SeriesRequest,
   H2SeriesResponse,
 } from './data-source.ts'
+export type {
+  H2CsvUploadChunkReceipt,
+  H2CsvUploadChunkRequest,
+  H2CsvUploadFinalizeReceipt,
+  H2CsvUploadFinalizeRequest,
+  H2CsvUploadSession,
+  H2CsvUploadSessionCreateRequest,
+  H2CsvUploadSessionStatus,
+  H2StreamingCsvDataSource,
+} from './ingestion.ts'
+export { H2_STREAMING_IMPORT_LIMITS } from './ingestion.ts'
+export type {
+  H2NluMatchedResult,
+  H2NluRefusedResult,
+  H2NluRefusalReason,
+  H2NluRequest,
+  H2NluResult,
+} from './nlu.ts'
+export { H2_NLU_MAX_INPUT_CHARS } from './nlu.ts'
 export {
   H2_FIXTURE_ANALYSIS_RUN,
   H2_FIXTURE_ASSISTANT_ANSWER,
@@ -114,6 +133,15 @@ export type {
   H2TimeRange,
 } from './provenance.ts'
 export { H2_PROVENANCE_MODES } from './provenance.ts'
+export type {
+  H2AssistantRenderedResult,
+  H2AssistantRenderingDisabledResult,
+  H2AssistantRenderingFallbackReason,
+  H2AssistantRenderingFallbackResult,
+  H2AssistantRenderingResult,
+  H2DeterministicRenderingProvenance,
+  H2LlmRenderingProvenance,
+} from './rendering.ts'
 export type {
   H2DataQualityReport,
   H2DataQualityStatus,
@@ -152,3 +180,8 @@ export {
   toH2SubmissionCells,
   toH2SubmissionRow,
 } from './submission.ts'
+export type {
+  H2ChartPresentation,
+  H2ChartRequirement,
+} from './visualization.ts'
+export { H2_EVENT_CHART_REQUIREMENTS } from './visualization.ts'

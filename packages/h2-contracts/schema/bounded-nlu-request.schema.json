@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendashboard.local/schemas/h2/bounded-nlu-request.schema.json",
+  "title": "H2NluRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "text", "runId"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "runId": { "type": "string", "minLength": 1 }
+  }
+}
