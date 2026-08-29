@@ -10,6 +10,10 @@ FEATURE_VERSION = "h2-features-v1"
 AGGREGATION_VERSION = "h2-events-v2"
 CONFIGURATION_VERSION = "official-constraints-v1"
 FALLBACK_DETECTOR_VERSION = "deterministic-c01-c07-v4"
+# P1-9 ML 校验层总开关（ADR-001 灰度混合）：默认 False = 纯规则模式；
+# 灰度五条（off 一致/指标不降/哨兵绿/top-5 特征/3 seed 方差）全过并经 D12 go/no-go 后方可置 True。
+# D1 共同日 A 侧预置条目；B 侧流式导入配置条目由 B 机补写（COORDINATION §2 共享-预置）。
+H2_ML_ENABLED = False
 MAX_CSV_BYTES = 96 * 1024 * 1024
 MAX_CSV_ROWS = 180_000
 OFFICIAL_DATASET_ROW_COUNTS = {

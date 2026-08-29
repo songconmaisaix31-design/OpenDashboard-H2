@@ -15,6 +15,7 @@ services/h2-analytics/artifacts/
 services/h2-analytics/models/
 scripts/h2-sentinel/artifacts/
 tests/h2-sentinel/reports/generated/
+validation/baseline/
 .DS_Store
 Thumbs.db
 
