@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from h2_analytics.api import ROUTE_MAP, create_app
+from h2_analytics.service import AnalyticsService
 from h2_analytics.settings import API_NAMESPACE, MAX_CSV_BYTES
 
 
@@ -117,6 +119,74 @@ def test_complete_api_golden_flow(valid_csv: str) -> None:
         f"{API_NAMESPACE}/submissions:export", json={"runId": run_id}
     ).json()
     assert submission["data"]["descriptor"]["filename"] == "submission.csv"
+
+
+def test_streaming_nlu_and_render_routes_preserve_deterministic_answer(
+    valid_csv: str,
+) -> None:
+    service = AnalyticsService(streaming_import_enabled=True)
+    client = TestClient(create_app(service), base_url="http://127.0.0.1")
+    content = valid_csv.encode()
+    content_hash = f"sha256:{hashlib.sha256(content).hexdigest()}"
+    session = client.post(
+        f"{API_NAMESPACE}/ingest/sessions",
+        json={
+            "schemaVersion": 1,
+            "requestId": "api-create",
+            "filename": "streamed.csv",
+            "declaredBytes": len(content),
+            "expectedContentHash": content_hash,
+        },
+    )
+    assert session.status_code == 200
+    session_id = session.json()["data"]["sessionId"]
+    chunk = client.put(
+        f"{API_NAMESPACE}/ingest/sessions/{session_id}/chunks/0",
+        params={
+            "requestId": "api-chunk",
+            "offsetBytes": 0,
+            "byteLength": len(content),
+            "contentHash": content_hash,
+        },
+        content=content,
+        headers={"content-type": "application/octet-stream"},
+    )
+    assert chunk.status_code == 200
+    finalized = client.post(
+        f"{API_NAMESPACE}/ingest/sessions/{session_id}/commit",
+        json={
+            "schemaVersion": 1,
+            "requestId": "api-finalize",
+            "sessionId": session_id,
+            "totalChunks": 1,
+            "totalBytes": len(content),
+            "contentHash": content_hash,
+        },
+    )
+    assert finalized.status_code == 200
+    dataset_id = finalized.json()["data"]["result"]["dataset"]["datasetId"]
+    run_id = client.post(
+        f"{API_NAMESPACE}/datasets:analyze", json={"datasetId": dataset_id}
+    ).json()["data"]["runId"]
+
+    nlu = client.post(
+        f"{API_NAMESPACE}/assistant/nlu",
+        json={
+            "schemaVersion": 1,
+            "runId": run_id,
+            "text": "PCC 合规日报包含哪些内容",
+        },
+    ).json()["data"]
+    assert nlu["questionId"] == "Q10"
+    rendering = client.post(
+        f"{API_NAMESPACE}/assistant:ask",
+        json={
+            "runId": run_id,
+            "questionId": "Q10",
+            "allowLlmRendering": True,
+        },
+    ).json()["data"]
+    assert rendering["mode"] == "DETERMINISTIC_TEMPLATE"
 
 
 def test_review_and_assistant_errors_are_typed_chinese_and_redacted(

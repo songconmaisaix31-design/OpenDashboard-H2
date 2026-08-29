@@ -7,7 +7,9 @@ import re
 import statistics
 import unicodedata
 from collections import Counter
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from h2_analytics import vocabulary
@@ -18,9 +20,19 @@ from h2_analytics.contracts import (
     REQUIRED_FIELDS,
     build_provenance,
 )
-from h2_analytics.models import DataRow, ImportedDataset, ParseDiagnostics
+from h2_analytics.models import (
+    CompactValues,
+    DataRow,
+    ImportedDataset,
+    ParseDiagnostics,
+)
 from h2_analytics.quality.checker import QualityChecker
-from h2_analytics.settings import MAX_CSV_BYTES, MAX_CSV_ROWS
+from h2_analytics.settings import (
+    MAX_CSV_BYTES,
+    MAX_CSV_ROWS,
+    MAX_STREAMING_CSV_BYTES,
+    MAX_STREAMING_CSV_ROWS,
+)
 
 _ELZ_POWER_FIELDS = (
     "elz1_power_actual_kw",
@@ -102,8 +114,46 @@ class DatasetLoader:
         # The parser consumes the caller-owned text. Do not retain a second
         # full-size byte buffer while materializing the bounded row model.
         del encoded
-        mode = "FIXTURE" if fingerprint == FIXTURE_FINGERPRINT else "LIVE_ANALYSIS"
         reader = csv.reader(io.StringIO(text, newline=""), strict=True)
+        return self._parse_csv(
+            filename=safe_filename,
+            reader=reader,
+            fingerprint=fingerprint,
+            row_limit=MAX_CSV_ROWS,
+        )
+
+    def import_csv_file(self, *, filename: str, path: Path) -> ImportedDataset:
+        """Parse a bounded upload from disk without materializing its bytes as text."""
+        safe_filename = _validate_filename(filename)
+        byte_count, fingerprint = _fingerprint_file(path)
+        if byte_count > MAX_STREAMING_CSV_BYTES:
+            raise CsvImportError(
+                "import.too_large",
+                f"CSV exceeds the {MAX_STREAMING_CSV_BYTES}-byte streaming import limit.",
+            )
+        try:
+            with path.open("r", encoding="utf-8", newline="") as stream:
+                reader = csv.reader(stream, strict=True)
+                return self._parse_csv(
+                    filename=safe_filename,
+                    reader=reader,
+                    fingerprint=fingerprint,
+                    row_limit=MAX_STREAMING_CSV_ROWS,
+                )
+        except UnicodeDecodeError as error:
+            raise CsvImportError(
+                "import.invalid_text", "CSV must be valid UTF-8 text."
+            ) from error
+
+    def _parse_csv(
+        self,
+        *,
+        filename: str,
+        reader: Iterator[list[str]],
+        fingerprint: str,
+        row_limit: int,
+    ) -> ImportedDataset:
+        mode = "FIXTURE" if fingerprint == FIXTURE_FINGERPRINT else "LIVE_ANALYSIS"
         try:
             header_cells = next(reader)
         except StopIteration:
@@ -137,7 +187,9 @@ class DatasetLoader:
 
         missing_fields = tuple(name for name in REQUIRED_FIELDS if name not in headers)
         try:
-            parsed_rows, parse_counts = _parse_rows(headers, reader)
+            parsed_rows, parse_counts = _parse_rows(
+                headers, reader, row_limit=row_limit
+            )
         except csv.Error as error:
             raise CsvImportError("import.malformed_csv", "CSV syntax is malformed.") from error
         timestamps = [row.timestamp for row in parsed_rows if row.timestamp is not None]
@@ -160,10 +212,10 @@ class DatasetLoader:
             "name": (
                 "H2 Sentinel sanitized golden fixture"
                 if mode == "FIXTURE"
-                else f"H2 Sentinel import: {safe_filename}"
+                else f"H2 Sentinel import: {filename}"
             ),
             "mode": mode,
-            "sourceFilename": safe_filename,
+            "sourceFilename": filename,
             "fingerprint": fingerprint,
             "rowCount": len(parsed_rows),
             "timeRange": {"startTime": start_time, "endTime": end_time},
@@ -193,11 +245,28 @@ def _enforce_csv_byte_limit(byte_count: int) -> None:
         )
 
 
+def _fingerprint_file(path: Path) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    byte_count = 0
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            if b"\x00" in block:
+                raise CsvImportError("import.invalid_text", "CSV contains a NUL byte.")
+            byte_count += len(block)
+            if byte_count > MAX_STREAMING_CSV_BYTES:
+                raise CsvImportError(
+                    "import.too_large",
+                    f"CSV exceeds the {MAX_STREAMING_CSV_BYTES}-byte streaming import limit.",
+                )
+            digest.update(block)
+    return byte_count, f"sha256:{digest.hexdigest()}"
+
+
 def _validate_filename(filename: str) -> str:
     candidate = filename.strip()
     if (
         not candidate
-        or len(candidate) > 128
+        or len(candidate) > 255
         or candidate in {".", ".."}
         or "/" in candidate
         or "\\" in candidate
@@ -232,19 +301,22 @@ def _is_forbidden_label_header(header: str) -> bool:
 def _parse_rows(
     headers: tuple[str, ...],
     body: Any,
+    *,
+    row_limit: int = MAX_CSV_ROWS,
 ) -> tuple[list[DataRow], dict[str, Any]]:
     parsed: list[DataRow] = []
     missing_values: Counter[str] = Counter()
     invalid_numeric_values: Counter[str] = Counter()
     invalid_timestamps = 0
     malformed_rows = 0
+    value_fields = tuple(field for field in headers if field != "timestamp")
     for index, cells in enumerate(body, start=1):
         if not any(cell.strip() for cell in cells):
             continue
-        if len(parsed) >= MAX_CSV_ROWS:
+        if len(parsed) >= row_limit:
             raise CsvImportError(
                 "import.too_many_rows",
-                f"CSV exceeds the {MAX_CSV_ROWS}-row in-memory import limit.",
+                f"CSV exceeds the {row_limit}-row import limit.",
             )
         if len(cells) != len(headers):
             malformed_rows += 1
@@ -259,24 +331,29 @@ def _parse_rows(
         elif "timestamp" in headers and timestamp is None:
             invalid_timestamps += 1
 
-        values: dict[str, float | None] = {}
-        for field in headers:
-            if field == "timestamp":
-                continue
+        values: list[float | None] = []
+        for field in value_fields:
             raw = record[field]
             if not raw:
                 if field in REQUIRED_FIELDS:
                     missing_values[field] += 1
-                values[field] = None
+                values.append(None)
                 continue
             try:
-                values[field] = float(raw)
+                values.append(float(raw))
             except ValueError:
                 if field in NUMERIC_FIELDS:
                     invalid_numeric_values[field] += 1
-                values[field] = None
+                values.append(None)
         normalized_timestamp = _format_timestamp(timestamp) if timestamp is not None else timestamp_text
-        parsed.append(DataRow(index, timestamp, normalized_timestamp, values))
+        parsed.append(
+            DataRow(
+                index,
+                timestamp,
+                normalized_timestamp,
+                CompactValues(value_fields, values),
+            )
+        )
     return parsed, {
         "missing_values": dict(missing_values),
         "invalid_numeric_values": dict(invalid_numeric_values),

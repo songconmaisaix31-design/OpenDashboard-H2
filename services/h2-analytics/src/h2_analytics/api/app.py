@@ -1,17 +1,21 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from h2_analytics.api.envelopes import error_envelope, success_envelope
 from h2_analytics.api.models import (
     AssistantRequest,
+    AssistantNluRequest,
     CsvImportRequest,
+    CsvUploadFinalizeRequest,
+    CsvUploadSessionRequest,
     DatasetIdRequest,
     EventListRequest,
     EventRequest,
@@ -23,7 +27,7 @@ from h2_analytics.api.models import (
 from h2_analytics.api.route_map import ROUTE_MAP
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.ingestion import CsvImportError
-from h2_analytics.service import AnalyticsService
+from h2_analytics.service import AnalyticsService, create_runtime_service
 from h2_analytics.settings import (
     AGGREGATION_VERSION,
     API_NAMESPACE,
@@ -33,6 +37,7 @@ from h2_analytics.settings import (
     MAX_CSV_BYTES,
     RULE_VERSION,
     SERVICE_VERSION,
+    STREAMING_CSV_CHUNK_BYTES,
 )
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -52,6 +57,13 @@ _ERROR_STATUS = {
     "review.idempotency_conflict": 409,
     "review.invalid_transition": 409,
     "review.note_required": 422,
+    "upload.finalize_conflict": 409,
+    "upload.active_session_limit": 429,
+    "upload.idempotency_conflict": 409,
+    "upload.retained_session_limit": 429,
+    "upload.retry_mismatch": 409,
+    "upload.session_expired": 410,
+    "upload.session_finalized": 409,
 }
 _ERROR_MESSAGE_ZH = {
     "dataset.not_found": "未找到指定数据集。",
@@ -65,13 +77,22 @@ _ERROR_MESSAGE_ZH = {
 
 
 def create_app(service: AnalyticsService | None = None) -> FastAPI:
-    analytics = service or AnalyticsService()
+    analytics = service or create_runtime_service()
+
+    @asynccontextmanager
+    async def lifespan(_application: FastAPI):
+        try:
+            yield
+        finally:
+            analytics.close()
+
     application = FastAPI(
         title="H2 Sentinel Analytics",
         version=SERVICE_VERSION,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        lifespan=lifespan,
     )
 
     @application.middleware("http")
@@ -105,11 +126,15 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
                 declared_length = int(content_length)
             except ValueError:
                 declared_length = -1
-            request_limit = (
-                MAX_CSV_BYTES + _JSON_REQUEST_LIMIT_BYTES
-                if request.url.path == f"{API_NAMESPACE}/datasets:import"
-                else _JSON_REQUEST_LIMIT_BYTES
-            )
+            if request.url.path == f"{API_NAMESPACE}/datasets:import":
+                request_limit = MAX_CSV_BYTES + _JSON_REQUEST_LIMIT_BYTES
+            elif (
+                f"{API_NAMESPACE}/ingest/sessions/" in request.url.path
+                and "/chunks/" in request.url.path
+            ):
+                request_limit = 8 * 1024 * 1024
+            else:
+                request_limit = _JSON_REQUEST_LIMIT_BYTES
             if declared_length < 0 or declared_length > request_limit:
                 return JSONResponse(
                     status_code=413,
@@ -234,6 +259,71 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
         )
 
     @application.post(
+        f"{API_NAMESPACE}/ingest/sessions",
+        operation_id="createCsvUploadSession",
+    )
+    def create_csv_upload_session(
+        request: CsvUploadSessionRequest,
+    ) -> dict[str, Any]:
+        session = analytics.create_csv_upload_session(
+            request_id=request.request_id,
+            filename=request.filename,
+            declared_bytes=request.declared_bytes,
+            expected_content_hash=request.expected_content_hash,
+        )
+        return success_envelope(session)
+
+    @application.put(
+        f"{API_NAMESPACE}/ingest/sessions/{{sessionId}}/chunks/{{chunkIndex}}",
+        operation_id="uploadCsvChunk",
+    )
+    async def upload_csv_chunk(
+        sessionId: str,
+        chunkIndex: int,
+        request: Request,
+        request_id: str = Query(alias="requestId", min_length=1, max_length=128),
+        offset_bytes: int = Query(alias="offsetBytes", ge=0),
+        byte_length: int = Query(alias="byteLength", ge=1, le=8 * 1024 * 1024),
+        content_hash: str = Query(
+            alias="contentHash", pattern=r"^sha256:[a-f0-9]{64}$"
+        ),
+    ) -> dict[str, Any]:
+        receipt = analytics.upload_csv_chunk(
+            request_id=request_id,
+            session_id=sessionId,
+            chunk_index=chunkIndex,
+            offset_bytes=offset_bytes,
+            byte_length=byte_length,
+            content_hash=content_hash,
+            content=await _read_chunk_body(request),
+        )
+        return success_envelope(receipt)
+
+    @application.post(
+        f"{API_NAMESPACE}/ingest/sessions/{{sessionId}}/commit",
+        operation_id="finalizeCsvUpload",
+    )
+    def finalize_csv_upload(
+        sessionId: str,
+        request: CsvUploadFinalizeRequest,
+    ) -> dict[str, Any]:
+        if request.session_id != sessionId:
+            raise AnalyticsError(
+                "request.invalid", "路径中的上传会话 ID 与请求体不一致。"
+            )
+        receipt = analytics.finalize_csv_upload(
+            request_id=request.request_id,
+            session_id=sessionId,
+            total_chunks=request.total_chunks,
+            total_bytes=request.total_bytes,
+            content_hash=request.content_hash,
+        )
+        return success_envelope(
+            receipt,
+            provenance=receipt["result"]["dataset"]["provenance"],
+        )
+
+    @application.post(
         f"{API_NAMESPACE}/datasets/quality", operation_id="getDataQuality"
     )
     def get_quality(request: DatasetIdRequest) -> dict[str, Any]:
@@ -332,6 +422,15 @@ def create_app(service: AnalyticsService | None = None) -> FastAPI:
         )
         return success_envelope(answer, provenance=answer["provenance"])
 
+    @application.post(
+        f"{API_NAMESPACE}/assistant/nlu", operation_id="resolveIntent"
+    )
+    def resolve_intent(request: AssistantNluRequest) -> dict[str, Any]:
+        result = analytics.resolve_assistant_intent(
+            run_id=request.run_id, text=request.text
+        )
+        return success_envelope(result)
+
     @application.post(f"{API_NAMESPACE}/reports:export", operation_id="exportReport")
     def export_report(request: ReportRequest) -> dict[str, Any]:
         time_range = (
@@ -396,6 +495,18 @@ def _matches_filters(
     ):
         return False
     return True
+
+
+async def _read_chunk_body(request: Request) -> bytes:
+    content = bytearray()
+    async for block in request.stream():
+        if len(content) + len(block) > STREAMING_CSV_CHUNK_BYTES:
+            raise CsvImportError(
+                "upload.chunk_too_large",
+                f"Chunk exceeds the {STREAMING_CSV_CHUNK_BYTES}-byte limit.",
+            )
+        content.extend(block)
+    return bytes(content)
 
 
 def _instant(value: str) -> datetime:

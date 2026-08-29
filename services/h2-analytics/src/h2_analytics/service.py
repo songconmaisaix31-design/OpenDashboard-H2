@@ -8,7 +8,13 @@ from threading import Lock
 from typing import Any
 
 from h2_analytics.contracts import ANOMALY_CODES, SEVERITIES, build_provenance
-from h2_analytics.assistant import AssistantService
+from h2_analytics.assistant import (
+    AssistantService,
+    LlmRenderingConfig,
+    StepFunRenderer,
+    resolve_intent,
+)
+from h2_analytics.assistant.llm_client import llm_rendering_config_from_environment
 from h2_analytics.detection import (
     RowDetector,
     RuleRowDetector,
@@ -18,7 +24,7 @@ from h2_analytics.detection import (
 from h2_analytics.diagnosis import DiagnosisBuilder
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.events import EventAggregator
-from h2_analytics.ingestion import DatasetLoader
+from h2_analytics.ingestion import CsvUploadSessionManager, DatasetLoader
 from h2_analytics.models import ImportedDataset
 from h2_analytics.reports import ReportRenderer
 from h2_analytics.review import (
@@ -26,6 +32,7 @@ from h2_analytics.review import (
     create_event_review,
     normalize_review_request,
 )
+from h2_analytics.settings import H2_STREAMING_IMPORT_ENABLED
 
 
 class AnalyticsService:
@@ -34,13 +41,20 @@ class AnalyticsService:
         detector: RowDetector | None = None,
         *,
         clock: Callable[[], datetime] | None = None,
+        streaming_import_enabled: bool = H2_STREAMING_IMPORT_ENABLED,
+        upload_manager: CsvUploadSessionManager | None = None,
+        llm_config: LlmRenderingConfig | None = None,
+        llm_renderer: StepFunRenderer | None = None,
     ) -> None:
         self._loader = DatasetLoader()
+        self._streaming_import_enabled = streaming_import_enabled
+        self._uploads = upload_manager
         self._uses_default_detector = detector is None
         self._detector = detector or RuleRowDetector()
         self._aggregator = EventAggregator()
         self._diagnosis = DiagnosisBuilder()
         self._assistant = AssistantService()
+        self._llm_renderer = llm_renderer or StepFunRenderer(llm_config)
         self._reports = ReportRenderer()
         self._clock = clock or (lambda: datetime.now(UTC))
         self._datasets: dict[str, ImportedDataset] = {}
@@ -60,6 +74,44 @@ class AnalyticsService:
         dataset_id = imported.manifest["datasetId"]
         self._datasets[dataset_id] = imported
         return {"dataset": imported.manifest, "quality": imported.quality}
+
+    def create_csv_upload_session(
+        self,
+        *,
+        request_id: str,
+        filename: str,
+        declared_bytes: int,
+        expected_content_hash: str | None,
+    ) -> dict[str, Any]:
+        self._require_streaming_import()
+        return self._upload_manager().create(
+            request_id=request_id,
+            filename=filename,
+            declared_bytes=declared_bytes,
+            expected_content_hash=expected_content_hash,
+        )
+
+    def upload_csv_chunk(self, **request: Any) -> dict[str, Any]:
+        self._require_streaming_import()
+        return self._upload_manager().append_chunk(**request)
+
+    def finalize_csv_upload(self, **request: Any) -> dict[str, Any]:
+        self._require_streaming_import()
+        receipt, imported = self._upload_manager().finalize(**request)
+        dataset_id = imported.manifest["datasetId"]
+        self._datasets[dataset_id] = imported
+        receipt["result"] = {
+            "dataset": imported.manifest,
+            "quality": imported.quality,
+        }
+        return receipt
+
+    def cleanup_expired_uploads(self) -> int:
+        return self._uploads.cleanup_expired() if self._uploads is not None else 0
+
+    def close(self) -> None:
+        if self._uploads is not None:
+            self._uploads.close()
 
     def list_datasets(self) -> list[dict[str, Any]]:
         return [
@@ -287,11 +339,11 @@ class AnalyticsService:
                 ) from error
             raise
         reviews = self._review_snapshot(run_id)
-        return self._assistant.answer(
+        answer = self._assistant.answer(
             run=run,
             question_id=question_id,
             event_id=event_id,
-            allow_llm_rendering=allow_llm_rendering,
+            allow_llm_rendering=False,
             report_factory=lambda selected_event_id: self._reports.render(
                 run=run,
                 kind="single_event_diagnosis",
@@ -299,6 +351,38 @@ class AnalyticsService:
                 reviews=reviews,
             ),
         )
+        rendering = self._llm_renderer.render(
+            deterministic_answer=answer,
+            requested=allow_llm_rendering,
+        )
+        if rendering["status"] == "rendered":
+            rendered = deepcopy(answer)
+            rendered["mode"] = "LLM_RENDERED"
+            rendered["sections"][0]["text"] = rendering["renderedText"]
+            rendered["provenance"] = rendering["provenance"]
+            return rendered
+        if allow_llm_rendering and rendering["status"] == "fallback":
+            fallback = deepcopy(answer)
+            fallback["provenance"]["rendererVersion"] = (
+                f"stepfun-compatible-renderer-v1:{rendering['reason']}"
+            )
+            fallback["provenance"]["limitations"] = [
+                *fallback["provenance"]["limitations"],
+                f"LLM rendering fallback: {rendering['reason']}.",
+            ]
+            return fallback
+        return answer
+
+    def resolve_assistant_intent(self, *, run_id: str, text: str) -> dict[str, Any]:
+        try:
+            self.get_run(run_id)
+        except AnalyticsError as error:
+            if error.code == "run.not_found":
+                raise AnalyticsError(
+                    "assistant.run_not_found", "未找到指定的分析运行。"
+                ) from error
+            raise
+        return resolve_intent(text)
 
     def export_report(
         self,
@@ -346,6 +430,22 @@ class AnalyticsService:
     def _review_snapshot(self, run_id: str) -> dict[str, dict[str, Any]]:
         with self._review_lock:
             return deepcopy(self._reviews[run_id])
+
+    def _require_streaming_import(self) -> None:
+        if not self._streaming_import_enabled:
+            raise AnalyticsError(
+                "upload.disabled", "分块导入未启用，旧版单请求导入仍可使用。"
+            )
+
+    def _upload_manager(self) -> CsvUploadSessionManager:
+        self._require_streaming_import()
+        if self._uploads is None:
+            self._uploads = CsvUploadSessionManager(loader=self._loader)
+        return self._uploads
+
+
+def create_runtime_service() -> AnalyticsService:
+    return AnalyticsService(llm_config=llm_rendering_config_from_environment())
 
 
 def _plus_one_second(value: str) -> str:
