@@ -16,6 +16,8 @@ services/h2-analytics/models/
 scripts/h2-sentinel/artifacts/
 tests/h2-sentinel/reports/generated/
 validation/baseline/
+# plan0829 方案包压缩备份（本地留存，不入库；文档树 plan0829/ 本身入库）
+/plan0829.zip
 .DS_Store
 Thumbs.db
 
