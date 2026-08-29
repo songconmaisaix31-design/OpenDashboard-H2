@@ -4,6 +4,7 @@ import { describe, it } from 'node:test'
 
 import {
   evaluateDoctorSnapshot,
+  hasEnvironmentProperty,
   MIN_FREE_BYTES,
   parseArguments,
   versionAtLeast,
@@ -57,13 +58,25 @@ describe('clean-machine doctor', () => {
     }
   })
 
-  it('keeps StepFun optional and never reports its value', () => {
-    const secret = 'must-not-appear'
-    const checks = evaluateDoctorSnapshot(readySnapshot({ stepFunConfigured: secret.length > 0 }))
-    const serialized = JSON.stringify(checks)
-    assert.match(serialized, /未读取或显示其值/)
-    assert.doesNotMatch(serialized, new RegExp(secret))
-    assert.equal(checks.find((entry) => entry.id === 'stepfun')?.status, 'pass')
+  it('checks only whether the StepFun environment property exists and never reports its value', () => {
+    const secret = 'sk-stepfun-must-not-appear'
+    const environment = new Proxy({ STEPFUN_API_KEY: secret }, {
+      get() {
+        throw new Error('The environment value must not be accessed.')
+      },
+    })
+
+    const configuredChecks = evaluateDoctorSnapshot(readySnapshot({
+      stepFunConfigured: hasEnvironmentProperty(environment, 'STEPFUN_API_KEY'),
+    }))
+    const configuredOutput = JSON.stringify(configuredChecks)
+    assert.match(configuredOutput, /可选配置已存在（未读取或显示其值）/)
+    assert.doesNotMatch(configuredOutput, new RegExp(secret))
+    assert.equal(configuredChecks.find((entry) => entry.id === 'stepfun')?.status, 'pass')
+
+    const unconfiguredOutput = JSON.stringify(evaluateDoctorSnapshot(readySnapshot()))
+    assert.match(unconfiguredOutput, /可选配置未提供；确定性离线路径不受影响/)
+    assert.doesNotMatch(unconfiguredOutput, new RegExp(secret))
   })
 })
 
@@ -94,6 +107,8 @@ describe('delivery check-all and CI', () => {
     assert.match(workflow, /actions\/checkout@[a-f0-9]{40}/)
     assert.match(workflow, /actions\/setup-node@[a-f0-9]{40}/)
     assert.match(workflow, /actions\/setup-python@[a-f0-9]{40}/)
+    assert.match(workflow, /python -m pip install uv==0\.11\.26/)
+    assert.doesNotMatch(workflow, /pip install[^\n]*(?:ruff|mypy)/i)
     assert.match(workflow, /uv sync --locked --extra dev/)
     assert.match(workflow, /node scripts\/h2-sentinel\/check-all\.mjs/)
     assert.match(workflow, /STEPFUN_API_KEY: ''/)

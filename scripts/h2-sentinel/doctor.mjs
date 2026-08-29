@@ -60,6 +60,10 @@ export function versionAtLeast(value, minimum) {
   return true
 }
 
+export function hasEnvironmentProperty(environment, name) {
+  return Object.hasOwn(environment, name)
+}
+
 function runCommand(command, args, cwd = repositoryRoot) {
   const result = spawnSync(command, args, {
     cwd,
@@ -249,10 +253,7 @@ export async function runDoctor(options = parseArguments([])) {
     webPortAvailable: await portAvailable(options.webPort),
     analyticsPortAvailable: options.mode === 'fixture' || await portAvailable(options.analyticsPort),
     freeBytes: availableBytes(repositoryRoot),
-    stepFunConfigured:
-      Object.hasOwn(process.env, 'STEPFUN_API_KEY') &&
-      typeof process.env.STEPFUN_API_KEY === 'string' &&
-      process.env.STEPFUN_API_KEY.length > 0,
+    stepFunConfigured: hasEnvironmentProperty(process.env, 'STEPFUN_API_KEY'),
   }
   const checks = evaluateDoctorSnapshot(snapshot)
   return {
