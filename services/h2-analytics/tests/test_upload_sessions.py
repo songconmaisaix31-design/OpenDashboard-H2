@@ -10,7 +10,11 @@ from fastapi.testclient import TestClient
 from h2_analytics.api import create_app
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.ingestion import CsvImportError, CsvUploadSessionManager
-from h2_analytics.service import AnalyticsService
+from h2_analytics.service import (
+    AnalyticsService,
+    create_runtime_service,
+    streaming_import_enabled_from_environment,
+)
 
 
 def _hash(content: bytes) -> str:
@@ -58,6 +62,38 @@ def test_streaming_setting_is_disabled_by_default(valid_csv: str) -> None:
             expected_content_hash=None,
         )
     assert captured.value.code == "upload.disabled"
+
+
+def test_streaming_runtime_flag_is_explicit_and_fail_closed() -> None:
+    assert streaming_import_enabled_from_environment({}) is False
+    assert streaming_import_enabled_from_environment(
+        {"H2_STREAMING_IMPORT_ENABLED": "false"}
+    ) is False
+    assert streaming_import_enabled_from_environment(
+        {"H2_STREAMING_IMPORT_ENABLED": "true"}
+    ) is True
+    with pytest.raises(RuntimeError, match="must be true or false"):
+        streaming_import_enabled_from_environment(
+            {"H2_STREAMING_IMPORT_ENABLED": "TRUE"}
+        )
+
+
+def test_runtime_service_enables_sessions_only_after_explicit_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("H2_STREAMING_IMPORT_ENABLED", "true")
+    monkeypatch.delenv("H2_LLM_ENABLED", raising=False)
+    service = create_runtime_service()
+    try:
+        session = service.create_csv_upload_session(
+            request_id="runtime-create-1",
+            filename="runtime.csv",
+            declared_bytes=1,
+            expected_content_hash=None,
+        )
+        assert session["status"] == "open"
+    finally:
+        service.close()
 
 
 def test_ordered_upload_finalizes_into_existing_workflow(

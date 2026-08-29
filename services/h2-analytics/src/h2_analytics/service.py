@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from collections import Counter
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
+import os
 from threading import Lock
 from typing import Any
 
@@ -445,7 +446,22 @@ class AnalyticsService:
 
 
 def create_runtime_service() -> AnalyticsService:
-    return AnalyticsService(llm_config=llm_rendering_config_from_environment())
+    return AnalyticsService(
+        streaming_import_enabled=streaming_import_enabled_from_environment(),
+        llm_config=llm_rendering_config_from_environment(),
+    )
+
+
+def streaming_import_enabled_from_environment(
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    environment = os.environ if environ is None else environ
+    value = environment.get("H2_STREAMING_IMPORT_ENABLED")
+    if value is None:
+        return H2_STREAMING_IMPORT_ENABLED
+    if value not in {"true", "false"}:
+        raise RuntimeError("H2_STREAMING_IMPORT_ENABLED must be true or false.")
+    return value == "true"
 
 
 def _plus_one_second(value: str) -> str:
