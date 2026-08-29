@@ -1,4 +1,4 @@
-# H2 Sentinel Remediation Submission Handoff
+# H2 Sentinel P2 B-Line Submission Handoff
 
 ## Scope and current truth
 
@@ -14,6 +14,16 @@
   Web code, plugin, nested worktree, or main branch was modified.
 - No final official metric, retained screenshot, measured receipt, organizer
   result, deployment, remote CI result, or final candidate SHA is claimed.
+- P2 dependency and coordinator-integration SHAs, owned-path summaries,
+  verification gates, rollback, and limitations are recorded in
+  [P2-B-IMPLEMENTATION-RECORD.md](../../docs/competition/h2-sentinel/P2-B-IMPLEMENTATION-RECORD.md).
+- The operator path, exact commands, environment-variable names, 16-column
+  order, signs, and troubleshooting are recorded in
+  [OPERATOR_RUNBOOK.md](OPERATOR_RUNBOOK.md).
+- Coordinator commit `40b3d391f42a13071f959bd753456afb9e02b2d5`
+  adds strict `H2_STREAMING_IMPORT_ENABLED=true` Local opt-in. Fresh final-SHA
+  launcher/Web evidence is still required before claiming full training-file
+  import.
 
 ## Delivered
 

@@ -99,6 +99,35 @@ The safety statement is closed: suffixes, negation, or any claim that the
 system/app is authorized to control equipment or send commands invalidate the
 receipt.
 
+## P2 B-line judge inserts outside the measured receipt
+
+Keep the P1 validation-slice receipt unchanged. Before the session, run
+`node scripts/h2-sentinel/doctor.mjs --mode local`; run
+`node scripts/h2-sentinel/check-all.mjs` from the exact candidate separately.
+These checks are prerequisites, not measured demo stages.
+
+After the measured path, show the following only when the final integrated
+runtime has passed the corresponding gate:
+
+1. Ask one supported paraphrase and show that bounded NLU identifies Q01-Q10;
+   ask one equipment-control request and show an explicit refusal.
+2. Open representative C01-C07 events and point out dedicated units, PCC and
+   storage sign conventions, plus the evidence-series fallback for unavailable
+   canonical fields.
+3. Show the StepFun disclosure. If authorized provider configuration exists,
+   show the labeled restatement and deterministic source; otherwise show the
+   offline deterministic path. Never display a credential or raw provider
+   request.
+4. Demonstrate full training-file progress only after setting exact
+   `H2_STREAMING_IMPORT_ENABLED=true` and verifying the standard Local launcher
+   against the final clean SHA. Commit `40b3d391f42a13071f959bd753456afb9e02b2d5`
+   implements the strict opt-in; the final full-file run remains pending.
+
+The external full training-file identity is size `236991870` bytes and SHA-256
+`67513c9b1d443d25eb1258a6f58252c02cdb438f701a7921e2f8dacc365a6c51`.
+It is read-only input, not bundled evidence. A slice demo must never be narrated
+as a full training-file import.
+
 ## Fixture fallback
 
 Fixture may be shown only as a separately labeled fallback:
