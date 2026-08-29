@@ -80,6 +80,8 @@ function canonicalTimestamp(instant) {
 
 function selectionOptions(options) {
   const hasInterval = options.interval !== undefined && options.interval !== null
+  const hasUtcDays = options.utcDays !== undefined && options.utcDays !== null
+  if (hasInterval && hasUtcDays) fail('Official timeseries selection is invalid.')
   if (hasInterval) {
     const { startMilliseconds, endMilliseconds } = options.interval
     if (
@@ -88,6 +90,19 @@ function selectionOptions(options) {
       options.limitDays !== undefined
     ) fail('Official timeseries interval selection is invalid.')
     return { kind: 'interval', startMilliseconds, endMilliseconds }
+  }
+  // [A2/T02] 加法式新选择分支：显式 UTC 日字符串集合（合理工况误报尺子的离散窗口日），
+  // 与 interval / minimumUtcDay+limitDays 互斥；既有调用方不受影响。
+  if (hasUtcDays) {
+    if (options.minimumUtcDay !== undefined || options.limitDays !== undefined) {
+      fail('Official timeseries UTC-day selection is invalid.')
+    }
+    const days = options.utcDays instanceof Set ? options.utcDays : new Set(options.utcDays)
+    if (
+      days.size === 0 ||
+      [...days].some((day) => typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day))
+    ) fail('Official timeseries UTC-day selection is invalid.')
+    return { kind: 'utcDays', days }
   }
   const minimumUtcDay = options.minimumUtcDay ?? null
   const limitDays = options.limitDays ?? 0
@@ -246,9 +261,11 @@ async function scanOfficialTimeseries(
       }
       const selected = selection?.kind === 'interval'
         ? instant >= selection.startMilliseconds && instant <= selection.endMilliseconds
-        : selection?.kind === 'days' &&
-          (selection.minimumUtcDay === null || day >= selection.minimumUtcDay) &&
-          (selection.limitDays === 0 || eligibleDayCount <= selection.limitDays)
+        : selection?.kind === 'utcDays'
+          ? selection.days.has(day)
+          : selection?.kind === 'days' &&
+            (selection.minimumUtcDay === null || day >= selection.minimumUtcDay) &&
+            (selection.limitDays === 0 || eligibleDayCount <= selection.limitDays)
 
       rowCount += 1
       previousTimestamp = instant

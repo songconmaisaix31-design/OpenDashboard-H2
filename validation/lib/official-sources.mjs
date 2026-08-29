@@ -94,6 +94,82 @@ function canonicalTimestamp(value, label) {
   return new Date(instant).toISOString().replace('.000Z', 'Z')
 }
 
+// [A2/T02] 官方合理工况反例库（N01-N07，77 条）：误报尺子的数据源身份锚点。
+// N02-N07 与 C02-C07 一一对应；N01 为云团引起的正常功率跟踪（无对应异常类）。
+export const NORMAL_CONTEXT_CODES = Object.freeze([
+  'N01',
+  'N02',
+  'N03',
+  'N04',
+  'N05',
+  'N06',
+  'N07',
+])
+
+export const NORMAL_CONTEXTS = Object.freeze({
+  filename: '13_train_validation_normal_context.csv',
+  sha256: 'sha256:57480a6b8bb7c736ac1ec326535c4d12b1404f3a8d1f453686165941f5f2d88e',
+  rowCount: 77,
+  contextCount: 77,
+  firstStart: '2025-01-12T15:21:00Z',
+  lastEnd: '2026-03-31T11:37:00Z',
+  byCode: Object.freeze(Object.fromEntries(NORMAL_CONTEXT_CODES.map((code) => [code, 11]))),
+  bySplit: Object.freeze({ train: 56, validation: 21 }),
+})
+
+export function assertNormalContextIdentity({ bytes, rowCount, contexts, contract }) {
+  if (sha256(bytes) !== contract.sha256) {
+    throw new Error(`Official normal-context SHA-256 does not match ${contract.filename}.`)
+  }
+  if (rowCount !== contract.rowCount || contexts.length !== contract.contextCount) {
+    throw new Error(`Official normal-context row or context count does not match ${contract.filename}.`)
+  }
+  const ids = contexts.map(({ id }) => id)
+  if (ids.some((id) => typeof id !== 'string' || id.trim() === '') || new Set(ids).size !== ids.length) {
+    throw new Error('Official normal contexts require unique, non-empty context_id values.')
+  }
+  if (contexts.some(({ split, code }) => split !== 'train' && split !== 'validation' ||
+    !NORMAL_CONTEXT_CODES.includes(code))) {
+    throw new Error('Official normal contexts require known split and N01-N07 context codes.')
+  }
+  const firstStart = canonicalTimestamp(
+    contexts.reduce((minimum, context) =>
+      toInstant(context.startTime) < toInstant(minimum) ? context.startTime : minimum,
+    contexts[0].startTime),
+    'First normal-context start',
+  )
+  const lastEnd = canonicalTimestamp(
+    contexts.reduce((maximum, context) =>
+      toInstant(context.endTime) > toInstant(maximum) ? context.endTime : maximum,
+    contexts[0].endTime),
+    'Last normal-context end',
+  )
+  const byCode = Object.fromEntries(
+    NORMAL_CONTEXT_CODES.map((code) => [code, contexts.filter((context) => context.code === code).length]),
+  )
+  const bySplit = Object.fromEntries(
+    ['train', 'validation'].map((split) => [split, contexts.filter((context) => context.split === split).length]),
+  )
+  if (
+    firstStart !== contract.firstStart || lastEnd !== contract.lastEnd ||
+    NORMAL_CONTEXT_CODES.some((code) => byCode[code] !== contract.byCode[code]) ||
+    Object.keys(contract.bySplit).some((split) => bySplit[split] !== contract.bySplit[split])
+  ) {
+    throw new Error(`Official normal-context range or code counts do not match ${contract.filename}.`)
+  }
+  return {
+    filename: contract.filename,
+    sha256: contract.sha256,
+    rowCount,
+    contextCount: contexts.length,
+    uniqueContextIdCount: new Set(ids).size,
+    firstStart,
+    lastEnd,
+    byCode,
+    bySplit,
+  }
+}
+
 export function assertLabelSourceIdentity({ bytes, rowCount, events, contract }) {
   if (sha256(bytes) !== contract.sha256) {
     throw new Error(`Official label SHA-256 does not match ${contract.filename}.`)

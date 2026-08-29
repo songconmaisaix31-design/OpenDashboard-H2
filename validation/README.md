@@ -50,6 +50,34 @@ cannot be made valid by changing only classification scalars. Negative
 first-detection delay denotes an early warning. These are local contract
 metrics, not an organizer score.
 
+## 合理工况误报回归尺子（N01-N07，P0-4 / T02）
+
+```powershell
+node validation/normal-context-regression.mjs --official-data '<data-directory>' `
+  [--mode report|freeze|check] [--force] [--output '<new-generated-report-path>']
+```
+
+读取官方 `13_train_validation_normal_context.csv`（77 条已确认合理工况窗口；
+N02-N07 与 C02-C07 一一对应，N01 为云团引起的正常功率跟踪），经 SHA-256 与
+行列契约校验后，对每个 `[start_time, end_time]` 窗口调用与 `evaluate.mjs`
+完全相同的进程内检测管线（Local launcher，逐 UTC 日 chunk 导入并分析，
+相邻同码预测按 2 分钟间隔合并）。窗口覆盖日前后各扩 1 个 UTC 日以保证
+跨日合并连续性；仅缓冲日上的事件不计入 FP。合并后预测事件区间与窗口
+闭区间相交（无 grace）即计为该窗口的 FP 事件。
+
+- 分列产出 `fp_rate` = 触发 FP 的窗口数 / 窗口数（N01-N07 各一列 + 总览；
+  train/validation 分列与 N×C 预测码矩阵仅作诊断，不入门禁）；
+- `--mode freeze` 冻结基线至 `validation/baseline/normal-context-baseline.json`
+  （gitignored；重复冻结需显式 `--force`）；
+- `--mode check` 为门禁模式：任一列 `contextsWithFp` 或 `fpEventCount` 高于
+  基线即非零退出，对应 A-1 门禁「此后任何算法改动误报不得上升」；
+- 全模式要求 clean working tree（与官方评估同一证据纪律：SHA 只对 clean commit 有效）；
+- ADR-002：N01-N07 只作误报回归尺子，绝不作为训练增强。
+
+基线误报偏高时如实记录——这正是 P1-1/P1-2 的立项依据。接入
+`scripts/h2-sentinel/check-all.mjs` 一键门禁事宜见
+`plan0829/A/planA/docs/status/change-requests.md`（该路径属 B 线领土）。
+
 ## Disjoint-window overfit sentinel
 
 ```powershell
