@@ -358,6 +358,7 @@ async function runOccupiedPortSmoke() {
 }
 
 async function runHealthTimeoutSmoke() {
+  const webPort = await getFreePort()
   const port = await getFreePort()
   const unhealthy = createHttpServer((request, response) => {
     if (request.url === '/health') {
@@ -376,6 +377,8 @@ async function runHealthTimeoutSmoke() {
     const session = spawnForFailure([
       '--mode',
       'local',
+      '--web-port',
+      String(webPort),
       '--external-sidecar-url',
       `http://${LOOPBACK_HOST}:${port}/`,
       '--health-timeout-ms',
@@ -388,10 +391,12 @@ async function runHealthTimeoutSmoke() {
   } finally {
     await new Promise((resolvePromise) => unhealthy.close(resolvePromise))
   }
+  await assertPortReleased(webPort)
   console.log('PASS launcher rejects a redirecting external sidecar health endpoint')
 }
 
 async function runUntrustedHealthImplementationSmoke() {
+  const webPort = await getFreePort()
   const port = await getFreePort()
   let responseBody = null
   const untrusted = createHttpServer((request, response) => {
@@ -427,6 +432,8 @@ async function runUntrustedHealthImplementationSmoke() {
       const session = spawnForFailure([
         '--mode',
         'local',
+        '--web-port',
+        String(webPort),
         '--external-sidecar-url',
         `http://${LOOPBACK_HOST}:${port}/`,
         '--health-timeout-ms',
@@ -440,6 +447,7 @@ async function runUntrustedHealthImplementationSmoke() {
   } finally {
     await new Promise((resolvePromise) => untrusted.close(resolvePromise))
   }
+  await assertPortReleased(webPort)
   await assertPortReleased(port)
   console.log('PASS launcher rejects incomplete, wrong-origin, and extra-field health lookalikes')
 }

@@ -177,6 +177,27 @@ describe('H2 Sentinel official submission checker', () => {
     assert.equal(validateSubmissionText(`\uFEFF${valid}`).valid, false)
   })
 
+  it('parses quoted comma-separated equipment and rejects malformed CSV escaping', () => {
+    const valid = serializeSubmission([row({ affected_equipment: 'BESS,PCC' })])
+    assert.equal(validateSubmissionText(valid).valid, true)
+    assert.equal(validateSubmissionText(valid.replace('"BESS,PCC"', '"BESS,PCC"tail')).valid, false)
+    assert.equal(validateSubmissionText(valid.replace('"BESS,PCC"', '"BESS,PCC')).valid, false)
+  })
+
+  it('rejects independently malformed evidence JSON and missing columns', () => {
+    const invalidEvidence = validateSubmissionText(
+      serializeSubmission([row({ evidence_json: '[{"evidence_id":"EV-001"}' })]),
+    )
+    assert.equal(invalidEvidence.valid, false)
+    assert.ok(invalidEvidence.issues.some((issue) => issue.includes('evidence_json is not valid JSON')))
+
+    const [header, data] = serializeSubmission([row()]).trimEnd().split('\n')
+    const missingColumn = `${header.replace(',requires_human_confirmation', '')}\n${data.replace(/,true$/, '')}\n`
+    const result = validateSubmissionText(missingColumn)
+    assert.equal(result.valid, false)
+    assert.ok(result.issues.some((issue) => issue.includes('exact official 16-column order')))
+  })
+
   it('rejects equipment-master IDs, id:name values, spaces, and wrong token sets', () => {
     for (const affected_equipment of [
       'BESS01,PCC',

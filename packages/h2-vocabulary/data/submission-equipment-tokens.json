@@ -1,5 +1,12 @@
 {
   "schemaVersion": 1,
+  "normalizationAliases": {
+    "ELZ1": "ELZ01",
+    "ELZ2": "ELZ02",
+    "ELZ3": "ELZ03",
+    "BESS": "BESS01",
+    "PCC": "PCC01"
+  },
   "tokensByCode": {
     "C01": ["ELZ1", "ELZ2", "BESS", "PCC"],
     "C02": ["ELZ1"],
