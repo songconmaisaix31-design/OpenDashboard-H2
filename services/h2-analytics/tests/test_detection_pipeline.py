@@ -357,11 +357,12 @@ def test_c05_causal_signature_bounds_window_and_peak_impact(
                 "grid_import_energy_quota_kwh_day": import_quota,
                 "grid_export_energy_quota_excess_kwh": 0.0,
                 "grid_import_energy_quota_excess_kwh": 0.0,
+                # T05 相对带下 ±2kW 扰动仍在带内，改用 ±100kW 制造带外边界。
                 "bess_power_cmd_kw": (
-                    target_kw if index >= 1 else target_kw + 2.0
+                    target_kw if index >= 1 else target_kw + 100.0
                 ),
                 "bess_power_actual_kw": (
-                    target_kw if index <= 5 else target_kw + 2.0
+                    target_kw if index <= 5 else target_kw + 100.0
                 ),
                 excess_field: excess_values[index],
             },
@@ -469,8 +470,11 @@ def test_c05_thresholds_record_train_only_causal_evidence() -> None:
     assert config["aggregation"]["confirmationRow"] == 4
     assert config["aggregation"]["requiresExactSamplingInterval"] is True
     assert config["aggregation"]["exactSamplingIntervalMinutes"] == 1
-    assert config["bessSignatureTargetMagnitudeKw"] == 300.0
-    assert config["bessSignatureToleranceKw"] == 1.0
+    assert config["relativeBandLowRatio"] == 0.55
+    assert config["relativeBandHighRatio"] == 0.7
+    assert config["actualTrackingToleranceKw"] == 5.0
+    assert config["plateauToleranceKw"] == 5.0
+    assert "bessSignatureTargetMagnitudeKw" not in config
     assert calibration["split"] == "public_train"
     assert calibration["competitionPackageVersion"] == "public-v4.0"
     assert calibration["eventCount"] == 40
@@ -1073,6 +1077,125 @@ def test_c03_relative_band_fails_closed_without_limit(valid_csv: str) -> None:
     rows = _c03_relative_band_rows(valid_csv, 400.0, limit=None)
     assert not any(
         item.code == "C03" for item in RuleRowDetector().detect(rows)
+    )
+
+
+def _c05_relative_band_rows(
+    valid_csv: str,
+    command: float,
+    *,
+    export_quota: float = 2200.0,
+    import_quota: float = 24000.0,
+    limit: float | None = 500.0,
+    count: int = 6,
+):
+    """T05 相对带用例：低配额 + 指定 cmd 水平的最小序列。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    rows = []
+    for index in range(count):
+        values = {
+            **baseline.values,
+            "grid_export_energy_quota_kwh_day": export_quota,
+            "grid_import_energy_quota_kwh_day": import_quota,
+            "bess_power_cmd_kw": command,
+            "bess_power_actual_kw": command,
+        }
+        values["bess_charge_power_limit_kw"] = limit
+        values["bess_discharge_power_limit_kw"] = limit
+        rows.append(
+            replace(
+                baseline,
+                index=index,
+                timestamp=baseline.timestamp + timedelta(minutes=index),
+                timestamp_text=(
+                    baseline.timestamp + timedelta(minutes=index)
+                ).isoformat(),
+                values=values,
+            )
+        )
+    return tuple(rows)
+
+
+def test_c05_relative_band_accepts_shifted_replay_level(valid_csv: str) -> None:
+    # 320 kW 在旧绝对带（300±1）之外、相对带 [250,350]@500 之内：
+    # 低配额 + 方向一致的漂移重放水平可检出。
+    rows = _c05_relative_band_rows(valid_csv, 320.0)
+    candidates = tuple(
+        item for item in RuleRowDetector().detect(rows) if item.code == "C05"
+    )
+    assert len(candidates) == len(rows)
+
+
+def test_c05_relative_band_gates(valid_csv: str) -> None:
+    detector = RuleRowDetector()
+    # 方向不一致：export 风险天但 BESS 充电（cmd<0）→ 不触发。
+    wrong_direction = _c05_relative_band_rows(valid_csv, -320.0)
+    assert not any(
+        item.code == "C05" for item in detector.detect(wrong_direction)
+    )
+    # 带下界：250 kW（0.5×限额，C07 恢复位与健康午后平台位）→ 出带。
+    below_floor = _c05_relative_band_rows(valid_csv, 250.0)
+    assert not any(
+        item.code == "C05" for item in detector.detect(below_floor)
+    )
+    # 带外上界：450 kW（0.9×限额的健康平台位）→ 不触发。
+    out_of_band = _c05_relative_band_rows(valid_csv, 450.0)
+    assert not any(
+        item.code == "C05" for item in detector.detect(out_of_band)
+    )
+    # 限额缺失 → fail closed。
+    no_limit = _c05_relative_band_rows(valid_csv, 300.0, limit=None)
+    assert not any(
+        item.code == "C05" for item in detector.detect(no_limit)
+    )
+
+
+def test_c05_plateau_anchor_rejects_ramp_and_high_quota(valid_csv: str) -> None:
+    # 渐近爬坡段：cmd 从 270 爬向 300（带内但偏离 run 首行 >5kW）→ 不触发。
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    ramp_values = (270.0, 278.0, 284.0, 289.0, 293.0, 296.0, 298.0, 300.0)
+    ramp_rows = []
+    for index, level in enumerate(ramp_values):
+        ramp_rows.append(
+            replace(
+                baseline,
+                index=index,
+                timestamp=baseline.timestamp + timedelta(minutes=index),
+                timestamp_text=(
+                    baseline.timestamp + timedelta(minutes=index)
+                ).isoformat(),
+                values={
+                    **baseline.values,
+                    "grid_export_energy_quota_kwh_day": 2200.0,
+                    "grid_import_energy_quota_kwh_day": 24000.0,
+                    "bess_power_cmd_kw": level,
+                    "bess_power_actual_kw": level,
+                    "bess_charge_power_limit_kw": 500.0,
+                    "bess_discharge_power_limit_kw": 500.0,
+                },
+            )
+        )
+    ramp = tuple(ramp_rows)
+    # 行级允许 run 首行的零星候选，但渐近段无法通过 4 行持续聚合成事件。
+    ramp_candidates = tuple(
+        item for item in RuleRowDetector().detect(ramp) if item.code == "C05"
+    )
+    assert len(ramp_candidates) < 4
+    assert EventAggregator().aggregate(
+        rows=ramp,
+        candidates=ramp_candidates,
+        sampling_interval_minutes=1.0,
+    ) == ()
+    # 高配额（健康场景 quota 水平）：带内恒定平台也被 quota 门排除。
+    healthy = _c05_relative_band_rows(
+        valid_csv, 300.0, export_quota=4800.0, import_quota=23500.0
+    )
+    assert not any(
+        item.code == "C05" for item in RuleRowDetector().detect(healthy)
     )
 
 

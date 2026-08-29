@@ -90,8 +90,10 @@
       },
       "exportQuotaMinimumKwh": 4500.0,
       "importQuotaMinimumKwh": 20000.0,
-      "bessSignatureTargetMagnitudeKw": 300.0,
-      "bessSignatureToleranceKw": 1.0,
+      "relativeBandLowRatio": 0.55,
+      "relativeBandHighRatio": 0.7,
+      "actualTrackingToleranceKw": 5.0,
+      "plateauToleranceKw": 5.0,
       "forecastDepletionRateWindowRows": 15,
       "forecastMinimumDepletionRateKwhPerMin": 1.0,
       "calibration": {
@@ -103,6 +105,12 @@
           "IMPORT_ENERGY_QUOTA_RISK": 20
         },
         "finding": "All 40 labeled C05 intervals were exactly the sustained low-quota BESS command/actual runs at +300 kW for export or -300 kW for import; the immediately preceding and following rows were outside the signature.",
+        "signatureBandChange": {
+          "from": "bess command/actual within ±300 kW ± 1 kW on the risk direction (absolute frozen band)",
+          "to": "direction-consistent relative band [0.55, 0.7] x row-level charge/discharge power limit, actual tracking within 5 kW, and a plateau anchor requiring each in-band row to stay within 5 kW of the first row of its contiguous in-band run; the low-quota static gate is retained as the exclusivity backbone",
+          "rationale": "ADR-003 level-1 replacement: TRAIN events hold the BESS command exactly at 0.6 x the 500 kW limit on the risk direction (jump-onset, then a perfectly flat plateau), so the relative band self-adapts to row limits and shifted replay levels. The band floor sits at 0.55 x limit because C07 recovery events and healthy afternoon schedules both hold exactly 250 kW (0.5 x limit) on non-low-quota days; the plateau anchor excludes asymptotic ramp segments that drift toward the band level.",
+          "exclusivityEvidence": "Full TRAIN scans found (a) 21 non-event in-band plateau segments in the wider [250, 350] kW window - 8 perfect 250.0 kW afternoon plateaus (0.5 x limit, excluded by the band floor) and 13 drifting 270-290 kW runs (excluded by the plateau anchor: their rows sit 6-21 kW above their run's first row); (b) every C07 event day carries quota 4800-5800/23500-26000, far above the static gate, and C07 BESS levels are exactly 250 kW; (c) on all 40 C05 event days zero in-band minutes occur outside the official intervals after the plateau anchor."
+        },
         "toleranceRationale": "Public TRAIN command and actual values were exactly at the subtype target; the inclusive 1 kW band is a narrow numeric tolerance and was not tuned from validation.",
         "minimumRowsRationale": {
           "samplingIntervalMinutes": 1,

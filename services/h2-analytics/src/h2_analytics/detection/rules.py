@@ -66,10 +66,12 @@ _PCC_VIOLATION_MIN_KW = _threshold("C04", "pccViolationMinimumKw")
 _C04_COMMAND_GAP_KW = _threshold("C04", "fixtureCommandGapKw")
 _C05_EXPORT_QUOTA_MIN_KWH = _threshold("C05", "exportQuotaMinimumKwh")
 _C05_IMPORT_QUOTA_MIN_KWH = _threshold("C05", "importQuotaMinimumKwh")
-_C05_BESS_TARGET_MAGNITUDE_KW = _threshold(
-    "C05", "bessSignatureTargetMagnitudeKw"
-)
-_C05_BESS_TOLERANCE_KW = _threshold("C05", "bessSignatureToleranceKw")
+# T05 去签名带（ADR-003）：±300±1kW 绝对带替换为"相对限额带 + 方向一致 +
+# 实际跟踪 + run 平台锚定"的组合（quota 静态风险门保留为排他主力，见校准记录块）。
+_C05_RELATIVE_BAND_LOW_RATIO = _threshold("C05", "relativeBandLowRatio")
+_C05_RELATIVE_BAND_HIGH_RATIO = _threshold("C05", "relativeBandHighRatio")
+_C05_TRACKING_TOLERANCE_KW = _threshold("C05", "actualTrackingToleranceKw")
+_C05_PLATEAU_TOLERANCE_KW = _threshold("C05", "plateauToleranceKw")
 # 前瞻判据（T03a）：剩余配额按滑窗消耗速率外推，预计在当日日终前耗尽即预警。
 _C05_FORECAST_WINDOW_ROWS = int(
     _threshold("C05", "forecastDepletionRateWindowRows")
@@ -305,13 +307,55 @@ class RuleRowDetector:
         rows: tuple[DataRow, ...],
         index: int,
     ) -> tuple[DetectionCandidate, ...]:
-        # 静态风险路径（既有冻结行为）：低配额日 + 方向化 BESS 签名带。
+        # T05 统一平台锚定门：候选行必须与其所在带内连续 run 的首行水平一致，
+        # 排除爬向带位的渐近调节段（事件为跳变进入的恒定平台）。
+        if not self._c05_plateau_aligned(rows, index):
+            return ()
+        # 静态风险路径（既有冻结行为）：低配额日 + 方向化 BESS 相对带。
         static = self._c05_static_candidate(rows[index])
         if static:
             return static
         # 前瞻路径（T03a）：配额未触静态阈值时，按滑窗消耗速率外推，
         # 预计在当日日终前耗尽的方向才预警（仅单侧成立可映射官方 subtype）。
         return self._c05_forecast_candidate(rows, index)
+
+    def _c05_band_level(self, row: DataRow) -> float | None:
+        """行在 C05 相对带内则返回 |cmd|，否则 None（不含方向/跟踪门）。"""
+        command = row.value("bess_power_cmd_kw")
+        if command is None or command == 0:
+            return None
+        limit = (
+            row.value("bess_discharge_power_limit_kw")
+            if command > 0
+            else row.value("bess_charge_power_limit_kw")
+        )
+        if limit is None or limit <= 0:
+            return None
+        magnitude = abs(command)
+        if not (
+            _C05_RELATIVE_BAND_LOW_RATIO * limit
+            <= magnitude
+            <= _C05_RELATIVE_BAND_HIGH_RATIO * limit
+        ):
+            return None
+        return magnitude
+
+    def _c05_plateau_aligned(
+        self,
+        rows: tuple[DataRow, ...],
+        index: int,
+    ) -> bool:
+        """当前行 |cmd| 与其带内连续 run 首行的极差不超过平台容差。"""
+        level = self._c05_band_level(rows[index])
+        if level is None:
+            return False
+        anchor = level
+        for prior in reversed(rows[max(0, index - 64) : index]):
+            prior_level = self._c05_band_level(prior)
+            if prior_level is None:
+                break
+            anchor = prior_level
+        return abs(level - anchor) <= _C05_PLATEAU_TOLERANCE_KW
 
     def _c05_static_candidate(
         self, row: DataRow
@@ -333,23 +377,40 @@ class RuleRowDetector:
             else "IMPORT_ENERGY_QUOTA_RISK"
         )
         # The official sign contract is positive discharge/export and negative
-        # charge/import. Quota risk chooses the direction; both BESS signals
-        # must remain on that direction's causal level to retain the row.
-        target = (
-            _C05_BESS_TARGET_MAGNITUDE_KW
-            if export_risk
-            else -_C05_BESS_TARGET_MAGNITUDE_KW
-        )
-        command = row.value("bess_power_cmd_kw")
-        actual = row.value("bess_power_actual_kw")
-        if command is None or actual is None:
-            return ()
-        if (
-            abs(command - target) > _C05_BESS_TOLERANCE_KW
-            or abs(actual - target) > _C05_BESS_TOLERANCE_KW
-        ):
+        # charge/import. Quota risk chooses the direction; the T05 relative
+        # band replaces the frozen ±300 kW level (see calibration block).
+        if not self._c05_bess_signature_aligned(row, export_risk=export_risk):
             return ()
         return (self._candidate(row, "C05", subtype, 0.80),)
+
+    def _c05_bess_signature_aligned(
+        self,
+        row: DataRow,
+        *,
+        export_risk: bool,
+    ) -> bool:
+        """T05 相对带签名门：方向与风险一致 + 相对限额带内 + 实际跟踪。"""
+        command = row.value("bess_power_cmd_kw")
+        actual = row.value("bess_power_actual_kw")
+        if command is None or actual is None or command == 0:
+            return False
+        if export_risk != (command > 0):
+            return False
+        limit = (
+            row.value("bess_discharge_power_limit_kw")
+            if command > 0
+            else row.value("bess_charge_power_limit_kw")
+        )
+        if limit is None or limit <= 0:
+            # 限额缺失无法形成相对带，保守放弃（fail closed）。
+            return False
+        magnitude = abs(command)
+        return (
+            _C05_RELATIVE_BAND_LOW_RATIO * limit
+            <= magnitude
+            <= _C05_RELATIVE_BAND_HIGH_RATIO * limit
+            and abs(actual - command) <= _C05_TRACKING_TOLERANCE_KW
+        )
 
     def _c05_forecast_candidate(
         self,
@@ -359,21 +420,14 @@ class RuleRowDetector:
         row = rows[index]
         if row.timestamp is None:
             return ()
-        command = row.value("bess_power_cmd_kw")
-        actual = row.value("bess_power_actual_kw")
-        if command is None or actual is None:
-            return ()
-        # 方向化签名门与静态路径共用（去除签名带属 T05 范畴，此处保持冻结）。
-        qualifying: list[tuple[str, float]] = []
-        for subtype, target in (
-            ("EXPORT_ENERGY_QUOTA_RISK", _C05_BESS_TARGET_MAGNITUDE_KW),
-            ("IMPORT_ENERGY_QUOTA_RISK", -_C05_BESS_TARGET_MAGNITUDE_KW),
+        # 方向化相对带签名门与静态路径共用（T05 起替换冻结签名带）。
+        qualifying: list[tuple[str, str]] = []
+        for subtype, side, export_risk in (
+            ("EXPORT_ENERGY_QUOTA_RISK", "export", True),
+            ("IMPORT_ENERGY_QUOTA_RISK", "import", False),
         ):
-            if abs(command - target) > _C05_BESS_TOLERANCE_KW:
+            if not self._c05_bess_signature_aligned(row, export_risk=export_risk):
                 continue
-            if abs(actual - target) > _C05_BESS_TOLERANCE_KW:
-                continue
-            side = subtype.split("_")[0].lower()
             remaining = row.value(f"grid_{side}_energy_remaining_kwh")
             rate = self._energy_depletion_rate(
                 rows, index, f"grid_{side}_energy_used_kwh_day"
@@ -385,7 +439,7 @@ class RuleRowDetector:
             minutes_to_day_end = _minutes_to_day_end(row.timestamp)
             # 上游口径（02_ALGO_ROBUSTNESS §5）：预计超限时刻早于当日剩余时长。
             if remaining / rate < minutes_to_day_end:
-                qualifying.append((subtype, target))
+                qualifying.append((subtype, side))
         if len(qualifying) != 1:
             # 双侧同时耗尽无法选择官方 subtype，零侧耗尽不构成前瞻预警。
             return ()
