@@ -18,7 +18,7 @@ from h2_analytics.settings import (
 )
 from .base import DetectionCandidate
 from .c03 import c03_causal_row_keys
-from .c06 import inefficient_allocation_signature
+from .c06 import c06_inefficient_row_keys, inefficient_allocation_signature
 
 _ELZ_IDS = ("1", "2", "3")
 _ELZ_POWER_CMD = tuple(f"elz{index}_power_cmd_kw" for index in _ELZ_IDS)
@@ -79,8 +79,13 @@ _C05_FORECAST_WINDOW_ROWS = int(
 _C05_FORECAST_MIN_RATE_KWH_PER_MIN = _threshold(
     "C05", "forecastMinimumDepletionRateKwhPerMin"
 )
-_C06_START_STOP_LOW_KW = _threshold("C06", "avoidableStartStopPowerMinimumKw")
-_C06_START_STOP_HIGH_KW = _threshold("C06", "avoidableStartStopPowerMaximumKw")
+# T06 去签名带（ADR-003）：AVOIDABLE_START_STOP 绝对带 390-410kW 替换为
+# "相对当行实际可用容量的功率带 + 两台可承载因果门"（见校准记录块）。
+_C06_START_STOP_LOW_RATIO = _threshold("C06", "avoidableStartStopBandLowRatio")
+_C06_START_STOP_HIGH_RATIO = _threshold("C06", "avoidableStartStopBandHighRatio")
+_C06_START_STOP_TWO_UNIT_MARGIN = _threshold(
+    "C06", "avoidableStartStopTwoUnitMarginRatio"
+)
 _SOC_TARGET_DEVIATION_PCT = _threshold("C07", "socTargetDeviationPct")
 _C07_RESERVE_MIN_KWH = _threshold("C07", "reserveTargetMinimumKwh")
 # 前瞻判据（T03a）：SOC 轨迹按滑窗速率外推至确认视界，预计越限即预警。
@@ -106,6 +111,7 @@ class RuleRowDetector:
 
     def detect(self, rows: tuple[DataRow, ...]) -> tuple[DetectionCandidate, ...]:
         candidates = list(self._detect_c03(rows))
+        candidates.extend(self._detect_c06(rows))
         for index, row in enumerate(rows):
             if row.timestamp is None:
                 continue
@@ -113,7 +119,6 @@ class RuleRowDetector:
             candidates.extend(self._detect_c02(row))
             candidates.extend(self._detect_c04(row))
             candidates.extend(self._detect_c05(rows, index))
-            candidates.extend(self._detect_c06(rows, index))
             candidates.extend(self._detect_c07(rows, index))
         return tuple(
             sorted(
@@ -476,61 +481,99 @@ class RuleRowDetector:
     def _detect_c06(
         self,
         rows: tuple[DataRow, ...],
-        index: int,
     ) -> tuple[DetectionCandidate, ...]:
-        row = rows[index]
-        start_stop = self._detect_c06_avoidable_start_stop(row)
-        if start_stop:
-            return start_stop
-        inefficient = self._detect_c06_inefficient(row)
-        if inefficient:
-            return inefficient
-        return ()
+        """C06 整体判定：SS 行集优先，INEFF 走滑窗份额锚定授权。
 
-    def _detect_c06_inefficient(
-        self, row: DataRow
-    ) -> tuple[DetectionCandidate, ...]:
-        reference = inefficient_allocation_signature(row, self._constraints)
-        if reference is None:
-            return ()
-        return (
-            self._candidate(
-                row,
-                "C06",
-                "INEFFICIENT_POWER_ALLOCATION",
-                0.84,
-                implicated_equipment_ids=(
-                    reference.inefficient_equipment_id,
-                    reference.alternative_equipment_id,
-                ),
-            ),
-        )
+        T06 起两 subtype 均去签名带：SS 用相对容量带 + 两台可承载门；
+        INEFF 单行签名（相对份额带 + ELZ3 结构门 + 效率门）之上叠加
+        c06_inefficient_row_keys 的 run 份额锚定（ADR-003 二级判据）。
+        """
+        candidates: list[DetectionCandidate] = []
+        start_stop_keys: set[tuple[int, datetime]] = set()
+        for row in rows:
+            if row.timestamp is None:
+                continue
+            if self._detect_c06_avoidable_start_stop(row):
+                start_stop_keys.add((row.index, row.timestamp))
+        for row in rows:
+            if row.timestamp is None:
+                continue
+            key = (row.index, row.timestamp)
+            if key in start_stop_keys:
+                candidates.append(
+                    self._candidate(
+                        row,
+                        "C06",
+                        "AVOIDABLE_START_STOP",
+                        0.82,
+                        implicated_equipment_ids=_ELZ_EQUIPMENT,
+                    )
+                )
+        authorized = c06_inefficient_row_keys(rows)
+        for row in rows:
+            if row.timestamp is None:
+                continue
+            key = (row.index, row.timestamp)
+            if key in start_stop_keys or key not in authorized:
+                continue
+            reference = inefficient_allocation_signature(row, self._constraints)
+            if reference is None:
+                continue
+            candidates.append(
+                self._candidate(
+                    row,
+                    "C06",
+                    "INEFFICIENT_POWER_ALLOCATION",
+                    0.84,
+                    implicated_equipment_ids=(
+                        reference.inefficient_equipment_id,
+                        reference.alternative_equipment_id,
+                    ),
+                )
+            )
+        return tuple(candidates)
 
     def _detect_c06_avoidable_start_stop(
         self, row: DataRow
-    ) -> tuple[DetectionCandidate, ...]:
+    ) -> bool:
+        """T06：三台运行于自身容量 [0.35, 0.45] 低负荷带且两台即可承载。
+
+        绝对带 390-410kW（=0.4×1000kW 额定）替换为相对当行实际可用容量
+        的功率带；可避免性因果门要求总目标不超过两台承载余量（停一台后
+        剩余两台仍可承担当前总目标）。
+        """
         powers = [row.value(field) for field in _ELZ_POWER_ACTUAL]
         states = [row.value(field) for field in _ELZ_RUN_STATE]
-        if any(value is None for value in powers) or any(value is None for value in states):
-            return ()
+        capacities = [row.value(field) for field in _ELZ_ACTUAL_CAPACITY]
+        target = row.value("ems_total_elz_target_kw")
+        if (
+            any(value is None for value in powers)
+            or any(value is None for value in states)
+            or any(value is None for value in capacities)
+            or target is None
+        ):
+            return False
         numeric_powers = [power for power in powers if power is not None]
         numeric_states = [state for state in states if state is not None]
+        numeric_capacities = [
+            capacity for capacity in capacities if capacity is not None
+        ]
+        if any(capacity <= 0 for capacity in numeric_capacities):
+            return False
         if any(
-            power < _C06_START_STOP_LOW_KW or power > _C06_START_STOP_HIGH_KW
-            for power in numeric_powers
+            power < _C06_START_STOP_LOW_RATIO * capacity
+            or power > _C06_START_STOP_HIGH_RATIO * capacity
+            for power, capacity in zip(
+                numeric_powers, numeric_capacities, strict=True
+            )
         ):
-            return ()
+            return False
         if any(state < 2 for state in numeric_states):
-            return ()
-        return (
-            self._candidate(
-                row,
-                "C06",
-                "AVOIDABLE_START_STOP",
-                0.82,
-                implicated_equipment_ids=_ELZ_EQUIPMENT,
-            ),
-        )
+            return False
+        # 可避免性因果门：两台（含余量系数）即可承载当前总目标。
+        if target > _C06_START_STOP_TWO_UNIT_MARGIN * 2 * min(numeric_capacities):
+            return False
+        return True
 
     def _detect_c07(
         self,

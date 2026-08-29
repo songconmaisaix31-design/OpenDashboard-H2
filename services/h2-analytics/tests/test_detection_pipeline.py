@@ -704,6 +704,233 @@ def test_c03_and_c06_thresholds_freeze_train_only_findings() -> None:
     assert "acceptance-only" in c06["calibration"]["heldOutPolicy"]
 
 
+def _c06_t06_row(
+    baseline: DataRow,
+    index: int,
+    *,
+    target: float,
+    powers: tuple[float, float, float],
+    capacities: tuple[float, float, float],
+    specifics: tuple[float, float, float],
+) -> DataRow:
+    """T06 新增测试共用行构造器：三台可用、逐台跟踪、总量平衡。"""
+    assert baseline.timestamp is not None
+    values = {**baseline.values, "ems_total_elz_target_kw": target}
+    for unit, (power, capacity, specific) in enumerate(
+        zip(powers, capacities, specifics, strict=True),
+        start=1,
+    ):
+        values.update(
+            {
+                f"elz{unit}_available_flag": 1.0,
+                f"elz{unit}_run_state": 2.0,
+                f"elz{unit}_actual_available_capacity_kw": capacity,
+                f"elz{unit}_power_cmd_kw": power,
+                f"elz{unit}_power_actual_kw": power,
+                f"elz{unit}_specific_energy_kwh_per_kg": specific,
+            }
+        )
+    return replace(
+        baseline,
+        index=index,
+        timestamp=baseline.timestamp + timedelta(minutes=index),
+        timestamp_text=(
+            baseline.timestamp + timedelta(minutes=index)
+        ).isoformat(),
+        values=values,
+    )
+
+
+def test_c06_start_stop_relative_band_admits_replayed_level(valid_csv: str) -> None:
+    """T06：相对容量带泛化——450kW（0.45×容量）重放水平可检，旧绝对带漏。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+
+    def rows_for(power: float) -> tuple[DataRow, ...]:
+        return tuple(
+            _c06_t06_row(
+                baseline,
+                index,
+                target=3 * power,
+                powers=(power,) * 3,
+                capacities=(1000.0, 1000.0, 1000.0),
+                specifics=(55.0, 54.0, 53.0),
+            )
+            for index in range(35)
+        )
+
+    hit = tuple(
+        item
+        for item in RuleRowDetector().detect(rows_for(450.0))
+        if item.code == "C06" and item.subtype == "AVOIDABLE_START_STOP"
+    )
+    assert len(hit) == 35
+
+    miss = tuple(
+        item
+        for item in RuleRowDetector().detect(rows_for(460.0))
+        if item.code == "C06" and item.subtype == "AVOIDABLE_START_STOP"
+    )
+    assert miss == ()
+
+
+def test_c06_start_stop_avoidability_gate_requires_two_unit_headroom(
+    valid_csv: str,
+) -> None:
+    """T06：可避免性因果门——总目标超出两台承载（0.95×2×最小容量）时不报。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+
+    def rows_for(target: float) -> tuple[DataRow, ...]:
+        return tuple(
+            _c06_t06_row(
+                baseline,
+                index,
+                target=target,
+                powers=(400.0, 400.0, 400.0),
+                capacities=(1000.0, 1000.0, 1000.0),
+                specifics=(55.0, 54.0, 53.0),
+            )
+            for index in range(35)
+        )
+
+    within = tuple(
+        item
+        for item in RuleRowDetector().detect(rows_for(1500.0))
+        if item.code == "C06" and item.subtype == "AVOIDABLE_START_STOP"
+    )
+    assert len(within) == 35
+
+    beyond = tuple(
+        item
+        for item in RuleRowDetector().detect(rows_for(1950.0))
+        if item.code == "C06" and item.subtype == "AVOIDABLE_START_STOP"
+    )
+    assert beyond == ()
+
+
+def test_c06_inefficient_share_band_admits_drifted_replay_share(
+    valid_csv: str,
+) -> None:
+    """T06：份额带泛化——share2=0.31 重放可检（旧固定 30%±1kW 漏）。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    rows = tuple(
+        _c06_t06_row(
+            baseline,
+            index,
+            target=1000.0,
+            powers=(190.0, 310.0, 500.0),
+            capacities=(1000.0, 1000.0, 1000.0),
+            specifics=(57.0, 56.0, 53.2),
+        )
+        for index in range(35)
+    )
+
+    candidates = tuple(
+        item
+        for item in RuleRowDetector().detect(rows)
+        if item.code == "C06" and item.subtype == "INEFFICIENT_POWER_ALLOCATION"
+    )
+
+    assert len(candidates) == 35
+    windows = EventAggregator().aggregate(
+        rows=rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
+    )
+    assert len(windows) == 1
+
+
+def test_c06_inefficient_share_anchor_rejects_drifting_run(valid_csv: str) -> None:
+    """T06：滑窗份额锚定——带内渐变段（share2 逐行 +0.001）只保留锚容差内行。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    rows = tuple(
+        _c06_t06_row(
+            baseline,
+            index,
+            target=1600.0,
+            powers=(351.0 - index, 449.0 + index, 800.0),
+            capacities=(1000.0, 1000.0, 1000.0),
+            specifics=(57.0, 56.0, 53.2),
+        )
+        for index in range(35)
+    )
+
+    candidates = tuple(
+        item
+        for item in RuleRowDetector().detect(rows)
+        if item.code == "C06" and item.subtype == "INEFFICIENT_POWER_ALLOCATION"
+    )
+    windows = EventAggregator().aggregate(
+        rows=rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
+    )
+
+    # 首行锚 share2=449/1600≈0.2806：前 16 行（share2 偏差 <0.01）保留且
+    # 单行效率门成立；第 17 行起（偏差恰达/超过 0.01，含浮点表示效应）
+    # 被锚定排除；16 行不足 minimumRows=30，不构成事件。
+    assert len(candidates) == 16
+    assert windows == ()
+
+
+def test_c06_inefficient_natural_one_third_share_not_flagged(valid_csv: str) -> None:
+    """T06：自然 1/3 分配（三台满功率）与 N02 型降容顶格场景均不误报。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+
+    scenarios = {
+        # 三台满功率：share2=1/3 出带。
+        "full_load": ((1000.0, 1000.0, 1000.0), (1000.0, 1000.0, 1000.0), 3000.0),
+        # N02 型降容：ELZ3 压到降容值、ELZ1/2 顶满，share2≈0.344 出带。
+        "derated": ((1000.0, 1000.0, 908.0), (1000.0, 1000.0, 908.0), 2908.0),
+    }
+    for powers, capacities, target in scenarios.values():
+        rows = tuple(
+            _c06_t06_row(
+                baseline,
+                index,
+                target=target,
+                powers=powers,
+                capacities=capacities,
+                specifics=(57.0, 56.0, 59.0),
+            )
+            for index in range(35)
+        )
+        assert not any(
+            item.code == "C06"
+            and item.subtype == "INEFFICIENT_POWER_ALLOCATION"
+            for item in RuleRowDetector().detect(rows)
+        )
+
+
+def test_c06_inefficient_capacity_pinned_elz3_path(valid_csv: str) -> None:
+    """T06：ELZ3 容量顶格路径——cap3 < 0.5×target 且贴容量运行时入标。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    rows = tuple(
+        _c06_t06_row(
+            baseline,
+            index,
+            target=1600.0,
+            powers=(376.0, 480.0, 744.0),
+            capacities=(1000.0, 1000.0, 745.0),
+            specifics=(57.0, 56.0, 54.0),
+        )
+        for index in range(35)
+    )
+
+    candidates = tuple(
+        item
+        for item in RuleRowDetector().detect(rows)
+        if item.code == "C06" and item.subtype == "INEFFICIENT_POWER_ALLOCATION"
+    )
+
+    assert len(candidates) == 35
+
+
 def test_runtime_c03_rejects_opposite_feedback_without_frozen_causal_gate(
     valid_csv: str,
 ) -> None:

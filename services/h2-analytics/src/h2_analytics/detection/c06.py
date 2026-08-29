@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,11 +23,22 @@ def _threshold(name: str) -> float:
 
 _TRACKING_TOLERANCE_KW = _threshold("allocationTrackingToleranceKw")
 _TARGET_BALANCE_TOLERANCE_KW = _threshold("targetBalanceToleranceKw")
-_ELZ2_TARGET_SHARE = _threshold("elz2TargetShare")
-_ELZ3_TARGET_SHARE = _threshold("elz3TargetShare")
 _SPECIFIC_ADVANTAGE = _threshold("specificEnergyAdvantageKwhPerKg")
 _MINIMUM_REALLOCATION_KW = _threshold("minimumEquivalentReallocationKw")
 _REFERENCE_REALLOCATION_KW = _threshold("equivalentReallocationReferenceKw")
+# T06 去签名带（ADR-003 三级鲁棒判据）：固定份额 30%/50% ±1kW 硬匹配替换为
+# "相对份额带 + run 首行份额锚定 + ELZ3 结构门（份额带或容量顶格）+ 效率门保留"。
+_ELZ2_SHARE_BAND_LOW = _threshold("elz2ShareBandLow")
+_ELZ2_SHARE_BAND_HIGH = _threshold("elz2ShareBandHigh")
+_ELZ3_SHARE_BAND_LOW = _threshold("elz3ShareBandLow")
+_ELZ3_SHARE_BAND_HIGH = _threshold("elz3ShareBandHigh")
+# ELZ3"容量顶格"判定：容量低于该份额×target 时，ELZ3 贴容量运行即视为结构顶格。
+_ELZ3_CAPACITY_PIN_SHARE = _threshold("elz3CapacityPinShareCeiling")
+_ELZ3_CAPACITY_PIN_TOLERANCE_KW = _threshold("elz3CapacityPinToleranceKw")
+# 滑窗份额锚定容差：带内连续 run 中每行 share2 与首行偏差上限（比例单位）。
+_SHARE_ANCHOR_TOLERANCE = _threshold("shareAnchorTolerance")
+# 分段采样契约：签名 run 以 1 分钟连续行界定（与 aggregation 采样口径一致）。
+_SIGNATURE_INTERVAL = timedelta(minutes=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,12 +68,15 @@ def inefficient_allocation_signature(
     row: DataRow,
     constraints: H2Constraints = DEFAULT_CONSTRAINTS,
 ) -> C06Reallocation | None:
-    """Return a feasible equivalent-output reference for the frozen TRAIN marker.
+    """Return a feasible equivalent-output reference for the allocation marker.
 
-    The marker identifies the public-v4.0 allocation pattern. A row qualifies
-    only when a bounded power transfer preserves the EMS target, respects both
-    units' actual capacity and stable-run state, and remains more efficient on
-    the frozen per-unit curves.
+    T06 起（ADR-003），冻结 TRAIN 份额标记（ELZ2=30%、ELZ3=min(50%, cap)
+    ±1kW 硬匹配）由"相对份额带 + ELZ3 结构门"替代：ELZ2 份额落在
+    [elz2ShareBandLow, elz2ShareBandHigh]×target，ELZ3 份额落在
+    [elz3ShareBandLow, elz3ShareBandHigh]×target 或容量截断顶格。
+    A row still qualifies only when a bounded power transfer preserves the EMS
+    target, respects both units' actual capacity and stable-run state, and
+    remains more efficient on the frozen per-unit curves.
     """
     target = row.value("ems_total_elz_target_kw")
     commands = [row.value(f"elz{index}_power_cmd_kw") for index in _ELZ_IDS]
@@ -106,19 +121,29 @@ def inefficient_allocation_signature(
     actual_total = sum(numeric_powers)
     if abs(actual_total - target) > _TARGET_BALANCE_TOLERANCE_KW:
         return None
-    if (
-        abs(numeric_powers[1] - _ELZ2_TARGET_SHARE * target)
-        > _TRACKING_TOLERANCE_KW
+    # T06：ELZ2 固定份额 30%±1kW 替换为相对份额带 [0.28, 0.32]×target。
+    # TRAIN 全数据（P0 行）事件外 share2 无 [0.28, 0.32] 内任何行
+    # （最近观测 0.24 与 0.33，两侧空档 >= 0.01/0.04），带自适配 target 漂移。
+    if not (
+        _ELZ2_SHARE_BAND_LOW * target
+        <= numeric_powers[1]
+        <= _ELZ2_SHARE_BAND_HIGH * target
     ):
         return None
-    expected_elz3_power = min(
-        _ELZ3_TARGET_SHARE * target,
-        numeric_capacities[2],
+    # T06：ELZ3 固定份额 min(50%, cap)±1kW 替换为结构门——份额带
+    # [0.45, 0.55]×target，或容量截断时贴容量顶格（cap3 < 判定点×target
+    # 且实际功率贴容量）。语义："低效单元拿走至少一半余量或顶格运行"。
+    elz3_in_share_band = (
+        _ELZ3_SHARE_BAND_LOW * target
+        <= numeric_powers[2]
+        <= _ELZ3_SHARE_BAND_HIGH * target
     )
-    if (
-        abs(numeric_powers[2] - expected_elz3_power)
-        > _TRACKING_TOLERANCE_KW
-    ):
+    elz3_capacity_pinned = (
+        numeric_capacities[2] < _ELZ3_CAPACITY_PIN_SHARE * target
+        and abs(numeric_powers[2] - numeric_capacities[2])
+        <= _ELZ3_CAPACITY_PIN_TOLERANCE_KW
+    )
+    if not (elz3_in_share_band or elz3_capacity_pinned):
         return None
 
     curves = vocabulary.efficiency_curve_by_equipment()
@@ -233,6 +258,114 @@ def inefficient_allocation_signature(
     if not options:
         return None
     return max(options, key=lambda item: item[0])[1]
+
+
+def _is_inefficient_marker_row(row: DataRow) -> bool:
+    """判定行是否满足 INEFFICIENT 标记的结构条件（不含效率门）。
+
+    供滑窗份额锚定做 run 段化使用：三台可用、逐台跟踪、总量平衡、
+    ELZ2 相对份额带、ELZ3 结构门（份额带或容量顶格）。
+    """
+    if row.timestamp is None:
+        return False
+    target = row.value("ems_total_elz_target_kw")
+    powers = [row.value(f"elz{index}_power_actual_kw") for index in _ELZ_IDS]
+    commands = [row.value(f"elz{index}_power_cmd_kw") for index in _ELZ_IDS]
+    capacities = [
+        row.value(f"elz{index}_actual_available_capacity_kw")
+        for index in _ELZ_IDS
+    ]
+    available = [row.value(f"elz{index}_available_flag") for index in _ELZ_IDS]
+    if (
+        target is None
+        or target <= 0
+        or any(value is None for value in (*powers, *commands, *capacities, *available))
+    ):
+        return False
+    numeric_powers = [value for value in powers if value is not None]
+    numeric_commands = [value for value in commands if value is not None]
+    numeric_capacities = [value for value in capacities if value is not None]
+    numeric_available = [value for value in available if value is not None]
+    if any(flag != 1 for flag in numeric_available):
+        return False
+    if any(
+        abs(command - power) > _TRACKING_TOLERANCE_KW
+        for command, power in zip(numeric_commands, numeric_powers, strict=True)
+    ):
+        return False
+    if (
+        abs(sum(numeric_powers) - target)
+        > _TARGET_BALANCE_TOLERANCE_KW
+    ):
+        return False
+    if not (
+        _ELZ2_SHARE_BAND_LOW * target
+        <= numeric_powers[1]
+        <= _ELZ2_SHARE_BAND_HIGH * target
+    ):
+        return False
+    elz3_in_share_band = (
+        _ELZ3_SHARE_BAND_LOW * target
+        <= numeric_powers[2]
+        <= _ELZ3_SHARE_BAND_HIGH * target
+    )
+    elz3_capacity_pinned = (
+        numeric_capacities[2] < _ELZ3_CAPACITY_PIN_SHARE * target
+        and abs(numeric_powers[2] - numeric_capacities[2])
+        <= _ELZ3_CAPACITY_PIN_TOLERANCE_KW
+    )
+    return elz3_in_share_band or elz3_capacity_pinned
+
+
+def c06_inefficient_row_keys(
+    rows: tuple[DataRow, ...],
+) -> frozenset[tuple[int, datetime]]:
+    """Return rows authorized by the sliding-window share anchor.
+
+    T06 滑窗份额锚定（ADR-003 二级判据）：标记行按 1 分钟连续性构成 run，
+    run 首行的 share2 为锚，段内每行 share2 与锚偏差 <= shareAnchorTolerance
+    才获授权。TRAIN 事件内 share2 恒 0.30（浮点噪声 ~3e-7），锚定不改变
+    TRAIN 输出；它排除重放数据中"带内渐变漂移"的非事件段。
+    """
+    segments: list[list[DataRow]] = []
+    current: list[DataRow] = []
+    for row in rows:
+        if not _is_inefficient_marker_row(row):
+            if current:
+                segments.append(current)
+                current = []
+            continue
+        if (
+            current
+            and row.timestamp is not None
+            and current[-1].timestamp is not None
+            and row.timestamp - current[-1].timestamp != _SIGNATURE_INTERVAL
+        ):
+            segments.append(current)
+            current = []
+        current.append(row)
+    if current:
+        segments.append(current)
+
+    accepted: set[tuple[int, datetime]] = set()
+    for segment in segments:
+        first = segment[0]
+        first_target = first.value("ems_total_elz_target_kw")
+        if first_target is None or first_target <= 0:
+            continue
+        anchor_share = (
+            first.value("elz2_power_actual_kw") or 0.0
+        ) / first_target
+        for row in segment:
+            target = row.value("ems_total_elz_target_kw")
+            power = row.value("elz2_power_actual_kw")
+            if target is None or target <= 0 or power is None:
+                continue
+            if abs(power / target - anchor_share) > _SHARE_ANCHOR_TOLERANCE:
+                continue
+            if row.timestamp is not None:
+                accepted.add((row.index, row.timestamp))
+    return frozenset(accepted)
 
 
 def _within_stable_capacity(
