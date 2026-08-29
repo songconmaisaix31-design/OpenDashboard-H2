@@ -376,7 +376,7 @@ def _default_models_dir() -> Path | None:
 
 def _load_boosters(models_dir: Path | None) -> list[Any]:
     """加载三 seed booster 并校验 SHA256（与 MODELS_REGISTRY 摘录值比对）。"""
-    import lightgbm  # 延迟导入：off 路径零依赖
+    import lightgbm  # type: ignore[import-not-found]  # 延迟导入：off 路径零依赖；ml extra 可选，mypy 无 stub
 
     directory = models_dir or _default_models_dir()
     if directory is None:
