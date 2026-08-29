@@ -1,11 +1,12 @@
 import {
   H2_ASSISTANT_QUESTIONS,
+  H2_NLU_MAX_INPUT_CHARS,
   type H2AnomalyCode,
   type H2AnomalyEvent,
   type H2AssistantQuestionId,
 } from '@opendashboard/h2-contracts'
 
-export const H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS = 120
+export const H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS = H2_NLU_MAX_INPUT_CHARS
 
 export type H2AssistantFollowUpResolution =
   | {
@@ -51,6 +52,12 @@ export function resolveH2AssistantFollowUp(
   }
 
   const normalized = normalizeH2FollowUp(trimmed)
+  if (hasH2EquipmentControlIntent(normalized)) {
+    return {
+      status: 'refused',
+      message: '检测到设备控制或设定值请求；氢哨无控制权限，未路由到 Q01–Q10，也未下发任何指令。',
+    }
+  }
   const idMatch = /^q(?:0[1-9]|10|[1-9])$/u.exec(normalized)
   if (idMatch) {
     const questionId = `Q${idMatch[0].slice(1).padStart(2, '0')}` as H2AssistantQuestionId
@@ -78,6 +85,13 @@ export function resolveH2AssistantFollowUp(
   }
 
   return matchedH2FollowUp(match.questionId)
+}
+
+function hasH2EquipmentControlIntent(normalized: string): boolean {
+  const equipment = ['电解槽', '储能', 'bess', 'pcc', 'ems', '继电器']
+  const actions = ['下发', '执行', '直接控制', '远程控制', '设定值', '调功率', '启停', '开机', '关机']
+  return equipment.some((token) => normalized.includes(normalizeH2FollowUp(token))) &&
+    actions.some((token) => normalized.includes(normalizeH2FollowUp(token)))
 }
 
 /** Resolves wording and current-event compatibility as one fail-closed intent. */

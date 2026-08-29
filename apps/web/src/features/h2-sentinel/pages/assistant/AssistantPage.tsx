@@ -18,16 +18,18 @@ import {
 } from '../../model/presentation.ts'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
+import type { H2AssistantRenderingDisplay } from '../../model/view-state.ts'
 
 export interface AssistantPageProps {
   readonly answer: H2AssistantAnswer | null
   readonly error: string | null
   readonly event: H2AnomalyEvent | null
   readonly events: readonly H2AnomalyEvent[]
-  readonly onAsk: (questionId: H2AssistantQuestionId) => void
+  readonly onAsk: (questionId: H2AssistantQuestionId, allowLlmRendering: boolean) => void
   readonly onDownload: (artifact: H2ReportArtifact) => void
   readonly onSelectEvent: (eventId: string | null) => void
   readonly pending: boolean
+  readonly rendering?: H2AssistantRenderingDisplay | null
 }
 
 export function AssistantPage({
@@ -39,9 +41,11 @@ export function AssistantPage({
   onDownload,
   onSelectEvent,
   pending,
+  rendering = null,
 }: AssistantPageProps) {
   const [selectedQuestion, setSelectedQuestion] = useState<H2AssistantQuestionId>('Q03')
   const [followUpInput, setFollowUpInput] = useState('')
+  const [allowLlmRendering, setAllowLlmRendering] = useState(false)
   const [followUpState, setFollowUpState] = useState<{
     readonly tone: 'error' | 'success'
     readonly message: string
@@ -66,7 +70,7 @@ export function AssistantPage({
 
     setSelectedQuestion(resolution.questionId)
     setFollowUpState({ tone: 'success', message: resolution.message })
-    onAsk(resolution.questionId)
+    onAsk(resolution.questionId, allowLlmRendering)
   }
 
   return (
@@ -102,6 +106,15 @@ export function AssistantPage({
             匹配并回答
           </button>
         </form>
+        <label className="h2-llm-toggle">
+          <input
+            checked={allowLlmRendering}
+            disabled={pending}
+            onChange={(event) => setAllowLlmRendering(event.currentTarget.checked)}
+            type="checkbox"
+          />
+          <span><strong>请求可选语言重述</strong><small>仅重述确定性答案；不会改变数值、引用、复核、报告或控制边界。</small></span>
+        </label>
         <div aria-live="polite">
           {followUpState ? (
             <p className={`h2-message h2-message--${followUpState.tone}`}>
@@ -137,7 +150,7 @@ export function AssistantPage({
         <section aria-labelledby="h2-answer-title" className="h2-panel h2-answer-panel">
           <div className="h2-answer-panel__prompt">
             <div><p className="h2-eyebrow">{question.questionId}</p><h2 id="h2-answer-title">{question.prompt}</h2></div>
-            <button className="h2-button h2-button--primary" disabled={pending || !requirement.valid} onClick={() => onAsk(selectedQuestion)} type="button">{pending ? '正在组装证据…' : '基于证据回答'}</button>
+            <button className="h2-button h2-button--primary" disabled={pending || !requirement.valid} onClick={() => onAsk(selectedQuestion, allowLlmRendering)} type="button">{pending ? '正在组装证据…' : '基于证据回答'}</button>
           </div>
 
           <label className="h2-answer-panel__event-select">
@@ -160,7 +173,7 @@ export function AssistantPage({
           <div aria-live="polite">
             {error ? <p className="h2-message h2-message--error">{error}</p> : null}
             {visibleAnswer ? (
-              <AssistantAnswer answer={visibleAnswer} onDownload={onDownload} />
+              <AssistantAnswer answer={visibleAnswer} onDownload={onDownload} rendering={rendering} />
             ) : (
               <div className="h2-assistant-empty"><span aria-hidden="true">◇</span><strong>等待提问</strong><p>回答将区分事实、计算、推断和建议，并展示可解析的证据或报告引用。</p></div>
             )}
@@ -176,9 +189,11 @@ export function AssistantPage({
 export function AssistantAnswer({
   answer,
   onDownload,
+  rendering = null,
 }: {
   readonly answer: H2AssistantAnswer
   readonly onDownload: (artifact: H2ReportArtifact) => void
+  readonly rendering?: H2AssistantRenderingDisplay | null
 }) {
   const generatedReport = answer.generatedReport
   return (
@@ -195,6 +210,22 @@ export function AssistantAnswer({
           <small>引用：{section.citationIds.join('、')}</small>
         </section>
       ))}
+      {rendering ? (
+        <section className={`h2-llm-rendering h2-llm-rendering--${rendering.status}`}>
+          <div className="h2-badge-row">
+            <StatusBadge tone={rendering.status === 'rendered' ? 'warning' : 'neutral'}>
+              {rendering.status === 'rendered' ? 'LLM 语言重述 · 非事实源' : rendering.status === 'fallback' ? '语言重述降级' : '语言重述未启用'}
+            </StatusBadge>
+          </div>
+          {rendering.status === 'rendered' ? (
+            <>
+              <p>{rendering.text}</p>
+              <small>重述来源：{rendering.provenanceLabel} · 仅引用：{rendering.citationIds.join('、') || '无'}</small>
+            </>
+          ) : <p>{rendering.message}</p>}
+          <small>上方确定性答案、引用与“拒绝直接控制”状态始终为准。</small>
+        </section>
+      ) : null}
       {generatedReport ? (
         <section className="h2-assistant-report">
           <div><StatusBadge tone="positive">Q09 报告已生成</StatusBadge><strong>{generatedReport.descriptor.filename}</strong></div>

@@ -40,6 +40,28 @@ export interface H2CommandState {
   readonly error: string | null
   readonly assistantAnswer: H2AssistantAnswer | null
   readonly artifact: H2ReportArtifact | null
+  readonly importProgress: H2ImportProgressState | null
+  readonly assistantRendering: H2AssistantRenderingDisplay | null
+}
+
+export type H2AssistantRenderingDisplay =
+  | {
+      readonly status: 'rendered'
+      readonly text: string
+      readonly citationIds: readonly string[]
+      readonly provenanceLabel: string
+    }
+  | {
+      readonly status: 'disabled' | 'fallback'
+      readonly message: string
+    }
+
+export interface H2ImportProgressState {
+  readonly phase: 'preparing' | 'uploading' | 'retrying' | 'finalizing'
+  readonly uploadedBytes: number
+  readonly totalBytes: number
+  readonly completedChunks: number
+  readonly totalChunks: number
 }
 
 export const INITIAL_H2_COMMAND_STATE: H2CommandState = {
@@ -48,6 +70,8 @@ export const INITIAL_H2_COMMAND_STATE: H2CommandState = {
   error: null,
   assistantAnswer: null,
   artifact: null,
+  importProgress: null,
+  assistantRendering: null,
 }
 
 export function beginH2ArtifactExport(

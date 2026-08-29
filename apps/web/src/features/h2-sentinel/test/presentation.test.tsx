@@ -357,6 +357,7 @@ function renderView(
       dataSource={fixtureDataSource}
       navigation={navigation}
       onAsk={noop}
+      onCancelImport={noop}
       onDownload={noop}
       onExport={noop}
       onImport={noop}

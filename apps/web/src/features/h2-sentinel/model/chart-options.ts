@@ -5,6 +5,7 @@ import type {
   H2DatasetField,
   H2SeriesResponse,
 } from '@opendashboard/h2-contracts'
+import { H2_EVENT_CHART_REQUIREMENTS } from '@opendashboard/h2-contracts'
 import { formatH2Timestamp } from './presentation.ts'
 
 const COLORS = ['#70c2ac', '#d5a162', '#7eb8c5', '#d86f7b', '#a78ac1'] as const
@@ -15,10 +16,27 @@ interface SeriesDefinition {
   readonly color: string
   readonly unit: string
   readonly dashed?: boolean
+  readonly axisKey?: string
+  readonly chartType?: 'line' | 'scatter'
+  readonly stack?: string
+  readonly areaOpacity?: number
   readonly transform?: (value: number) => number
 }
 
-const powerSeriesByCode = {
+const eventSeriesByCode = {
+  C01: [
+    { variables: ['ems_total_elz_target_kw'], label: 'EMS 电解槽总目标', color: COLORS[1], unit: 'kW', axisKey: 'target-kw', dashed: true },
+    { variables: ['bess_power_actual_kw'], label: '储能实际功率', color: COLORS[0], unit: 'kW', axisKey: 'response-kw' },
+    { variables: ['pcc_power_actual_kw'], label: '并网点实际功率', color: COLORS[2], unit: 'kW', axisKey: 'response-kw' },
+  ],
+  C02: [
+    { variables: ['elz1_reported_available_capacity_kw'], label: 'ELZ01 上报可用容量', color: COLORS[1], unit: 'kW', dashed: true },
+    { variables: ['elz1_actual_available_capacity_kw'], label: 'ELZ01 实际可用容量', color: COLORS[0], unit: 'kW' },
+    { variables: ['elz2_reported_available_capacity_kw'], label: 'ELZ02 上报可用容量', color: COLORS[3], unit: 'kW', dashed: true },
+    { variables: ['elz2_actual_available_capacity_kw'], label: 'ELZ02 实际可用容量', color: COLORS[2], unit: 'kW' },
+    { variables: ['elz3_reported_available_capacity_kw'], label: 'ELZ03 上报可用容量', color: COLORS[4], unit: 'kW', dashed: true },
+    { variables: ['elz3_actual_available_capacity_kw'], label: 'ELZ03 实际可用容量', color: '#c98bdf', unit: 'kW' },
+  ],
   C03: [
     {
       variables: ['bess_power_cmd_kw', 'bess_dispatch_command_kw'],
@@ -30,7 +48,29 @@ const powerSeriesByCode = {
     { variables: ['bess_power_actual_kw', 'bess_power_kw'], label: '储能实际功率', color: COLORS[0], unit: 'kW' },
     { variables: ['pcc_power_actual_kw', 'pcc_power_kw'], label: '并网点功率', color: COLORS[2], unit: 'kW' },
   ],
-} as const satisfies Readonly<Record<'C03', readonly SeriesDefinition[]>>
+  C05: [
+    { variables: ['pcc_power_actual_kw'], label: '并网点实际功率', color: COLORS[3], unit: 'kW' },
+    { variables: ['grid_export_energy_quota_kwh_day'], label: '日送出电量配额', color: COLORS[1], unit: 'kWh', dashed: true },
+    { variables: ['grid_import_energy_quota_kwh_day'], label: '日受电电量配额', color: COLORS[2], unit: 'kWh', dashed: true },
+    { variables: ['grid_export_energy_used_kwh_day'], label: '日送出电量已用', color: COLORS[0], unit: 'kWh' },
+    { variables: ['grid_import_energy_used_kwh_day'], label: '日受电电量已用', color: COLORS[4], unit: 'kWh' },
+  ],
+  C06: [
+    { variables: ['elz1_power_actual_kw'], label: 'ELZ01 实际功率', color: COLORS[0], unit: 'kW', stack: 'elz-power', areaOpacity: 0.12 },
+    { variables: ['elz2_power_actual_kw'], label: 'ELZ02 实际功率', color: COLORS[2], unit: 'kW', stack: 'elz-power', areaOpacity: 0.12 },
+    { variables: ['elz3_power_actual_kw'], label: 'ELZ03 实际功率', color: COLORS[4], unit: 'kW', stack: 'elz-power', areaOpacity: 0.12 },
+    { variables: ['elz1_specific_energy_kwh_per_kg'], label: 'ELZ01 单位制氢电耗', color: COLORS[1], unit: 'kWh/kg', chartType: 'scatter' },
+    { variables: ['elz2_specific_energy_kwh_per_kg'], label: 'ELZ02 单位制氢电耗', color: COLORS[3], unit: 'kWh/kg', chartType: 'scatter' },
+    { variables: ['elz3_specific_energy_kwh_per_kg'], label: 'ELZ03 单位制氢电耗', color: '#c98bdf', unit: 'kWh/kg', chartType: 'scatter' },
+  ],
+  C07: [
+    { variables: ['soc_target_pct'], label: '储能目标 SOC', color: COLORS[1], unit: '%', dashed: true },
+    { variables: ['bess_soc_pct'], label: '储能实际 SOC', color: COLORS[4], unit: '%' },
+    { variables: ['bess_available_charge_energy_kwh'], label: '可充电量', color: COLORS[0], unit: 'kWh', areaOpacity: 0.1 },
+    { variables: ['bess_available_discharge_energy_kwh'], label: '可放电量', color: COLORS[2], unit: 'kWh', areaOpacity: 0.1 },
+    { variables: ['bess_regulation_reserve_target_kwh'], label: '调节备用目标', color: COLORS[3], unit: 'kWh', dashed: true, areaOpacity: 0.06 },
+  ],
+} as const satisfies Readonly<Record<Exclude<H2AnomalyEvent['code'], 'C04'>, readonly SeriesDefinition[]>>
 
 const pccActualSeries = {
   variables: ['pcc_power_actual_kw', 'pcc_power_kw'],
@@ -80,7 +120,11 @@ export function selectH2EventSeriesVariables(
   fields: readonly H2DatasetField[],
   event: H2AnomalyEvent,
 ): string[] {
-  return selectAvailableSeriesVariables(fields, getEventSeriesDefinitions(event))
+  const availableVariables = new Set(fields.map(({ name }) => name))
+  return selectAvailableSeriesVariables(
+    fields,
+    getEventSeriesDefinitions(event, availableVariables),
+  )
 }
 
 function selectAvailableSeriesVariables(
@@ -104,7 +148,7 @@ export function createEventChartOption(
   response: H2SeriesResponse,
   event: H2AnomalyEvent,
 ): EChartsCoreOption {
-  const definitions = getEventSeriesDefinitions(event)
+  const definitions = getEventSeriesDefinitions(event, new Set(response.variables))
 
   return createLineOption(response, definitions, {
     startTime: event.startTime,
@@ -114,12 +158,30 @@ export function createEventChartOption(
 }
 
 export function getEventChartUnitSummary(event: H2AnomalyEvent): string {
-  const units = uniqueUnits(getEventSeriesDefinitions(event))
+  const units = uniqueUnits(getDedicatedEventSeriesDefinitions(event))
   return `纵轴：${units.join(' / ')}`
 }
 
-function getEventSeriesDefinitions(event: H2AnomalyEvent): readonly SeriesDefinition[] {
-  if (event.code === 'C03') return powerSeriesByCode.C03
+function getEventSeriesDefinitions(
+  event: H2AnomalyEvent,
+  availableVariables: ReadonlySet<string>,
+): readonly SeriesDefinition[] {
+  const definitions = getDedicatedEventSeriesDefinitions(event)
+  const requirement = H2_EVENT_CHART_REQUIREMENTS.find(({ code }) => code === event.code)
+  if (
+    requirement &&
+    requirement.requiredVariables.every((variable) => availableVariables.has(variable))
+  ) return definitions
+
+  // Preserve the P1 C03/C04 compatibility aliases while newer Local manifests converge.
+  if (event.code === 'C03' && definitions.every(({ variables }) =>
+    variables.some((variable) => availableVariables.has(variable)))) return definitions
+  if (event.code === 'C04' && definitions.every(({ variables }) =>
+    variables.some((variable) => availableVariables.has(variable)))) return definitions
+  return createEvidenceSeries(event)
+}
+
+function getDedicatedEventSeriesDefinitions(event: H2AnomalyEvent): readonly SeriesDefinition[] {
   if (event.code === 'C04') {
     return [
       pccActualSeries,
@@ -128,7 +190,7 @@ function getEventSeriesDefinitions(event: H2AnomalyEvent): readonly SeriesDefini
         : pccExportBoundarySeries,
     ]
   }
-  return createEvidenceSeries(event)
+  return eventSeriesByCode[event.code]
 }
 
 function createEvidenceSeries(event: H2AnomalyEvent): readonly SeriesDefinition[] {
@@ -186,9 +248,9 @@ function createLineOption(
     )
     return variable ? [{ ...definition, variable }] : []
   })
-  const units = uniqueUnits(resolvedDefinitions)
-  const leftAxisCount = Math.ceil(units.length / 2)
-  const rightAxisCount = Math.floor(units.length / 2)
+  const axes = uniqueAxes(resolvedDefinitions)
+  const leftAxisCount = Math.ceil(axes.length / 2)
+  const rightAxisCount = Math.floor(axes.length / 2)
 
   return {
     aria: { enabled: true, decal: { show: true } },
@@ -234,7 +296,7 @@ function createLineOption(
       },
       axisLine: { lineStyle: { color: '#4a3c41' } },
     },
-    yAxis: units.map((unit, index) => ({
+    yAxis: axes.map(({ unit }, index) => ({
       type: 'value',
       name: unit,
       position: index % 2 === 0 ? 'left' : 'right',
@@ -248,18 +310,22 @@ function createLineOption(
       },
     })),
     series: resolvedDefinitions.map((definition, index) => ({
-      name: units.length > 1
+      name: axes.length > 1
         ? `${definition.label} (${definition.unit})`
         : definition.label,
-      type: 'line',
-      yAxisIndex: units.indexOf(definition.unit),
+      type: definition.chartType ?? 'line',
+      yAxisIndex: axes.findIndex(({ key }) => key === (definition.axisKey ?? definition.unit)),
+      stack: definition.stack,
+      areaStyle: definition.areaOpacity === undefined
+        ? undefined
+        : { opacity: definition.areaOpacity },
       data: response.points.map(({ values }) => {
         const value = values[definition.variable]
         if (value === null || value === undefined) return null
         return definition.transform ? definition.transform(value) : value
       }),
       connectNulls: false,
-      showSymbol: false,
+      showSymbol: definition.chartType === 'scatter',
       smooth: false,
       lineStyle: {
         color: definition.color,
@@ -283,6 +349,17 @@ function createLineOption(
 function uniqueUnits(definitions: readonly Pick<SeriesDefinition, 'unit'>[]): string[] {
   const units = definitions.map(({ unit }) => unit)
   return [...new Set(units.length > 0 ? units : ['单位未声明'])]
+}
+
+function uniqueAxes(
+  definitions: readonly Pick<SeriesDefinition, 'axisKey' | 'unit'>[],
+): { readonly key: string; readonly unit: string }[] {
+  const axes: { readonly key: string; readonly unit: string }[] = []
+  for (const definition of definitions) {
+    const key = definition.axisKey ?? definition.unit
+    if (!axes.some((axis) => axis.key === key)) axes.push({ key, unit: definition.unit })
+  }
+  return axes.length > 0 ? axes : [{ key: 'undeclared', unit: '单位未声明' }]
 }
 
 function toChartUnit(unit: string | undefined): string {

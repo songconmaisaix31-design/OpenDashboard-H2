@@ -3,6 +3,7 @@ import { describe, it } from 'node:test'
 
 import {
   H2_GOLDEN_C04_EVENT,
+  H2_EVENT_CHART_REQUIREMENTS,
   type H2AnomalyEvent,
   type H2SeriesResponse,
 } from '@opendashboard/h2-contracts'
@@ -17,6 +18,9 @@ interface TestChartSeries {
   readonly name?: string
   readonly data?: readonly (number | null)[]
   readonly yAxisIndex?: number
+  readonly type?: string
+  readonly stack?: string
+  readonly areaStyle?: object
 }
 
 interface TestChartAxis {
@@ -24,6 +28,50 @@ interface TestChartAxis {
 }
 
 describe('H2 chart official-field compatibility', () => {
+  it('publishes dedicated truthful series for every C01-C07 requirement', () => {
+    const expectedSeriesCounts = { C01: 3, C02: 6, C03: 3, C05: 5, C06: 6, C07: 5 } as const
+    for (const requirement of H2_EVENT_CHART_REQUIREMENTS) {
+      if (requirement.code === 'C04') continue
+      const values = Object.fromEntries(requirement.requiredVariables.map((variable, index) => [variable, index + 1]))
+      const event = { ...H2_GOLDEN_C04_EVENT, code: requirement.code } as unknown as H2AnomalyEvent
+      assert.equal(
+        seriesNames(createEventChartOption(seriesResponse(values), event)).length,
+        expectedSeriesCounts[requirement.code],
+        requirement.code,
+      )
+    }
+  })
+
+  it('falls back to event evidence when one canonical required series is missing', () => {
+    const [evidence] = H2_GOLDEN_C04_EVENT.evidence
+    assert.ok(evidence)
+    const event = {
+      ...H2_GOLDEN_C04_EVENT,
+      code: 'C01',
+      evidence: [{ ...evidence, variable: 'fallback_metric_kw', unit: 'kW' }],
+    } as unknown as H2AnomalyEvent
+    const option = createEventChartOption(seriesResponse({ fallback_metric_kw: 42 }), event)
+    assert.deepEqual(seriesNames(option), ['fallback_metric_kw'])
+    assert.deepEqual(seriesData(option, 'fallback_metric_kw'), [42])
+  })
+
+  it('expresses C01 dual axes, C06 stacked scatter, and C07 area semantics', () => {
+    const optionFor = (code: 'C01' | 'C06' | 'C07') => {
+      const requirement = H2_EVENT_CHART_REQUIREMENTS.find((candidate) => candidate.code === code)
+      assert.ok(requirement)
+      const values = Object.fromEntries(requirement.requiredVariables.map((variable) => [variable, 1]))
+      return createEventChartOption(
+        seriesResponse(values),
+        { ...H2_GOLDEN_C04_EVENT, code } as unknown as H2AnomalyEvent,
+      ) as { readonly yAxis?: readonly object[]; readonly series?: readonly TestChartSeries[] }
+    }
+    assert.equal(optionFor('C01').yAxis?.length, 2)
+    const c06Series = optionFor('C06').series ?? []
+    assert.equal(c06Series.filter(({ stack }) => stack === 'elz-power').length, 3)
+    assert.equal(c06Series.filter(({ type }) => type === 'scatter').length, 3)
+    assert.equal(optionFor('C07').series?.filter(({ areaStyle }) => areaStyle).length, 3)
+  })
+
   it('prefers official PCC and BESS fields without breaking deprecated Fixture fields', () => {
     const official = seriesResponse({
       bess_soc_pct: 61,

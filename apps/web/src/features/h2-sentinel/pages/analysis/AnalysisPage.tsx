@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 
 import type { H2SentinelDataSource } from '@opendashboard/h2-contracts'
-import type { H2Workspace } from '../../model/view-state.ts'
+import { H2_STREAMING_IMPORT_LIMITS } from '@opendashboard/h2-contracts'
+import type { H2ImportProgressState, H2Workspace } from '../../model/view-state.ts'
 import {
   datasetHasValidationLabels,
   formatH2Timestamp,
@@ -13,22 +14,25 @@ import {
   createH2AnalysisSeriesQuery,
   useH2Series,
 } from '../../model/series-loader.ts'
-import { H2_CSV_MAX_BYTES, H2_CSV_MAX_ROWS } from '../../model/workspace-loader.ts'
+import { H2_CSV_MAX_BYTES } from '../../model/workspace-loader.ts'
 import { EChartsCanvas } from '../../components/charts/EChartsCanvas.tsx'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { SignConventionNote } from '../../components/common/SignConventionNote.tsx'
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
+import { CsvImportProgress } from '../../components/common/CsvImportProgress.tsx'
 
 export interface AnalysisPageProps {
   readonly dataSource: H2SentinelDataSource
   readonly importError: string | null
   readonly importPending: boolean
+  readonly importProgress: H2ImportProgressState | null
   readonly importNotice: string | null
   readonly onImport: (file: File) => void
+  readonly onCancelImport: () => void
   readonly workspace: H2Workspace
 }
 
-export function AnalysisPage({ dataSource, importError, importNotice, importPending, onImport, workspace }: AnalysisPageProps) {
+export function AnalysisPage({ dataSource, importError, importNotice, importPending, importProgress, onCancelImport, onImport, workspace }: AnalysisPageProps) {
   const chartableFields = useMemo(
     () => workspace.run.dataset.fields.filter(
       ({ role }) => role === 'measurement' || role === 'constraint',
@@ -77,7 +81,8 @@ export function AnalysisPage({ dataSource, importError, importNotice, importPend
             type="file"
           />
         </label>
-        <p className="h2-file-policy">仅接受 .csv，单文件最大 {H2_CSV_MAX_BYTES / (1024 * 1024)} MiB，本地服务单次最多 {H2_CSV_MAX_ROWS.toLocaleString('en-US')} 行；完整训练集仅支持分片导入。</p>
+        <p className="h2-file-policy">仅接受 .csv；≤{H2_CSV_MAX_BYTES / (1024 * 1024)} MiB 保留旧导入，更大文件使用 {H2_STREAMING_IMPORT_LIMITS.chunkBytes / (1024 * 1024)} MiB 固定分片，上限 {H2_STREAMING_IMPORT_LIMITS.maxBytes / (1024 * 1024)} MiB / {H2_STREAMING_IMPORT_LIMITS.maxRows.toLocaleString('en-US')} 行。</p>
+        {importProgress ? <CsvImportProgress onCancel={onCancelImport} progress={importProgress} /> : null}
         <div aria-live="polite" className="h2-message-stack">
           {importError ? <p className="h2-message h2-message--error">{importError}</p> : null}
           {importNotice ? <p className="h2-message h2-message--success">{importNotice}</p> : null}

@@ -101,6 +101,10 @@ describe('H2 Sentinel P1 Web workflows', () => {
     }
 
     assert.equal(resolveH2AssistantFollowUp('帮我随便聊聊').status, 'refused')
+    assert.match(
+      resolveH2AssistantFollowUp('请给电解槽下发启停和功率设定值').message,
+      /无控制权限.*未下发任何指令/,
+    )
     assert.equal(resolveH2AssistantFollowUp('PCC 越限配额合规日报').status, 'refused')
     assert.equal(
       resolveH2AssistantFollowUp('x'.repeat(H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS + 1)).status,
@@ -134,8 +138,9 @@ describe('H2 Sentinel P1 Web workflows', () => {
       />,
     )
     assert.match(markup, /只路由到 Q01–Q10，不开放通用聊天/)
-    assert.match(markup, /maxLength="120"/)
+    assert.match(markup, /maxLength="500"/)
     assert.match(markup, /disabled=""/)
+    assert.match(markup, /请求可选语言重述/)
   })
 
   it('renders the Q09 report citation and an explicit Chinese download control', async () => {
@@ -152,6 +157,34 @@ describe('H2 Sentinel P1 Web workflows', () => {
     assert.match(markup, new RegExp(answer.generatedReport?.descriptor.filename ?? 'missing'))
     assert.match(markup, new RegExp(answer.generatedReport?.descriptor.contentHash ?? 'missing'))
     assert.match(markup, /report · fixture-single_event_diagnosis/)
+  })
+
+  it('labels optional LLM restatement, fallback, and disabled states without hiding deterministic evidence', async () => {
+    const answer = await createH2WebFixtureDataSource().ask({
+      runId: 'run-fixture-h2-sentinel-golden',
+      questionId: 'Q01',
+      allowLlmRendering: false,
+    })
+    const rendered = renderToStaticMarkup(
+      <AssistantAnswer
+        answer={answer}
+        onDownload={noop}
+        rendering={{ status: 'rendered', text: '仅重述确定性内容。', citationIds: [answer.citations[0]?.citationId ?? 'missing'], provenanceLabel: 'StepFun · test-model' }}
+      />,
+    )
+    assert.match(rendered, /确定性模板/)
+    assert.match(rendered, /LLM 语言重述 · 非事实源/)
+    assert.match(rendered, /拒绝直接控制/)
+    assert.match(rendered, /上方确定性答案、引用.*始终为准/)
+
+    for (const rendering of [
+      { status: 'fallback', message: '语言重述不可用，已降级。' },
+      { status: 'disabled', message: '语言重述未配置。' },
+    ] as const) {
+      const markup = renderToStaticMarkup(<AssistantAnswer answer={answer} onDownload={noop} rendering={rendering} />)
+      assert.match(markup, rendering.status === 'fallback' ? /语言重述降级/ : /语言重述未启用/)
+      assert.match(markup, /确定性模板/)
+    }
   })
 
   it('validates local review drafts and renders an ordered, escaped journal', () => {

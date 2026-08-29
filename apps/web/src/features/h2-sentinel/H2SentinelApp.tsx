@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
+  H2AssistantAnswer,
+  H2AssistantRenderingResult,
   H2DatasetManifest,
   H2EventReview,
   H2ReportArtifact,
@@ -31,8 +33,10 @@ import {
 import {
   H2_CSV_MAX_BYTES,
   H2CsvInputError,
+  h2CsvImportFailureMessage,
   hydrateH2Workspace,
   importH2CsvWorkspace,
+  importH2StreamingCsvWorkspace,
 } from './model/workspace-loader.ts'
 import {
   parseH2SentinelHash,
@@ -77,6 +81,7 @@ export function H2SentinelApp({
   )
   const [loadAttempt, setLoadAttempt] = useState(0)
   const [reviewLoadAttempt, setReviewLoadAttempt] = useState(0)
+  const importAbortRef = useRef<AbortController | null>(null)
 
   const hydrateWorkspace = useCallback(
     (datasets: readonly H2DatasetManifest[], dataset: H2DatasetManifest): Promise<H2Workspace> =>
@@ -201,7 +206,10 @@ export function H2SentinelApp({
     }
   }
 
-  async function ask(questionId: Parameters<H2SentinelDataSource['ask']>[0]['questionId']): Promise<void> {
+  async function ask(
+    questionId: Parameters<H2SentinelDataSource['ask']>[0]['questionId'],
+    allowLlmRendering = false,
+  ): Promise<void> {
     if (workspaceState.status !== 'ready' || commandState.pending) return
     const selectedEvent = selectedEventId
       ? workspaceState.workspace.events.find(({ eventId }) => eventId === selectedEventId) ?? null
@@ -212,7 +220,7 @@ export function H2SentinelApp({
       return
     }
 
-    setCommandState((current) => ({ ...current, pending: 'assistant', error: null, notice: null }))
+    setCommandState((current) => ({ ...current, pending: 'assistant', error: null, notice: null, assistantRendering: null }))
     try {
       const request = selectedEvent
         ? { runId: workspaceState.workspace.run.runId, questionId, eventId: selectedEvent.eventId, allowLlmRendering: false }
@@ -223,7 +231,57 @@ export function H2SentinelApp({
         pending: null,
         assistantAnswer,
         ...(assistantAnswer.generatedReport ? { artifact: assistantAnswer.generatedReport } : {}),
+        assistantRendering: allowLlmRendering
+          ? { status: 'disabled', message: '语言重述尚未返回；确定性答案与引用保持有效。' }
+          : { status: 'disabled', message: '未请求可选语言重述；下方为确定性答案。' },
       }))
+      if (allowLlmRendering) {
+        if (!isH2AssistantRenderingDataSource(dataSource)) {
+          setCommandState((current) => ({
+            ...current,
+            assistantRendering: {
+              status: 'disabled',
+              message: '本地服务未配置语言重述接口；确定性答案与引用未改变。',
+            },
+          }))
+          return
+        }
+        try {
+          const rendering = await dataSource.renderAssistantAnswer(assistantAnswer)
+          const deterministicCitationIds = new Set(assistantAnswer.citations.map(({ citationId }) => citationId))
+          const validRendering = rendering.deterministicAnswerId === assistantAnswer.answerId &&
+            (rendering.status !== 'rendered' || rendering.citationIds.every((citationId) => deterministicCitationIds.has(citationId)))
+          setCommandState((current) => ({
+            ...current,
+            assistantRendering: !validRendering
+              ? {
+                  status: 'fallback',
+                  message: '语言重述未通过答案 ID 或引用白名单校验；已保留确定性答案。',
+                }
+              : rendering.status === 'rendered'
+                ? {
+                    status: 'rendered',
+                    text: rendering.renderedText,
+                    citationIds: rendering.citationIds,
+                    provenanceLabel: `${rendering.provenance.source} · ${rendering.provenance.modelVersion}`,
+                  }
+                : {
+                    status: rendering.status,
+                    message: rendering.status === 'disabled'
+                      ? '语言重述未请求、未配置或被策略禁用；确定性答案与引用未改变。'
+                      : '语言重述不可用、超时或未通过校验；已保留确定性答案与原始引用。',
+                  },
+          }))
+        } catch {
+          setCommandState((current) => ({
+            ...current,
+            assistantRendering: {
+              status: 'fallback',
+              message: '语言重述不可用、超时或未通过校验；已保留确定性答案与原始引用。',
+            },
+          }))
+        }
+      }
     } catch {
       setCommandState((current) => ({ ...current, pending: null, error: '运行助手未能返回符合合同的确定性中文答案；没有调用外部语言模型。' }))
     }
@@ -338,9 +396,16 @@ export function H2SentinelApp({
       commandState.pending
     ) return
 
-    setCommandState((current) => ({ ...current, pending: 'import', error: null, notice: null }))
+    const abortController = new AbortController()
+    importAbortRef.current = abortController
+    setCommandState((current) => ({ ...current, pending: 'import', error: null, notice: null, importProgress: null }))
     try {
-      const { workspace, qualityStatus } = await importH2CsvWorkspace(dataSource, file)
+      const { workspace, qualityStatus } = file.size > H2_CSV_MAX_BYTES
+        ? await importH2StreamingCsvWorkspace(dataSource, file, {
+            signal: abortController.signal,
+            onProgress: (importProgress) => setCommandState((current) => ({ ...current, importProgress })),
+          })
+        : await importH2CsvWorkspace(dataSource, file)
       setWorkspaceState({ status: 'ready', workspace })
       setSelectedEventId(
         workspace.events.find(({ code }) => code === 'C03')?.eventId
@@ -349,15 +414,15 @@ export function H2SentinelApp({
       )
       setCommandState({
         ...INITIAL_H2_COMMAND_STATE,
-        notice: `已导入 ${workspace.run.dataset.name}；质量状态：${qualityStatus}。`,
+        notice: `已导入 ${workspace.run.dataset.name}；来源文件 ${workspace.run.dataset.sourceFilename}，SHA-256 ${workspace.run.dataset.fingerprint}；质量状态：${qualityStatus}。这是本地运行来源记录，不代表官方、组织方或生产验证。`,
       })
     } catch (error) {
       const message = error instanceof H2CsvInputError
-        ? error.code === 'too_large'
-          ? `CSV 超过 ${H2_CSV_MAX_BYTES / (1024 * 1024)} MiB 上限；未开始导入。`
-          : '只接受明确选择的 .csv 文件。'
+        ? h2CsvImportFailureMessage(error)
         : 'CSV 导入或分析失败；当前运行保持不变。'
-      setCommandState((current) => ({ ...current, pending: null, error: message }))
+      setCommandState((current) => ({ ...current, pending: null, error: message, importProgress: null }))
+    } finally {
+      if (importAbortRef.current === abortController) importAbortRef.current = null
     }
   }
 
@@ -366,10 +431,11 @@ export function H2SentinelApp({
       commandState={commandState}
       dataSource={dataSource}
       navigation={navigation}
-      onAsk={(questionId) => void ask(questionId)}
+      onAsk={(questionId, allowLlmRendering) => void ask(questionId, allowLlmRendering)}
       onDownload={downloadArtifact}
       onExport={(definition) => void exportArtifact(definition)}
       onImport={(file) => void importCsv(file)}
+      onCancelImport={() => importAbortRef.current?.abort()}
       onNavigate={navigate}
       onReloadReview={() => setReviewLoadAttempt((attempt) => attempt + 1)}
       onRetry={() => setLoadAttempt((attempt) => attempt + 1)}
@@ -380,6 +446,16 @@ export function H2SentinelApp({
       workspaceState={workspaceState}
     />
   )
+}
+
+interface H2AssistantRenderingDataSource extends H2SentinelDataSource {
+  renderAssistantAnswer(answer: H2AssistantAnswer): Promise<H2AssistantRenderingResult>
+}
+
+function isH2AssistantRenderingDataSource(
+  dataSource: H2SentinelDataSource,
+): dataSource is H2AssistantRenderingDataSource {
+  return typeof (dataSource as Partial<H2AssistantRenderingDataSource>).renderAssistantAnswer === 'function'
 }
 
 function projectReviewIntoWorkspace(

@@ -25,10 +25,11 @@ export interface H2SentinelViewProps {
   readonly commandState: H2CommandState
   readonly dataSource: H2SentinelDataSource
   readonly navigation: H2NavigationTarget
-  readonly onAsk: (questionId: H2AssistantQuestionId) => void
+  readonly onAsk: (questionId: H2AssistantQuestionId, allowLlmRendering: boolean) => void
   readonly onDownload: (artifact: H2ReportArtifact) => void
   readonly onExport: (definition: ReportDefinition) => void
   readonly onImport: (file: File) => void
+  readonly onCancelImport: () => void
   readonly onNavigate: (target: H2NavigationTarget) => void
   readonly onReloadReview: () => void
   readonly onRetry: () => void
@@ -47,6 +48,7 @@ export function H2SentinelView({
   onDownload,
   onExport,
   onImport,
+  onCancelImport,
   onNavigate,
   onReloadReview,
   onRetry,
@@ -83,8 +85,10 @@ export function H2SentinelView({
     return (
       <EmptyDatasetState
         error={commandState.error}
+        importProgress={commandState.importProgress}
         mode={workspaceState.mode}
         onImport={onImport}
+        onCancelImport={onCancelImport}
         onRetry={onRetry}
         pending={commandState.pending === 'import'}
       />
@@ -129,6 +133,8 @@ export function H2SentinelView({
           importError={commandState.error}
           importNotice={commandState.notice}
           importPending={commandState.pending === 'import'}
+          importProgress={commandState.importProgress}
+          onCancelImport={onCancelImport}
           onImport={onImport}
           workspace={workspace}
         />
@@ -136,6 +142,7 @@ export function H2SentinelView({
       {navigation.route === 'assistant' ? (
         <AssistantPage
           answer={commandState.assistantAnswer}
+          rendering={commandState.assistantRendering}
           error={commandState.error}
           event={selectedEvent}
           events={workspace.events}
