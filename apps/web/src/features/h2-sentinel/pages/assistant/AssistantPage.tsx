@@ -118,7 +118,7 @@ export function AssistantPage({
             onChange={(event) => setAllowLlmRendering(event.currentTarget.checked)}
             type="checkbox"
           />
-          <span><strong>请求可选语言重述</strong><small>仅重述确定性答案；不会改变数值、引用、复核、报告或控制边界。</small></span>
+          <span><strong>请求可选语言重述</strong><small>开启后，仅将有界的确定性答案文本和引用 ID 发送至 StepFun 云端用于语言重述；不会发送原始 CSV、测量值、复核备注、报告或控制数据。</small></span>
         </label>
         <div aria-live="polite">
           {followUpState ? (

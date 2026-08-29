@@ -345,6 +345,8 @@ describe('H2 Sentinel P1 Web workflows', () => {
     assert.match(markup, /maxLength="500"/)
     assert.match(markup, /disabled=""/)
     assert.match(markup, /请求可选语言重述/)
+    assert.match(markup, /仅将有界的确定性答案文本和引用 ID 发送至 StepFun 云端/)
+    assert.match(markup, /不会发送原始 CSV、测量值、复核备注、报告或控制数据/)
   })
 
   it('renders the Q09 report citation and an explicit Chinese download control', async () => {
