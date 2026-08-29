@@ -24,6 +24,7 @@ export type {
   H2Recommendation,
   H2RecommendationActionKind,
   H2ReviewState,
+  H2RootCauseCitation,
   H2SafetyCheck,
   H2SafetyStatus,
   H2Severity,

@@ -186,6 +186,8 @@ export interface H2AnomalyEventForCode<TCode extends H2AnomalyCode> {
   readonly recommendations: readonly H2Recommendation[]
   readonly rootCause: string
   readonly rootCauseKind: Extract<H2ClaimKind, 'fact' | 'inference'>
+  /** IF-2 根因条目引用（api.md v1.0）；可选，B 线 Q05 答案消费。 */
+  readonly rootCauseCitations?: readonly H2RootCauseCitation[]
   readonly reviewState: H2ReviewState
   readonly provenance: H2Provenance
   readonly requiresHumanConfirmation: boolean
@@ -194,6 +196,16 @@ export interface H2AnomalyEventForCode<TCode extends H2AnomalyCode> {
 export type H2AnomalyEvent = {
   readonly [TCode in H2AnomalyCode]: H2AnomalyEventForCode<TCode>
 }[H2AnomalyCode]
+
+/** IF-2 根因条目引用（api.md v1.0）：键名按契约原文使用 snake_case。 */
+export interface H2RootCauseCitation {
+  readonly source: 'operation_log' | 'alarm_log' | 'maintenance_history'
+  readonly ref_id: string
+  readonly timestamp: string
+  readonly parameter: string
+  readonly change: string
+  readonly support_score: number
+}
 
 export function isH2AnomalySubtypeForCode<TCode extends H2AnomalyCode>(
   code: TCode,
