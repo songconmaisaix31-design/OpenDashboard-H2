@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 
@@ -9,6 +10,8 @@ import {
   H2_GOLDEN_C03_EVENT,
   H2_GOLDEN_C04_EVENT,
   type H2EventReview,
+  type H2NluRequest,
+  type H2NluResult,
   type H2Provenance,
   type H2ReportArtifact,
 } from '@opendashboard/h2-contracts'
@@ -19,6 +22,7 @@ import {
   H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS,
   resolveH2AssistantIntent,
   resolveH2AssistantFollowUp,
+  submitH2AssistantFollowUp,
 } from '../model/assistant.ts'
 import {
   getH2ProvenanceLabel,
@@ -44,6 +48,7 @@ import { ReportsPage } from '../pages/reports/ReportsPage.tsx'
 import { createH2WebFixtureDataSource } from './fixture-data-source.ts'
 
 const noop = () => undefined
+const noopSubmit = async () => ({ status: 'stale' } as const)
 
 describe('H2 Sentinel P1 Web workflows', () => {
   it('renders exactly the ten official questions and blocks invalid event context', () => {
@@ -56,6 +61,7 @@ describe('H2 Sentinel P1 Web workflows', () => {
         onAsk={noop}
         onDownload={noop}
         onSelectEvent={noop}
+        onSubmitFollowUp={noopSubmit}
         pending={false}
       />,
     )
@@ -124,6 +130,203 @@ describe('H2 Sentinel P1 Web workflows', () => {
     }
   })
 
+  it('uses backend NLU and sends allowLlmRendering in one ask call', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    const nluRequests: H2NluRequest[] = []
+    const askRequests: Parameters<typeof fixture.ask>[0][] = []
+    const result = await submitH2AssistantFollowUp({
+      allowLlmRendering: true,
+      dataSource: {
+        ...fixture,
+        async resolveNlu(request) {
+          nluRequests.push(request)
+          return { schemaVersion: 1, status: 'matched', questionId: 'Q03', confidence: 0.94 }
+        },
+        async ask(request) {
+          askRequests.push(request)
+          return fixture.ask(request)
+        },
+      },
+      event: H2_GOLDEN_C03_EVENT,
+      events: [H2_GOLDEN_C03_EVENT, H2_GOLDEN_C04_EVENT],
+      input: ' 储能方向为什么影响 PCC？ ',
+      isCurrent: () => true,
+      runId: 'run-fixture-h2-sentinel-golden',
+    })
+
+    assert.equal(result.status, 'answered')
+    assert.deepEqual(nluRequests, [{
+      schemaVersion: 1,
+      runId: 'run-fixture-h2-sentinel-golden',
+      text: '储能方向为什么影响 PCC？',
+    }])
+    assert.equal(askRequests.length, 1)
+    assert.equal(askRequests[0]?.allowLlmRendering, true)
+    assert.equal(askRequests[0]?.questionId, 'Q03')
+  })
+
+  it('rejects overlong input before invoking the NLU capability', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    let nluCount = 0
+    let askCount = 0
+    const result = await submitH2AssistantFollowUp({
+      allowLlmRendering: true,
+      dataSource: {
+        ...fixture,
+        async resolveNlu() {
+          nluCount += 1
+          return { schemaVersion: 1, status: 'matched', questionId: 'Q01', confidence: 1 }
+        },
+        async ask(request) {
+          askCount += 1
+          return fixture.ask(request)
+        },
+      },
+      event: H2_GOLDEN_C03_EVENT,
+      events: [H2_GOLDEN_C03_EVENT],
+      input: 'x'.repeat(H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS + 1),
+      isCurrent: () => true,
+      runId: 'run-fixture-h2-sentinel-golden',
+    })
+
+    assert.equal(result.status, 'refused')
+    assert.equal(nluCount, 0)
+    assert.equal(askCount, 0)
+  })
+
+  it('renders backend NLU refusal safely and never asks', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    let askCount = 0
+    const result = await submitH2AssistantFollowUp({
+      allowLlmRendering: false,
+      dataSource: {
+        ...fixture,
+        async resolveNlu() {
+          return {
+            schemaVersion: 1,
+            status: 'refused',
+            reason: 'unsupported_intent',
+            confidence: 0.99,
+            allowedQuestionIds: H2_ASSISTANT_QUESTIONS.map(({ questionId }) => questionId),
+          }
+        },
+        async ask(request) {
+          askCount += 1
+          return fixture.ask(request)
+        },
+      },
+      event: H2_GOLDEN_C03_EVENT,
+      events: [H2_GOLDEN_C03_EVENT, H2_GOLDEN_C04_EVENT],
+      input: '<script>执行控制</script>',
+      isCurrent: () => true,
+      runId: 'run-fixture-h2-sentinel-golden',
+    })
+
+    assert.equal(result.status, 'refused')
+    if (result.status === 'refused') {
+      assert.match(result.message, /不属于 Q01–Q10/)
+      assert.doesNotMatch(result.message, /script/iu)
+    }
+    assert.equal(askCount, 0)
+  })
+
+  it('rejects control input before NLU and matched intents with invalid event context', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    let nluCount = 0
+    let askCount = 0
+    const dataSource = {
+      ...fixture,
+      async resolveNlu() {
+        nluCount += 1
+        return { schemaVersion: 1, status: 'matched', questionId: 'Q10', confidence: 0.99 } as const
+      },
+      async ask(request: Parameters<typeof fixture.ask>[0]) {
+        askCount += 1
+        return fixture.ask(request)
+      },
+    }
+    const control = await submitH2AssistantFollowUp({
+      allowLlmRendering: false,
+      dataSource,
+      event: H2_GOLDEN_C03_EVENT,
+      events: [H2_GOLDEN_C03_EVENT],
+      input: '请给储能下发功率设定值',
+      isCurrent: () => true,
+      runId: 'run-fixture-h2-sentinel-golden',
+    })
+    const invalidContext = await submitH2AssistantFollowUp({
+      allowLlmRendering: false,
+      dataSource,
+      event: H2_GOLDEN_C03_EVENT,
+      events: [H2_GOLDEN_C03_EVENT],
+      input: '生成 PCC 合规日报',
+      isCurrent: () => true,
+      runId: 'run-fixture-h2-sentinel-golden',
+    })
+
+    assert.equal(control.status, 'refused')
+    assert.equal(invalidContext.status, 'refused')
+    assert.equal(nluCount, 1)
+    assert.equal(askCount, 0)
+  })
+
+  it('uses the closed local resolver when NLU capability is absent', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    let askCount = 0
+    const result = await submitH2AssistantFollowUp({
+      allowLlmRendering: false,
+      dataSource: {
+        ...fixture,
+        async ask(request) {
+          askCount += 1
+          return fixture.ask(request)
+        },
+      },
+      event: H2_GOLDEN_C03_EVENT,
+      events: [H2_GOLDEN_C03_EVENT, H2_GOLDEN_C04_EVENT],
+      input: 'PCC 正负值怎么理解？',
+      isCurrent: () => true,
+      runId: 'run-fixture-h2-sentinel-golden',
+    })
+
+    assert.equal(result.status, 'answered')
+    if (result.status === 'answered') assert.match(result.routingMessage, /本地闭集规则/)
+    assert.equal(askCount, 1)
+  })
+
+  it('does not ask after a pending NLU result becomes stale', async () => {
+    const fixture = createH2WebFixtureDataSource()
+    const deferred = deferredValue<H2NluResult>()
+    let current = true
+    let askCount = 0
+    const submission = submitH2AssistantFollowUp({
+      allowLlmRendering: true,
+      dataSource: {
+        ...fixture,
+        resolveNlu: () => deferred.promise,
+        async ask(request) {
+          askCount += 1
+          return fixture.ask(request)
+        },
+      },
+      event: H2_GOLDEN_C03_EVENT,
+      events: [H2_GOLDEN_C03_EVENT],
+      input: '储能方向为什么影响 PCC？',
+      isCurrent: () => current,
+      runId: 'run-fixture-h2-sentinel-golden',
+    })
+    current = false
+    deferred.resolve({ schemaVersion: 1, status: 'matched', questionId: 'Q03', confidence: 0.91 })
+
+    assert.deepEqual(await submission, { status: 'stale' })
+    assert.equal(askCount, 0)
+  })
+
+  it('contains no second-call assistant rendering flow', () => {
+    const source = readFileSync(new URL('../H2SentinelApp.tsx', import.meta.url), 'utf8')
+    assert.doesNotMatch(source, /renderAssistantAnswer|H2AssistantRenderingResult/)
+  })
+
   it('renders the follow-up entry as disabled while an answer is pending', () => {
     const markup = renderToStaticMarkup(
       <AssistantPage
@@ -134,6 +337,7 @@ describe('H2 Sentinel P1 Web workflows', () => {
         onAsk={noop}
         onDownload={noop}
         onSelectEvent={noop}
+        onSubmitFollowUp={noopSubmit}
         pending
       />,
     )
@@ -159,31 +363,34 @@ describe('H2 Sentinel P1 Web workflows', () => {
     assert.match(markup, /report · fixture-single_event_diagnosis/)
   })
 
-  it('labels optional LLM restatement, fallback, and disabled states without hiding deterministic evidence', async () => {
+  it('labels optional LLM restatement, fallback, and deterministic states without hiding evidence', async () => {
     const answer = await createH2WebFixtureDataSource().ask({
       runId: 'run-fixture-h2-sentinel-golden',
       questionId: 'Q01',
       allowLlmRendering: false,
     })
+    const renderedAnswer = {
+      ...answer,
+      mode: 'LLM_RENDERED',
+      provenance: { ...answer.provenance, mode: 'LLM_RENDERED', source: 'StepFun' },
+    } as const
     const rendered = renderToStaticMarkup(
       <AssistantAnswer
-        answer={answer}
+        answer={renderedAnswer}
+        modeDisplay={{ status: 'rendered', message: '已由 StepFun 重述；引用边界保持不变。' }}
         onDownload={noop}
-        rendering={{ status: 'rendered', text: '仅重述确定性内容。', citationIds: [answer.citations[0]?.citationId ?? 'missing'], provenanceLabel: 'StepFun · test-model' }}
       />,
     )
-    assert.match(rendered, /确定性模板/)
     assert.match(rendered, /LLM 语言重述 · 非事实源/)
     assert.match(rendered, /拒绝直接控制/)
-    assert.match(rendered, /上方确定性答案、引用.*始终为准/)
+    assert.match(rendered, /答案引用与“拒绝直接控制”状态始终为准/)
 
-    for (const rendering of [
+    for (const modeDisplay of [
       { status: 'fallback', message: '语言重述不可用，已降级。' },
-      { status: 'disabled', message: '语言重述未配置。' },
+      { status: 'deterministic', message: '未请求语言重述。' },
     ] as const) {
-      const markup = renderToStaticMarkup(<AssistantAnswer answer={answer} onDownload={noop} rendering={rendering} />)
-      assert.match(markup, rendering.status === 'fallback' ? /语言重述降级/ : /语言重述未启用/)
-      assert.match(markup, /确定性模板/)
+      const markup = renderToStaticMarkup(<AssistantAnswer answer={answer} modeDisplay={modeDisplay} onDownload={noop} />)
+      assert.match(markup, modeDisplay.status === 'fallback' ? /语言重述降级/ : /确定性模板/)
     }
   })
 

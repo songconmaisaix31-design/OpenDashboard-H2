@@ -722,7 +722,7 @@
 .h2-llm-toggle span { display: grid; gap: 0.2rem; }
 .h2-llm-toggle small { color: var(--h2-text-muted); }
 .h2-llm-rendering { border-inline-start: 3px solid var(--h2-amber); }
-.h2-llm-rendering--fallback, .h2-llm-rendering--disabled { border-inline-start-color: var(--h2-border); }
+.h2-llm-rendering--fallback, .h2-llm-rendering--deterministic { border-inline-start-color: var(--h2-border); }
 
 .h2-filter-panel input,
 .h2-filter-panel select,

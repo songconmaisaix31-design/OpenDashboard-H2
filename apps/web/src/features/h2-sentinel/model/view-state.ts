@@ -41,18 +41,16 @@ export interface H2CommandState {
   readonly assistantAnswer: H2AssistantAnswer | null
   readonly artifact: H2ReportArtifact | null
   readonly importProgress: H2ImportProgressState | null
-  readonly assistantRendering: H2AssistantRenderingDisplay | null
+  readonly assistantMode: H2AssistantModeDisplay | null
 }
 
-export type H2AssistantRenderingDisplay =
+export type H2AssistantModeDisplay =
   | {
       readonly status: 'rendered'
-      readonly text: string
-      readonly citationIds: readonly string[]
-      readonly provenanceLabel: string
+      readonly message: string
     }
   | {
-      readonly status: 'disabled' | 'fallback'
+      readonly status: 'deterministic' | 'fallback'
       readonly message: string
     }
 
@@ -71,7 +69,28 @@ export const INITIAL_H2_COMMAND_STATE: H2CommandState = {
   assistantAnswer: null,
   artifact: null,
   importProgress: null,
-  assistantRendering: null,
+  assistantMode: null,
+}
+
+export function getH2AssistantModeDisplay(
+  answer: H2AssistantAnswer,
+  allowLlmRendering: boolean,
+): H2AssistantModeDisplay {
+  if (answer.mode === 'LLM_RENDERED' && answer.provenance.mode === 'LLM_RENDERED') {
+    return {
+      status: 'rendered',
+      message: `已由 ${answer.provenance.source} 重述；事实、引用与控制边界仍由确定性答案约束。`,
+    }
+  }
+  if (answer.mode !== 'DETERMINISTIC_TEMPLATE' || answer.provenance.mode === 'LLM_RENDERED') {
+    return {
+      status: 'fallback',
+      message: '答案模式与来源不一致；按安全回退状态展示，不能视为可信语言重述。',
+    }
+  }
+  return allowLlmRendering
+    ? { status: 'fallback', message: '可选语言重述未返回；已保留确定性答案与原始引用。' }
+    : { status: 'deterministic', message: '未请求可选语言重述；下方为确定性答案。' }
 }
 
 export function beginH2ArtifactExport(

@@ -366,6 +366,7 @@ function renderView(
       onRetry={noop}
       onReview={noop}
       onSelectEvent={noop}
+      onSubmitFollowUp={async () => ({ status: 'stale' })}
       reviewState={INITIAL_H2_REVIEW_COMMAND_STATE}
       selectedEventId={navigation.eventId ?? null}
       workspaceState={workspaceState}

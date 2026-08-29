@@ -10,7 +10,7 @@ import {
 import {
   getH2AssistantEventRequirement,
   H2_ASSISTANT_FOLLOW_UP_MAX_CHARACTERS,
-  resolveH2AssistantIntent,
+  type H2AssistantSubmissionResult,
 } from '../../model/assistant.ts'
 import {
   getH2ProvenanceLabel,
@@ -18,7 +18,10 @@ import {
 } from '../../model/presentation.ts'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
-import type { H2AssistantRenderingDisplay } from '../../model/view-state.ts'
+import {
+  getH2AssistantModeDisplay,
+  type H2AssistantModeDisplay,
+} from '../../model/view-state.ts'
 
 export interface AssistantPageProps {
   readonly answer: H2AssistantAnswer | null
@@ -28,8 +31,9 @@ export interface AssistantPageProps {
   readonly onAsk: (questionId: H2AssistantQuestionId, allowLlmRendering: boolean) => void
   readonly onDownload: (artifact: H2ReportArtifact) => void
   readonly onSelectEvent: (eventId: string | null) => void
+  readonly onSubmitFollowUp: (input: string, allowLlmRendering: boolean) => Promise<H2AssistantSubmissionResult>
   readonly pending: boolean
-  readonly rendering?: H2AssistantRenderingDisplay | null
+  readonly modeDisplay?: H2AssistantModeDisplay | null
 }
 
 export function AssistantPage({
@@ -40,8 +44,9 @@ export function AssistantPage({
   onAsk,
   onDownload,
   onSelectEvent,
+  onSubmitFollowUp,
   pending,
-  rendering = null,
+  modeDisplay = null,
 }: AssistantPageProps) {
   const [selectedQuestion, setSelectedQuestion] = useState<H2AssistantQuestionId>('Q03')
   const [followUpInput, setFollowUpInput] = useState('')
@@ -60,17 +65,17 @@ export function AssistantPage({
     ? answer
     : null
 
-  function submitFollowUp(submitEvent: React.FormEvent<HTMLFormElement>): void {
+  async function submitFollowUp(submitEvent: React.FormEvent<HTMLFormElement>): Promise<void> {
     submitEvent.preventDefault()
-    const resolution = resolveH2AssistantIntent(followUpInput, event)
-    if (resolution.status === 'refused') {
-      setFollowUpState({ tone: 'error', message: resolution.message })
+    const result = await onSubmitFollowUp(followUpInput, allowLlmRendering)
+    if (result.status === 'stale') return
+    if (result.status === 'refused') {
+      setFollowUpState({ tone: 'error', message: result.message })
       return
     }
 
-    setSelectedQuestion(resolution.questionId)
-    setFollowUpState({ tone: 'success', message: resolution.message })
-    onAsk(resolution.questionId, allowLlmRendering)
+    setSelectedQuestion(result.questionId)
+    setFollowUpState({ tone: 'success', message: result.routingMessage })
   }
 
   return (
@@ -83,7 +88,7 @@ export function AssistantPage({
           <h2 id="h2-follow-up-title">用自然表述匹配官方问题</h2>
           <p>只路由到 Q01–Q10，不开放通用聊天；未知或含糊输入会安全拒绝。</p>
         </div>
-        <form onSubmit={submitFollowUp}>
+        <form onSubmit={(submitEvent) => void submitFollowUp(submitEvent)}>
           <label>
             <span className="h2-visually-hidden">输入 Q01–Q10 的自然表述</span>
             <input
@@ -173,7 +178,7 @@ export function AssistantPage({
           <div aria-live="polite">
             {error ? <p className="h2-message h2-message--error">{error}</p> : null}
             {visibleAnswer ? (
-              <AssistantAnswer answer={visibleAnswer} onDownload={onDownload} rendering={rendering} />
+              <AssistantAnswer answer={visibleAnswer} modeDisplay={modeDisplay} onDownload={onDownload} />
             ) : (
               <div className="h2-assistant-empty"><span aria-hidden="true">◇</span><strong>等待提问</strong><p>回答将区分事实、计算、推断和建议，并展示可解析的证据或报告引用。</p></div>
             )}
@@ -188,18 +193,21 @@ export function AssistantPage({
 
 export function AssistantAnswer({
   answer,
+  modeDisplay,
   onDownload,
-  rendering = null,
 }: {
   readonly answer: H2AssistantAnswer
+  readonly modeDisplay?: H2AssistantModeDisplay | null
   readonly onDownload: (artifact: H2ReportArtifact) => void
-  readonly rendering?: H2AssistantRenderingDisplay | null
 }) {
   const generatedReport = answer.generatedReport
+  const display = modeDisplay ?? getH2AssistantModeDisplay(answer, false)
   return (
     <article className="h2-assistant-answer">
       <div className="h2-badge-row">
-        <StatusBadge tone="positive">确定性模板</StatusBadge>
+        <StatusBadge tone={display.status === 'rendered' ? 'warning' : display.status === 'fallback' ? 'neutral' : 'positive'}>
+          {display.status === 'rendered' ? 'LLM 语言重述 · 非事实源' : display.status === 'fallback' ? '语言重述降级' : '确定性模板'}
+        </StatusBadge>
         <StatusBadge tone={answer.provenance.mode === 'FIXTURE' ? 'fixture' : 'live'}>{getH2ProvenanceLabel(answer.provenance)}</StatusBadge>
         <StatusBadge tone="danger">拒绝直接控制</StatusBadge>
       </div>
@@ -210,22 +218,10 @@ export function AssistantAnswer({
           <small>引用：{section.citationIds.join('、')}</small>
         </section>
       ))}
-      {rendering ? (
-        <section className={`h2-llm-rendering h2-llm-rendering--${rendering.status}`}>
-          <div className="h2-badge-row">
-            <StatusBadge tone={rendering.status === 'rendered' ? 'warning' : 'neutral'}>
-              {rendering.status === 'rendered' ? 'LLM 语言重述 · 非事实源' : rendering.status === 'fallback' ? '语言重述降级' : '语言重述未启用'}
-            </StatusBadge>
-          </div>
-          {rendering.status === 'rendered' ? (
-            <>
-              <p>{rendering.text}</p>
-              <small>重述来源：{rendering.provenanceLabel} · 仅引用：{rendering.citationIds.join('、') || '无'}</small>
-            </>
-          ) : <p>{rendering.message}</p>}
-          <small>上方确定性答案、引用与“拒绝直接控制”状态始终为准。</small>
-        </section>
-      ) : null}
+      <section className={`h2-llm-rendering h2-llm-rendering--${display.status}`}>
+        <p>{display.message}</p>
+        <small>答案引用与“拒绝直接控制”状态始终为准。</small>
+      </section>
       {generatedReport ? (
         <section className="h2-assistant-report">
           <div><StatusBadge tone="positive">Q09 报告已生成</StatusBadge><strong>{generatedReport.descriptor.filename}</strong></div>
