@@ -25,7 +25,7 @@
 | T04-T06 | [A1] | P1-1 三连：C03 → C05 → C06 去签名带（逐类独立 commit） | T03a+b | 每类四重门禁绿 + TRAIN 40 全命中 | ✓ A1 三连完成：C03 相对带+平台+因果门 @ 52d7435；C05 相对带+quota 排他+run 锚定 @ 9155fd3；C06 SS 相对容量带+可避免门、INEFF 滑窗份额带+锚定+ELZ3 结构门+效率门保留，新旧管线 TRAIN 输出 byte-equal @ 6960ff3 |
 | T07 | [A1] | P1-2：C04/C07 可执行性判定矩阵（三分支单测） | T03a | A-4 门禁 | ✓ A1 完成：execurability.py 三分支（充足/顶格降档/缺数据降观察）+ 方向化纠偏通道，TRAIN byte-equal、三分支单测绿，feat/a1-rules @ bae530e |
 | T08 | [A2] | P1-9a：特征工程 `tools/features.py` | T04 | 特征覆盖清单 + 单测 | ✓ A2 完成：六族 69 特征（全因果窗防泄漏，docstring 清单+--catalog），纯标准库，单测 23/23 + 真实数据冒烟过；tools/tests/ 目录为领土字面扩展已备案，feat/a2-evalml @ 652696a |
-| T09 | [A2] | P1-9b：训练 + 3 seed + MODELS_REGISTRY 登记 | T08 | 训练报告落盘 | ☐ |
+| T09 | [A2] | P1-9b：训练 + 3 seed + MODELS_REGISTRY 登记 | T08 | 训练报告落盘 | ✓ A2 完成：h2-lgbm-row-v1 三模型（validation macro-F1 3×1.0，rolling 首折 0.8）+ Registry 五要素登记 + 1.0 成因消融在案；tools/tests 39/39；T11 依赖解除，feat/a2-evalml @ 4b3ea51 |
 | T10 | [A3] | P0-7：影响量化 7/7 四元组 + 验证集对账表 | T04（宜后） | A-5 门禁 | ✓ A3 完成：TRAIN 280/280 + VALIDATION 70/70 对账全绿，C01/C02 修订 v2，feat/a3-diag @ c05d419 |
 | T11 | [A1] | P1-9c：`service.py` 接线 + 灰度验证 + IF-3 口径交付 B | T09, T10 | 灰度五条全绿 → D12 go/no-go | ☐ |
 | T12 | [A3] | P1-8：根因数据驱动文本 + IF-2 冻结 | T10 | A-6 门禁 | ✓ A3 完成：五模式归因+引用回溯断言全过，基线 TRAIN 17.9%/VAL 15.7%（数据上限），feat/a3-diag @ e3f62e7 |
