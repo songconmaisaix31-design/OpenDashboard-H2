@@ -30,7 +30,7 @@
 | T11 | [A1] | P1-9c：`service.py` 接线 + 灰度验证 + IF-3 口径交付 B | T09, T10 | 灰度五条全绿 → D12 go/no-go | ✓ A1 完成：ML 校验层接线（规则为主只补充，同键排他）；灰度五条全绿——off TRAIN byte-equal+F1=0.9718 逐位零回退、on F1 同值零新事件（rawCount 75→91 证 ML 真实执行、merged 72=72）、哨兵 on 0.012 绿、N01-N07 77 窗 0 FP、特征/方差引用 registry；IF-3 口径已产出待 I4 交付，feat/a1-t11-ml @ edcfab3 |
 | T12 | [A3] | P1-8：根因数据驱动文本 + IF-2 冻结 | T10 | A-6 门禁 | ✓ A3 完成：五模式归因+引用回溯断言全过，基线 TRAIN 17.9%/VAL 15.7%（数据上限），feat/a3-diag @ e3f62e7 |
 | T13 | [A3] | 每个 M-Gate 出评审报告 `docs/reviews/gate-<n>.md` + 校准记录块补全督促 | T02 起 | 报告与门禁证据齐备 | ✓ gate-1..6 已出具（gate-5 T09 追认 🟢 / gate-6 T11 🟢+D12 go 建议）；[I] fixup 追认与合并后增量（gate-7）待 A3 |
-| T14 | [ALL] | D14 联合冻结：clean commit 重生成全部 ignored 证据 | T01-T13 | tag `gate-s6`；证据包归档 | ☐ |
+| T14 | [ALL] | D14 联合冻结：clean commit 重生成全部 ignored 证据 | T01-T13 | tag `gate-s6`；证据包归档 | ✓ 2026-08-30 用户豁免同机前提单方执行：v5 清账 28a175f + 冻结套件全绿 @ 738344f + tag `gate-s6`；main 交付合并 a9dd918（记录见 reviews/final-ack-freeze.md） |
 
 ## 集成点计划（机内 M-Gate → 跨机整合门）
 
