@@ -39,28 +39,31 @@ function parseArguments(argv) {
   return options
 }
 
+// [I/gate-i1] 运行时装配：官方数据目录就绪时（H2_OFFICIAL_DATA_DIR）追加 A2 尺子误报回归步骤；
+// 放在 createCheckPlan（被 delivery-tools 契约测试断言的纯函数）之外——CI（无官方数据）计划不变，本地全套门禁自动含误报回归。
+function normalContextRuntimeSteps() {
+  const officialDataDirectory = process.env.H2_OFFICIAL_DATA_DIR ?? ''
+  if (!officialDataDirectory) return []
+  return [
+    {
+      label: 'N01-N07 normal-context regression',
+      command: process.execPath,
+      args: [
+        'validation/normal-context-regression.mjs',
+        '--official-data',
+        officialDataDirectory,
+        '--mode',
+        'check',
+      ],
+      cwd: repositoryRoot,
+      // 尺子步骤显式注入官方数据目录；其余步骤一律剥离（该变量同时是应用证据层开关，泄漏会改变被测行为）。
+      env: { H2_OFFICIAL_DATA_DIR: officialDataDirectory },
+    },
+  ]
+}
+
 export function createCheckPlan(platform = process.platform, options = parseArguments([])) {
   const uv = platform === 'win32' ? 'uv.exe' : 'uv'
-  // [I/gate-i1 后接入，CR[A2]#1 裁决①落地（跨领土代笔，交 B 追认）]：
-  // 官方数据目录就绪时（H2_OFFICIAL_DATA_DIR），追加 A2 尺子的误报回归门禁；
-  // 未设置时计划与原版完全一致（CI/契约测试不受影响）。
-  const officialDataDirectory = process.env.H2_OFFICIAL_DATA_DIR ?? ''
-  const normalContextSteps = officialDataDirectory
-    ? [
-        {
-          label: 'N01-N07 normal-context regression',
-          command: process.execPath,
-          args: [
-            'validation/normal-context-regression.mjs',
-            '--official-data',
-            officialDataDirectory,
-            '--mode',
-            'check',
-          ],
-          cwd: repositoryRoot,
-        },
-      ]
-    : []
   return Object.freeze([
     {
       label: 'read-only doctor',
@@ -80,7 +83,9 @@ export function createCheckPlan(platform = process.platform, options = parseArgu
     commandStep('delivery and contract QA', 'npm', ['run', 'h2:qa'], repositoryRoot, platform),
     commandStep('launcher tests', 'npm', ['run', 'h2:launcher:test'], repositoryRoot, platform),
     { label: 'Python tests', command: uv, args: ['run', '--locked', '--extra', 'dev', 'python', '-m', 'pytest', '-q'], cwd: analyticsDirectory },
-    ...normalContextSteps,
+    // [I/gate-i1 后接入，CR[A2]#1 裁决①落地（跨领土代笔，交 B 追认）]：运行时装配——
+    // 官方数据目录就绪时（H2_OFFICIAL_DATA_DIR）追加 A2 尺子误报回归；未设置时计划不变（CI/契约测试不受影响）。
+    ...normalContextRuntimeSteps(),
     commandStep('repository tests', 'npm', ['test'], repositoryRoot, platform),
     commandStep('production build', 'npm', ['run', 'h2:build'], repositoryRoot, platform),
     { label: 'loopback offline smoke', command: process.execPath, args: ['scripts/h2-sentinel/smoke.mjs'], cwd: repositoryRoot },
@@ -91,6 +96,9 @@ export function createCheckPlan(platform = process.platform, options = parseArgu
 export function providerFreeEnvironment(environment = process.env) {
   const safe = { ...environment }
   for (const name of ['STEPFUN_API_KEY', 'OPENAI_API_KEY', 'H2_LLM_API_KEY']) delete safe[name]
+  // [I/gate-i1] H2_OFFICIAL_DATA_DIR 同时是应用证据层开关——从被测子进程剥离，
+  // 仅尺子步骤经 step.env 显式注入，避免改变被测行为。
+  delete safe.H2_OFFICIAL_DATA_DIR
   safe.H2_LLM_ENABLED = 'false'
   return safe
 }
@@ -101,7 +109,7 @@ export function runCheckPlan(plan = createCheckPlan()) {
     console.log(`\n==> ${step.label}`)
     const result = spawnSync(step.command, step.args, {
       cwd: step.cwd,
-      env: environment,
+      env: step.env ? { ...environment, ...step.env } : environment,
       shell: false,
       stdio: 'inherit',
       windowsHide: true,
