@@ -9,18 +9,22 @@ api.md v1.0 / internal-a.md v1.0（2026-08-29）
 
 ## 当前任务
 
-并行模式已启动：A3 完成 T10（待合并）；A1/A2 会话在主目录有进行中 WIP（详见各 agent 状态文件）
+并行模式推进中：A1 已提交 T03a（T04 WIP 中）；A2 T02 WIP；A3 完成 T10+T12（均待合并）
 
 ## 已完成任务
 
 - **T01（部分）**：codex/p2-algo 分支 + settings.py 预置 + baseline gitignore（commit 7007e3d）；feat/a1-rules、feat/a3-diag 分支已存在，feat/a2-evalml 待 A2 会话创建，tag p2-base 待打
+- **T03a**：A1 完成 ✅ `feat/a1-rules @ bf4277e`（C05/C07 前瞻判据）
 - **T10（P0-7 影响量化四元组）**：A3 完成 ✅ `feat/a3-diag @ c05d419`，TRAIN 280/280 + VALIDATION 70/70 对账全绿，C01/C02 口径修订 v2，详见 `agent-a3.md` 与 `impact/QUADRUPLES.md`
+- **T12（P1-8 根因数据驱动 + IF-2 冻结）**：A3 完成 ✅ `feat/a3-diag @ e3f62e7`，五模式归因 + 引用回溯（TRAIN 50/50、VAL 11/11 断言过），命中率基线见 `diagnosis/ROOT_CAUSE.md`
 
 ## 断点
 
-- 用户合并点：待 A1（T03a）/A2（T02）产出后走首个 M-Gate（A3 出 `docs/reviews/gate-1.md` 评审）
-- A3 下一认领：T12（根因文本，依赖已满足）或 T13 评审
-- 观察项：A1 WIP（rules.py 新阈值键未同步 detection-thresholds.json）暂致主树 import 断裂，属其任务进行中状态，非缺陷
+- **M-Gate 1 已评审放行**：`docs/reviews/gate-1.md`（🟢 A1→A2→A3，独立复跑+三方合并预演全绿）——等指挥官执行合并与合并后官方门禁补跑
+- f61802d 误提交事故已由 A1/A2 自行闭环（重建+Reset，reflog 可溯）；共享单工作区是根因，建议后续会话 worktree 隔离
+- change-requests.md 待裁决 3 条（[A2]×2、[A3]×1）+ p2-base tag 指向 + detector_version 3 文件（A1）
+- A2 正在 qingneng-a2freeze worktree 冻结 T02 基线
+- B 线公告累计两条（impact-formulas.json C01/C02 块；h2-contracts rootCauseCitations）——均为加法式
 
 ## 待确认决策
 

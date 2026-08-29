@@ -6,7 +6,14 @@ import { fileURLToPath } from 'node:url'
 import { assertExactCleanCandidate, currentCandidate } from './lib/candidate.mjs'
 import { ANOMALY_CODES } from './lib/official-contract.mjs'
 import { EVALUATION_WINDOWS, OFFICIAL_SOURCES, sha256 } from './lib/official-sources.mjs'
-import { classifyEvents, computeMetrics, matchEvents, toInstant } from './lib/metrics.mjs'
+import {
+  ADVANCE_WARNING_CODES,
+  classifyEvents,
+  computeMetrics,
+  detectionExpectationMetrics,
+  matchEvents,
+  toInstant,
+} from './lib/metrics.mjs'
 import {
   createGeneratedRunDirectory,
   ensureIgnoredOutputPath,
@@ -269,8 +276,88 @@ function evaluationMetricsMatch(metrics) {
       Number.isFinite(summary.meanAbsoluteMinutes) &&
       summary.meanAbsoluteMinutes >= Math.abs(summary.meanMinutes)
   }
+  // detection_expectation 节（ADR-004 / api.md IF-4）：结构与内部恒等式校验，
+  // 数值真伪由 structuralEvaluationMatches 的 canonical 重算兜底
+  const withinWindowCodes = ['C01', 'C02', 'C03', 'C04', 'C06']
+  const idListMatches = (value) =>
+    Array.isArray(value) && value.every((id) => typeof id === 'string' && id.trim() !== '')
+  const leadTimeSectionMatches = (section) => {
+    if (
+      !hasExactKeys(section, [
+        'codes', 'target', 'groundTruthEvents', 'unmatchedEventIds',
+        'unmeasurableMatches', 'measuredEvents', 'minMinutes', 'meanMinutes',
+        'maxMinutes', 'nonPositiveCount', 'allPositive', 'perEvent',
+      ]) ||
+      !Array.isArray(section.codes) || section.codes.length !== ADVANCE_WARNING_CODES.length ||
+      !section.codes.every((code, index) => code === ADVANCE_WARNING_CODES[index]) ||
+      typeof section.target !== 'string' || section.target.trim() === '' ||
+      !nonNegativeInteger(section.groundTruthEvents) ||
+      !idListMatches(section.unmatchedEventIds) ||
+      !nonNegativeInteger(section.unmeasurableMatches) ||
+      !nonNegativeInteger(section.measuredEvents) ||
+      section.measuredEvents !==
+        section.groundTruthEvents - section.unmatchedEventIds.length - section.unmeasurableMatches ||
+      !nonNegativeInteger(section.nonPositiveCount) ||
+      section.nonPositiveCount > section.measuredEvents ||
+      typeof section.allPositive !== 'boolean' ||
+      section.allPositive !== (section.measuredEvents > 0 && section.nonPositiveCount === 0) ||
+      !Array.isArray(section.perEvent) || section.perEvent.length !== section.measuredEvents
+    ) return false
+    if (section.measuredEvents === 0) {
+      return section.minMinutes === null && section.meanMinutes === null &&
+        section.maxMinutes === null
+    }
+    if (
+      ![section.minMinutes, section.meanMinutes, section.maxMinutes].every(
+        (value) => typeof value === 'number' && Number.isFinite(value),
+      ) || section.minMinutes > section.meanMinutes ||
+      section.meanMinutes > section.maxMinutes
+    ) return false
+    let nonPositive = 0
+    for (const entry of section.perEvent) {
+      if (
+        !hasExactKeys(entry, ['groundTruthId', 'code', 'leadTimeMinutes']) ||
+        typeof entry.groundTruthId !== 'string' || entry.groundTruthId.trim() === '' ||
+        !ADVANCE_WARNING_CODES.includes(entry.code) ||
+        typeof entry.leadTimeMinutes !== 'number' || !Number.isFinite(entry.leadTimeMinutes)
+      ) return false
+      if (entry.leadTimeMinutes <= 0) nonPositive += 1
+    }
+    return nonPositive === section.nonPositiveCount
+  }
+  const withinWindowSectionMatches = (section) => {
+    if (
+      !hasExactKeys(section, [
+        'codes', 'withinMinutes', 'target', 'groundTruthEvents', 'unmatchedEventIds',
+        'unmeasurableMatches', 'detectedWithinWindow', 'overdueEventIds', 'rate', 'meetsTarget',
+      ]) ||
+      !Array.isArray(section.codes) || section.codes.length !== withinWindowCodes.length ||
+      !section.codes.every((code, index) => code === withinWindowCodes[index]) ||
+      section.withinMinutes !== 10 ||
+      typeof section.target !== 'string' || section.target.trim() === '' ||
+      !nonNegativeInteger(section.groundTruthEvents) ||
+      !idListMatches(section.unmatchedEventIds) ||
+      !nonNegativeInteger(section.unmeasurableMatches) ||
+      !nonNegativeInteger(section.detectedWithinWindow) ||
+      !idListMatches(section.overdueEventIds) ||
+      section.groundTruthEvents !==
+        section.unmatchedEventIds.length + section.unmeasurableMatches +
+        section.detectedWithinWindow + section.overdueEventIds.length
+    ) return false
+    if (section.groundTruthEvents === 0) return section.rate === null && section.meetsTarget === null
+    return section.rate === section.detectedWithinWindow / section.groundTruthEvents &&
+      typeof section.meetsTarget === 'boolean' &&
+      section.meetsTarget === (section.rate === 1)
+  }
+  const detectionExpectationSectionMatches = (section) =>
+    hasExactKeys(section, ['definition', 'leadTime', 'detectionWithinWindow']) &&
+    typeof section.definition === 'string' && section.definition.trim() !== '' &&
+    leadTimeSectionMatches(section.leadTime) &&
+    withinWindowSectionMatches(section.detectionWithinWindow)
   if (
-    !hasExactKeys(metrics, ['overall', 'timing', 'classification', 'macro', 'byCode']) ||
+    !hasExactKeys(metrics, [
+      'overall', 'timing', 'classification', 'detectionExpectation', 'macro', 'byCode',
+    ]) ||
     !eventMetricsMatch(metrics.overall, ['tp', 'fp', 'fn', 'precision', 'recall', 'f1']) ||
     !hasExactKeys(
       metrics.classification,
@@ -295,6 +382,7 @@ function evaluationMetricsMatch(metrics) {
       metrics.timing,
       ['firstDetectionDelay', 'startBoundaryError', 'endBoundaryError'],
     ) ||
+    !detectionExpectationSectionMatches(metrics.detectionExpectation) ||
     !hasExactKeys(metrics.macro, ['precision', 'recall', 'f1']) ||
     !['precision', 'recall', 'f1'].every((key) => unitInterval(metrics.macro[key])) ||
     !hasCodeKeys(metrics.byCode)
@@ -393,6 +481,7 @@ function structuralEvaluationMatches(value) {
   ) return false
   let canonicalMatching
   let canonicalClassification
+  let canonicalDetectionExpectation
   try {
     canonicalMatching = matchEvents({
       groundTruth: evaluatedEvents.groundTruth,
@@ -403,6 +492,11 @@ function structuralEvaluationMatches(value) {
       groundTruth: evaluatedEvents.groundTruth,
       predictions: evaluatedEvents.predictions,
       graceMinutes: value.parameters.graceMinutes,
+    })
+    canonicalDetectionExpectation = detectionExpectationMetrics({
+      groundTruth: evaluatedEvents.groundTruth,
+      matches: canonicalMatching.matches,
+      withinMinutes: 10,
     })
   } catch {
     return false
@@ -421,7 +515,8 @@ function structuralEvaluationMatches(value) {
     !sameJsonValue(value.metrics.overall, canonicalOverall) ||
     !sameJsonValue(value.metrics.timing, canonicalMatching.timing) ||
     !sameJsonValue(value.metrics.byCode, canonicalByCode) ||
-    !sameJsonValue(value.metrics.classification, canonicalClassification)
+    !sameJsonValue(value.metrics.classification, canonicalClassification) ||
+    !sameJsonValue(value.metrics.detectionExpectation, canonicalDetectionExpectation)
   ) return false
 
   const matchKeys = [
@@ -596,7 +691,7 @@ export function assertEvaluationIdentity(value, expectedSet, expectedCommit) {
   assertFiniteNumbers(value?.parameters, `${expectedSet} configuration`)
   assertFiniteNumbers(value?.dataset, `${expectedSet} dataset`)
   if (
-    value?.schemaVersion !== 2 ||
+    value?.schemaVersion !== 3 ||
     value.reportKind !== 'h2_official_validation_evaluation' ||
     value.contractVersion !== 'event-match-v2' ||
     value.set !== expectedSet ||
@@ -607,8 +702,8 @@ export function assertEvaluationIdentity(value, expectedSet, expectedCommit) {
       value.parameters,
       [
         'graceMinutes', 'mergeGapMinutes', 'limitDays', 'minimumUtcDay', 'matching',
-        'chunking', 'firstDetectionDelayMinutes', 'boundaryErrorMinutes',
-        'zeroDenominatorMetrics', 'macroAveraging', 'runtimeInputMapping',
+        'chunking', 'firstDetectionDelayMinutes', 'detectionExpectation',
+        'boundaryErrorMinutes', 'zeroDenominatorMetrics', 'macroAveraging', 'runtimeInputMapping',
       ],
     ) ||
     !Number.isFinite(value.parameters.graceMinutes) ||
@@ -621,6 +716,8 @@ export function assertEvaluationIdentity(value, expectedSet, expectedCommit) {
       'UTC calendar day; adjacent same-code predictions merge across boundaries' ||
     value.parameters.firstDetectionDelayMinutes !==
       'prediction first_detection_time minus ground-truth start; negative means early warning' ||
+    value.parameters.detectionExpectation !==
+      'C05/C07 lead_time_minutes = prediction first_detection_time minus matched ground-truth start_time in minutes, target > 0; remaining five codes detection_within_10min_rate over all their ground-truth events, target 1; per ADR-004 / api.md IF-4' ||
     value.parameters.boundaryErrorMinutes !==
       'prediction boundary minus corresponding ground-truth boundary' ||
     value.parameters.zeroDenominatorMetrics !==

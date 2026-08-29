@@ -5,6 +5,7 @@ import { assertEvaluationIdentity } from '../../../validation/overfit-sentinel.m
 import { EVALUATION_WINDOWS, OFFICIAL_SOURCES } from '../../../validation/lib/official-sources.mjs'
 import {
   classifyEvents,
+  detectionExpectationMetrics,
   matchEvents,
 } from '../../../validation/lib/metrics.mjs'
 
@@ -74,7 +75,7 @@ function evaluationReport() {
   )
   const unmatchedGroundTruth = evaluatedGroundTruth.map(({ id, code }) => ({ id, code }))
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     reportKind: 'h2_official_validation_evaluation',
     contractVersion: 'event-match-v2',
     set: 'validation',
@@ -89,6 +90,7 @@ function evaluationReport() {
       matching: 'greedy one-to-one same-code interval overlap with symmetric grace',
       chunking: 'UTC calendar day; adjacent same-code predictions merge across boundaries',
       firstDetectionDelayMinutes: 'prediction first_detection_time minus ground-truth start; negative means early warning',
+      detectionExpectation: 'C05/C07 lead_time_minutes = prediction first_detection_time minus matched ground-truth start_time in minutes, target > 0; remaining five codes detection_within_10min_rate over all their ground-truth events, target 1; per ADR-004 / api.md IF-4',
       boundaryErrorMinutes: 'prediction boundary minus corresponding ground-truth boundary',
       zeroDenominatorMetrics: 'precision=0 when tp+fp=0; recall=0 when tp+fn=0; f1=0 when precision+recall=0',
       macroAveraging: 'unweighted arithmetic mean across C01-C07 precision, recall, and f1',
@@ -130,6 +132,11 @@ function evaluationReport() {
         startBoundaryError: { count: 0, meanMinutes: null, meanAbsoluteMinutes: null },
         endBoundaryError: { count: 0, meanMinutes: null, meanAbsoluteMinutes: null },
       },
+      detectionExpectation: detectionExpectationMetrics({
+        groundTruth: evaluatedGroundTruth,
+        matches: [],
+        withinMinutes: 10,
+      }),
       classification: {
         matches: 0,
         correctCode: 0,
@@ -194,6 +201,11 @@ function refreshStructuralEvaluation(report) {
     ['tp', 'fp', 'fn', 'precision', 'recall', 'f1'].map((key) => [key, matching[key]]),
   )
   report.metrics.timing = matching.timing
+  report.metrics.detectionExpectation = detectionExpectationMetrics({
+    groundTruth,
+    matches: matching.matches,
+    withinMinutes: 10,
+  })
   report.metrics.classification = classification
   report.metrics.byCode = Object.fromEntries(
     matching.byCode.map((entry) => [entry.code, entry]),

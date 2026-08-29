@@ -79,6 +79,9 @@ const EXPECTED_IGNORED_ARTIFACTS = [
   /^services\/h2-analytics\/artifacts\//,
   /^scripts\/h2-sentinel\/artifacts\//,
   /^tests\/h2-sentinel\/reports\/generated(?:\/|$)/,
+  // [A2/T02] 基线冻结目录（api.md 通用约定：validation/baseline/*.json gitignored）。
+  // T01 只补了 .gitignore 条目而漏了本白名单，基线落盘会误判 trackedTreeClean=false 并锁死全链评估工具。
+  /^validation\/baseline(?:\/|$)/,
   /(?:^|\/)__pycache__\//,
   /(?:^|\/)\.pytest_cache\//,
   /(?:^|\/)[^/]+\.egg-info\//,

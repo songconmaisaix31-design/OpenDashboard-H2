@@ -23,3 +23,5 @@ Thumbs.db
 
 .vercel
 .env*
+/models/
+__pycache__/
