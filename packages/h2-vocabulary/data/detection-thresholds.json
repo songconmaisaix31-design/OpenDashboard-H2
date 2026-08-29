@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "detectorVersion": "deterministic-c01-c07-v4",
+  "detectorVersion": "deterministic-c01-c07-v5",
   "aggregationPolicyVersion": "h2-events-v2",
   "sourcePolicy": "Runtime detector inputs are restricted to canonical time-series measurements; public label files are excluded from import and runtime detection.",
   "classes": {

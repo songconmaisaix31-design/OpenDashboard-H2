@@ -396,7 +396,7 @@ def deprecated_field_map() -> dict[str, dict[str, Any]]:
 @lru_cache(maxsize=1)
 def detection_thresholds() -> dict[str, Any]:
     thresholds = load_detection_thresholds()
-    if thresholds.get("detectorVersion") != "deterministic-c01-c07-v4":
+    if thresholds.get("detectorVersion") != "deterministic-c01-c07-v5":
         raise VocabularyError("Detection threshold version does not match the detector.")
     if thresholds.get("aggregationPolicyVersion") != "h2-events-v2":
         raise VocabularyError("Aggregation policy version does not match the service.")
