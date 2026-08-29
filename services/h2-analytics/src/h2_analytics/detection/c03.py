@@ -21,11 +21,14 @@ def _threshold(name: str) -> float:
     return float(value)
 
 
-_BESS_TARGET_MAGNITUDE_KW = _threshold("bessSignatureTargetMagnitudeKw")
-_BESS_TOLERANCE_KW = _threshold("bessSignatureToleranceKw")
 _ACTUAL_TRACKING_TOLERANCE_KW = _threshold("actualTrackingToleranceKw")
 _CAUSAL_CONFIRMATION_ROWS = int(_threshold("causalConfirmationRows"))
 _SAMPLING_INTERVAL_MINUTES = _threshold("samplingIntervalMinutes")
+# T04 去签名带（ADR-003 三级鲁棒判据）：绝对值带 400±1kW 替换为
+# "相对限额带 + 段内恒功率平台 + 因果门保留" 的组合判据。
+_RELATIVE_BAND_LOW_RATIO = _threshold("relativeBandLowRatio")
+_RELATIVE_BAND_HIGH_RATIO = _threshold("relativeBandHighRatio")
+_PLATEAU_TOLERANCE_KW = _threshold("plateauToleranceKw")
 
 
 def c03_causal_row_keys(
@@ -57,6 +60,18 @@ def c03_causal_row_keys(
     accepted: set[tuple[int, datetime]] = set()
     for segment in segments:
         if len(segment) < _CAUSAL_CONFIRMATION_ROWS:
+            continue
+        # 二级判据：段内恒功率平台——C03 事件的异常指令是恒定功率平台
+        # （TRAIN 全部 40 事件极差为 0），正常调节行（C01 等场景的分钟级
+        # 大幅波动）即使落入相对带也被平台门排除。
+        commands = [
+            abs(command)
+            for command in (
+                row.value("bess_power_cmd_kw") for row in segment
+            )
+            if command is not None
+        ]
+        if max(commands) - min(commands) > _PLATEAU_TOLERANCE_KW:
             continue
         if not any(
             _command_opposes_control_need(row)
@@ -90,15 +105,32 @@ def filter_c03_candidates(
 
 
 def _is_public_signature_row(row: DataRow) -> bool:
+    """一级+三级判据：相对限额带内、实际跟踪、PCC 方向一致的候选签名行。
+
+    T04 起，绝对值带（400kW±1kW）由"相对当行充/放限额的功率带"替代：
+    事件签名位落在限额的 0.75-0.85 区间，正常晚高峰恒功率平台（0.9×限额）
+    与 N03 合理工况（<0.6×限额）天然落在带外。
+    """
     if row.timestamp is None:
         return False
     command = row.value("bess_power_cmd_kw")
     actual = row.value("bess_power_actual_kw")
     pcc = row.value("pcc_power_actual_kw")
-    if command is None or actual is None or pcc is None:
+    if command is None or actual is None or pcc is None or command == 0:
         return False
+    limit = (
+        row.value("bess_discharge_power_limit_kw")
+        if command > 0
+        else row.value("bess_charge_power_limit_kw")
+    )
+    if limit is None or limit <= 0:
+        # 限额缺失时无法形成相对带，保守放弃该行（fail closed）。
+        return False
+    magnitude = abs(command)
     return (
-        abs(abs(command) - _BESS_TARGET_MAGNITUDE_KW) <= _BESS_TOLERANCE_KW
+        _RELATIVE_BAND_LOW_RATIO * limit
+        <= magnitude
+        <= _RELATIVE_BAND_HIGH_RATIO * limit
         and abs(actual - command) <= _ACTUAL_TRACKING_TOLERANCE_KW
         and command * pcc > 0
     )

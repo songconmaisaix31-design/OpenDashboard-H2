@@ -674,8 +674,11 @@ def test_c03_and_c06_thresholds_freeze_train_only_findings() -> None:
     c03 = classes["C03"]
     c06 = classes["C06"]
 
-    assert c03["bessSignatureTargetMagnitudeKw"] == 400.0
-    assert c03["actualTrackingToleranceKw"] == 1.0
+    assert c03["relativeBandLowRatio"] == 0.75
+    assert c03["relativeBandHighRatio"] == 0.85
+    assert c03["plateauToleranceKw"] == 5.0
+    assert c03["actualTrackingToleranceKw"] == 5.0
+    assert "bessSignatureTargetMagnitudeKw" not in c03
     assert c03["calibration"]["eventCount"] == 40
     assert c03["calibration"]["qualifiedSignatureRunCount"] == 40
     assert c03["calibration"]["shortNonLabelRunCount"] == 3
@@ -988,6 +991,88 @@ def test_c07_forecast_blocked_by_reserve_gate_and_recovery(valid_csv: str) -> No
     # 恢复方向：dev=−8（未达静态阈值）但 SOC 回升 → 外推不越限 → 不触发。
     assert not any(
         item.code == "C07" for item in detector.detect(build(52.0, 0.25, 350.0))
+    )
+
+
+def _c03_relative_band_rows(
+    valid_csv: str,
+    command: float,
+    *,
+    limit: float | None = 500.0,
+    oscillate: float = 0.0,
+    count: int = 6,
+):
+    """T04 相对带用例：恒定（或受控波动）cmd + causal 命中的最小序列。
+
+    pv 大于负荷使功率缺口为负，放电指令与缺口反向 → causal gate 命中。
+    """
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    rows = []
+    for index in range(count):
+        offset = (index % 2) * oscillate
+        values = {
+            **baseline.values,
+            "bess_power_cmd_kw": command + offset,
+            "bess_power_actual_kw": command + offset,
+            "pcc_power_actual_kw": 300.0,
+            "pv_actual_kw": 1000.0,
+            "aux_load_kw": 100.0,
+            "elz1_power_actual_kw": 100.0,
+            "elz2_power_actual_kw": 100.0,
+            "elz3_power_actual_kw": 100.0,
+            "bess_soc_pct": 80.0,
+            "soc_target_pct": 60.0,
+        }
+        # limit=None 显式置空（覆盖 fixture 基线值）以验证 fail-closed。
+        values["bess_charge_power_limit_kw"] = limit
+        values["bess_discharge_power_limit_kw"] = limit
+        rows.append(
+            replace(
+                baseline,
+                index=index,
+                timestamp=baseline.timestamp + timedelta(minutes=index),
+                timestamp_text=(
+                    baseline.timestamp + timedelta(minutes=index)
+                ).isoformat(),
+                values=values,
+            )
+        )
+    return tuple(rows)
+
+
+def test_c03_relative_band_accepts_shifted_replay_level(valid_csv: str) -> None:
+    # 410 kW 在旧绝对带（400±1）之外、相对带 [375,425]@500 之内：
+    # 去签名带后对重放水平漂移自适应，恒定平台 + 因果门命中即接受。
+    rows = _c03_relative_band_rows(valid_csv, 410.0)
+    candidates = tuple(
+        item for item in RuleRowDetector().detect(rows) if item.code == "C03"
+    )
+    assert len(candidates) == len(rows)
+
+
+def test_c03_relative_band_excludes_healthy_plateau_and_oscillation(
+    valid_csv: str,
+) -> None:
+    detector = RuleRowDetector()
+    # 0.9×限额的健康晚高峰恒功率平台（TRAIN 38 段实测形态）在带外。
+    healthy = _c03_relative_band_rows(valid_csv, 450.0)
+    assert not any(
+        item.code == "C03" for item in detector.detect(healthy)
+    )
+    # 带内但分钟级波动的调节行（C01 型）被平台门排除。
+    oscillating = _c03_relative_band_rows(valid_csv, 390.0, oscillate=30.0)
+    assert not any(
+        item.code == "C03" for item in detector.detect(oscillating)
+    )
+
+
+def test_c03_relative_band_fails_closed_without_limit(valid_csv: str) -> None:
+    # 限额字段缺失时无法形成相对带，保守放弃（fail closed）。
+    rows = _c03_relative_band_rows(valid_csv, 400.0, limit=None)
+    assert not any(
+        item.code == "C03" for item in RuleRowDetector().detect(rows)
     )
 
 

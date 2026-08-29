@@ -5,7 +5,12 @@
   "sourcePolicy": "Runtime detector inputs are restricted to canonical time-series measurements; public label files are excluded from import and runtime detection.",
   "classes": {
     "C01": {
-      "aggregation": {"minimumRows": 5, "confirmationRow": 5, "maximumGapIntervals": 12, "daily": false},
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 5,
+        "maximumGapIntervals": 12,
+        "daily": false
+      },
       "oscillationWindowRows": 20,
       "oscillationAmplitudeKw": 200.0,
       "oscillationTurns": 3,
@@ -15,16 +20,27 @@
       "bessRangeKw": 300.0
     },
     "C02": {
-      "aggregation": {"minimumRows": 5, "confirmationRow": 5, "maximumGapIntervals": 1, "daily": false},
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 5,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
       "ratedCapacityKw": 1000.0,
       "capacitySkewKw": 200.0,
       "commandExecutionGapKw": 50.0
     },
     "C03": {
-      "aggregation": {"minimumRows": 5, "confirmationRow": 5, "maximumGapIntervals": 1, "daily": false},
-      "bessSignatureTargetMagnitudeKw": 400.0,
-      "bessSignatureToleranceKw": 1.0,
-      "actualTrackingToleranceKw": 1.0,
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 5,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
+      "relativeBandLowRatio": 0.75,
+      "relativeBandHighRatio": 0.85,
+      "plateauToleranceKw": 5.0,
+      "actualTrackingToleranceKw": 5.0,
       "causalConfirmationRows": 5,
       "samplingIntervalMinutes": 1,
       "calibration": {
@@ -32,25 +48,46 @@
         "competitionPackageVersion": "public-v4.0",
         "eventCount": 40,
         "inclusiveEventSampleCount": 2717,
-        "eventLengthRows": {"minimum": 36, "maximum": 90},
+        "eventLengthRows": {
+          "minimum": 36,
+          "maximum": 90
+        },
         "qualifiedSignatureRunCount": 40,
         "shortNonLabelRunCount": 3,
         "shortNonLabelRunLengthRows": 1,
+        "signatureBandChange": {
+          "from": "abs(bess_power_cmd_kw) within 400 +- 1 kW (absolute band)",
+          "to": "relative limit band [0.75, 0.85] x row-level charge/discharge power limit, plus segment plateau (max-min abs(command) <= 5 kW), plus retained causal gate",
+          "rationale": "ADR-003 level-1/2 replacement: TRAIN events hold |command| exactly at 0.8 x the 500 kW limit while healthy constant-power schedules hold 0.9 x limit (evening 450 kW plateaus, 30+ segments) and N03 contexts stay below 0.6 x limit; the absolute 400 +- 1 kW band was TRAIN-only curve fitting that would miss a shifted replay level, whereas the relative band self-adapts to the row's own limits.",
+          "exclusivityEvidence": "A full TRAIN scan of non-event rows with |command| >= 300 kW found 36618 rows and 38 constant-power plateau segments in [350, 450] kW, every plateau at exactly 450 kW (=0.9 x limit) and outside the [375, 425] relative band; 6054 rows in [400, 500) kW are minute-scale oscillating regulation (C01-type) that the plateau gate rejects because neither branch of the causal gate alone is exclusive (plateau segments hit the causal gate in 24/38 and 30/38 segments via power-gap and SOC branches respectively)."
+        },
         "causalGate": "Within the first five signature samples, the BESS command opposes the load-minus-PV power gap or the SOC target need; BESS actual tracks the command and PCC exchange has the same official sign.",
-        "finding": "The frozen marker plus causal gate matched all 40 public TRAIN C03 intervals at their inclusive boundaries; five-row persistence excluded the three one-row non-label marker runs.",
-        "limitation": "This public-v4.0 competition signature is empirical TRAIN-only calibration, not a universal physical law or proof of a specific hardware fault.",
+        "finding": "The relative-band signature plus plateau gate plus causal gate matched all 40 public TRAIN C03 intervals with zero boundary deviation (start and end exact on all 40) and zero accepted non-event segments, replacing the absolute 400 kW band with byte-identical TRAIN outputs.",
+        "limitation": "The 0.75-0.85 band and 5 kW plateau tolerance remain empirical TRAIN-only calibration anchored on the 500 kW limit; held-out events replayed at other relative levels (for example 0.9 x limit) would need the enterprise Q2 answer to adjudicate.",
         "heldOutPolicy": "Validation is acceptance-only and does not set C03 thresholds or causal logic."
       }
     },
     "C04": {
-      "aggregation": {"minimumRows": 5, "confirmationRow": 3, "maximumGapIntervals": 1, "daily": false},
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 3,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
       "bessMarkerMinimumKw": 425.0,
       "bessMarkerMaximumKw": 475.0,
       "pccViolationMinimumKw": 600.0,
       "fixtureCommandGapKw": 500.0
     },
     "C05": {
-      "aggregation": {"minimumRows": 4, "confirmationRow": 4, "maximumGapIntervals": 1, "daily": true, "requiresExactSamplingInterval": true, "exactSamplingIntervalMinutes": 1},
+      "aggregation": {
+        "minimumRows": 4,
+        "confirmationRow": 4,
+        "maximumGapIntervals": 1,
+        "daily": true,
+        "requiresExactSamplingInterval": true,
+        "exactSamplingIntervalMinutes": 1
+      },
       "exportQuotaMinimumKwh": 4500.0,
       "importQuotaMinimumKwh": 20000.0,
       "bessSignatureTargetMagnitudeKw": 300.0,
@@ -91,7 +128,12 @@
       }
     },
     "C06": {
-      "aggregation": {"minimumRows": 30, "confirmationRow": 10, "maximumGapIntervals": 1, "daily": false},
+      "aggregation": {
+        "minimumRows": 30,
+        "confirmationRow": 10,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
       "allocationTrackingToleranceKw": 1.0,
       "targetBalanceToleranceKw": 1.0,
       "elz2TargetShare": 0.3,
@@ -119,7 +161,10 @@
         "avoidableStartStop": {
           "eventCount": 20,
           "inclusiveEventSampleCount": 3332,
-          "eventLengthRows": {"minimum": 105, "maximum": 236},
+          "eventLengthRows": {
+            "minimum": 105,
+            "maximum": 236
+          },
           "signatureRunCount": 20,
           "extraSignatureRunCount": 0,
           "finding": "All three electrolyzers were in run_state >= 2 with actual power inside the inclusive 390-410 kW band throughout every labeled interval; the immediately preceding and following samples left the signature.",
@@ -128,7 +173,10 @@
         "inefficientPowerAllocation": {
           "eventCount": 20,
           "inclusiveEventSampleCount": 3265,
-          "eventLengthRows": {"minimum": 111, "maximum": 235},
+          "eventLengthRows": {
+            "minimum": 111,
+            "maximum": 235
+          },
           "signatureRunCount": 20,
           "exactBoundaryMatchCount": 20,
           "extraSignatureRunCount": 0,
@@ -160,7 +208,12 @@
       }
     },
     "C07": {
-      "aggregation": {"minimumRows": 5, "confirmationRow": 3, "maximumGapIntervals": 1, "daily": false},
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 3,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
       "socTargetDeviationPct": 10.0,
       "reserveTargetMinimumKwh": 350.0,
       "forecastHorizonMinutes": 30.0,
