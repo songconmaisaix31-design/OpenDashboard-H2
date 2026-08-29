@@ -56,8 +56,14 @@ configuration, tests, runtime evidence, or the accepted delivery specification.
 
 - Streaming remains disabled by default. Commit `40b3d391` makes exact
   `H2_STREAMING_IMPORT_ENABLED=true` enable it in the standard runtime;
-  unset/`false` keeps it disabled and any other value fails startup. The
-  final clean candidate still requires full-file launcher/Web verification.
+  unset/`false` keeps it disabled and any other value fails startup.
+- Coordinator-reported local standard-launcher HTTP evidence completed the
+  external `01_train_timeseries.csv` import with provider environment cleared:
+  `236991870` bytes, 29 chunks, 525,600 rows, exact SHA-256
+  `67513c9b1d443d25eb1258a6f58252c02cdb438f701a7921e2f8dacc365a6c51`,
+  finalized session, and passed quality. This does not evidence the browser
+  file picker, a clean machine, organizer acceptance, production, remote CI,
+  or an official score.
 - Worker-reported official-train session finalization constructed the backend
   capability directly. It is local implementation evidence, not proof of the
   standard launcher path, clean-machine behavior, production behavior, or
@@ -77,7 +83,7 @@ configuration, tests, runtime evidence, or the accepted delivery specification.
 | Environment | `node scripts/h2-sentinel/doctor.mjs --mode local` | Implemented; final candidate and clean-machine runs pending. |
 | Deterministic full gate | `node scripts/h2-sentinel/check-all.mjs` | Implemented; coordinator final-SHA rerun pending. |
 | Submission package | `pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1` | Passed in the documentation lane; coordinator final-SHA rerun required. |
-| Full training import | Set exact `H2_STREAMING_IMPORT_ENABLED=true`, then use browser Local session import with the hash-locked external file | Runtime opt-in implemented; final clean-SHA launcher/Web run pending. |
+| Full training import | Set exact `H2_STREAMING_IMPORT_ENABLED=true`, then import the hash-locked external file | Local standard-launcher HTTP import passed with 29 chunks, 525,600 rows, exact size/hash, finalization, and quality; browser file-picker evidence remains pending. |
 | NLU | Q01-Q10 paraphrase, ambiguity, overlength, and control-request probes | Worker tests reported; integrated runtime inspection pending. |
 | StepFun off/fallback | Provider-free deterministic answer and provenance | Worker tests reported; integrated runtime inspection pending. |
 | StepFun opt-in | Authorized account/model, bounded payload, validated restatement, fallback | No live-provider evidence; optional and not a release blocker for offline core. |
@@ -97,6 +103,9 @@ configuration, tests, runtime evidence, or the accepted delivery specification.
   assembled runtime groups stopped because Vite is not installed in this
   documentation worktree. This is not a final integrated QA pass; the
   coordinator must rerun from the assembled candidate with locked dependencies.
+- The full-train result above is coordinator-provided runtime evidence. This
+  documentation lane did not rerun the external file or receive browser,
+  clean-machine, deployment, remote-CI, or organizer artifacts.
 
 ## Rollback
 

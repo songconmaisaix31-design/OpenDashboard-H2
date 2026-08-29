@@ -74,8 +74,11 @@ npm run h2:local
 
 未设置或精确 `false` 保持关闭；其他值会让服务启动失败。完成后关闭
 启动器并从终端环境移除该变量。提交 `40b3d391f42a13071f959bd753456afb9e02b2d5`
-实现了此运行时入口，但完整训练文件仍须由协调器在最终 clean SHA 上
-通过标准 launcher/Web 重跑后才能形成最终运行证据。
+实现了此运行时入口。协调器已在清除 provider 环境后，通过标准 launcher
+和实际 HTTP 路径完成本地导入：`01_train_timeseries.csv`、`236991870`
+bytes、29 chunks、525,600 行、上述精确 SHA-256、session finalized、
+quality passed。该结果仅是本地标准 launcher HTTP 证据，不证明浏览器
+file-picker、clean-machine、主办方验收、生产、远端 CI 或官方评分。
 
 ## 运维助手与 StepFun
 

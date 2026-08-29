@@ -21,9 +21,11 @@
   order, signs, and troubleshooting are recorded in
   [OPERATOR_RUNBOOK.md](OPERATOR_RUNBOOK.md).
 - Coordinator commit `40b3d391f42a13071f959bd753456afb9e02b2d5`
-  adds strict `H2_STREAMING_IMPORT_ENABLED=true` Local opt-in. Fresh final-SHA
-  launcher/Web evidence is still required before claiming full training-file
-  import.
+  adds strict `H2_STREAMING_IMPORT_ENABLED=true` Local opt-in. Coordinator
+  evidence records a successful standard-launcher HTTP full-file import with
+  provider environment cleared, 29 chunks, 525,600 rows, exact size/hash,
+  finalized session, and passed quality; browser file-picker and external
+  evidence remain pending.
 
 ## Delivered
 

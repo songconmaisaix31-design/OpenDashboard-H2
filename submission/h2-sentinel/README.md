@@ -21,8 +21,11 @@ entries; the three top-level requirement/README Markdown or DOCX files differ.
 No final official metric, generated slice, retained screenshot, measured
 receipt, organizer result, deployment, clean-machine result, remote CI result,
 or final candidate SHA is included or claimed. Full-file session routes and
-strict `H2_STREAMING_IMPORT_ENABLED=true` runtime opt-in are integrated, but a
-final clean-SHA launcher/Web full-file run is still pending.
+strict `H2_STREAMING_IMPORT_ENABLED=true` runtime opt-in are integrated. A
+coordinator-reported local standard-launcher HTTP run imported the exact
+236991870-byte training file in 29 chunks with 525,600 rows, finalized the
+session, and passed quality; browser file-picker and all external evidence
+classes remain pending.
 
 ## Evidence classes
 

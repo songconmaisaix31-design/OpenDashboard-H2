@@ -15,9 +15,9 @@
   candidate SHA remain coordinator-owned until rerun after integration.
 - Reviewed P2 source adds bounded session upload, bounded NLU, optional StepFun
   restatement, C01-C07 dedicated chart selection, doctor/check-all, and CI.
-  Strict Local streaming opt-in is implemented; final integrated full-file
-  runtime evidence is still pending, so do not present source presence alone
-  as a completed operator flow.
+  Strict Local streaming opt-in is implemented. Local standard-launcher HTTP
+  import of the exact full training file passed with provider environment
+  cleared; browser file-picker and external evidence remain pending.
 
 ## Before the judge session
 
@@ -82,8 +82,10 @@
 6. **Has the three-minute target passed?** Only after the final candidate's
    two-execution receipt passes the validator; no final receipt is claimed.
 7. **Can Fixture replace a failed Live execution?** No.
-8. **Is full training-file import proven through the normal launcher?** No.
-   Strict runtime opt-in, source capability, and adapter are integrated, but
-   the final clean candidate still requires a fresh full-file launcher/Web run.
+8. **Is full training-file import proven through the normal launcher?** The
+   local standard-launcher HTTP path is evidenced: 29 chunks, 525,600 rows,
+   exact external size/hash, session finalization, and passed quality. This is
+   not browser file-picker, clean-machine, organizer, production, remote-CI, or
+   official-score evidence.
 9. **Does StepFun decide facts or actions?** No. It is an optional restatement
    layer over deterministic text and citation IDs, and failures fall back.

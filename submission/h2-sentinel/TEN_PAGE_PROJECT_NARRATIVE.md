@@ -105,7 +105,10 @@ W1, W2, P1-W3 QA, and the provenance correction are integrated. Reviewed P2
 commits add upload sessions, bounded NLU, optional rendering, C01-C07 charts,
 and delivery checks. Strict `H2_STREAMING_IMPORT_ENABLED=true` runtime opt-in
 is integrated while the default stays disabled; final integrated P2 checks and
-the clean-SHA full-file runtime inspection remain pending.
+browser file-picker inspection remain pending. The coordinator reported a
+successful local standard-launcher HTTP import of the exact full training file:
+29 chunks, 525,600 rows, finalized session, and passed quality. This is not
+clean-machine, organizer, production, remote-CI, or official-score evidence.
 
 The official package received a bounded read-only integrity check, not an
 official runtime evaluation: all data/material entries plus the workbook

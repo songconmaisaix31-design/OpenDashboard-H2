@@ -19,7 +19,7 @@ supports.
 | S09 | Receipt | Two distinct execution IDs, durations below 180 seconds, hashes, limitations | Not produced | Analytics run IDs may repeat for identical input; capture only after the validator passes for final SHA. |
 | S10 | Narrow width | 390x844 primary flow without clipping, overlap, or hidden action | Primary Fixture flow observed; state matrix incomplete | Cover loading, disabled, error, and conflict states. |
 | S11 | Fixture fallback | Chinese Fixture UI/report with explicit FIXTURE label | Runtime observed; not retained | Caption as sanitized synthetic fallback, excluded from receipt. |
-| S12 | Full import progress | Ordered chunk progress, external filename identity, terminal/success state | Runtime opt-in implemented; final integrated capture pending | Never expose an absolute package path or describe a slice as the full file. |
+| S12 | Full import progress | Ordered chunk progress, external filename identity, terminal/success state | Standard-launcher HTTP import evidenced; browser capture pending | Never expose an absolute package path or describe a slice as the full file. |
 | S13 | Bounded NLU | Matched Q01-Q10 confirmation and explicit refusal examples | Automated source/tests only | Include one equipment-control refusal; do not imply arbitrary chat. |
 | S14 | Optional StepFun | Data-boundary disclosure plus rendered/fallback provenance labels | Final integrated capture pending | Never show a key, token, secret, raw provider request, or account detail. |
 | S15 | C01-C07 charts | Dedicated units/signs and at least one missing-series evidence fallback | Final integrated desktop/390x844 capture pending | Check PCC/storage sign conventions, overflow, labels, and no fabricated values. |

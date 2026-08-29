@@ -87,8 +87,11 @@ Reviewed P2 commits add session ingestion, NLU, optional rendering, C01-C07
 chart selection, and delivery tooling. Coordinator integration wires the
 routes and adapter; `40b3d391` adds strict
 `H2_STREAMING_IMPORT_ENABLED=true` runtime opt-in while retaining a disabled
-default. Full training-file import still requires a final clean-SHA
-launcher/Web run rather than a source-only release claim.
+default. Full training-file claims require runtime observation rather than
+source presence alone. The coordinator reported that the standard-launcher
+HTTP path imported the exact external file
+in 29 chunks with 525,600 rows, finalized the session, and passed quality.
+Browser file-picker and external-environment evidence remain pending.
 
 ## Evidence sources
 

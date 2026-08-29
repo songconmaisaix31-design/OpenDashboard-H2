@@ -121,7 +121,8 @@ runtime has passed the corresponding gate:
 4. Demonstrate full training-file progress only after setting exact
    `H2_STREAMING_IMPORT_ENABLED=true` and verifying the standard Local launcher
    against the final clean SHA. Commit `40b3d391f42a13071f959bd753456afb9e02b2d5`
-   implements the strict opt-in; the final full-file run remains pending.
+   implements the strict opt-in. The coordinator-reported standard-launcher
+   HTTP import passed, but a browser file-picker demonstration remains pending.
 
 The external full training-file identity is size `236991870` bytes and SHA-256
 `67513c9b1d443d25eb1258a6f58252c02cdb438f701a7921e2f8dacc365a6c51`.
