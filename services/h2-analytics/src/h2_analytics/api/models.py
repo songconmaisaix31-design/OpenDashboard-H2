@@ -14,6 +14,27 @@ class CsvImportRequest(StrictRequest):
     text: str
 
 
+class CsvUploadSessionRequest(StrictRequest):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    request_id: str = Field(alias="requestId", min_length=1, max_length=128)
+    filename: str = Field(min_length=1, max_length=255)
+    declared_bytes: int = Field(alias="declaredBytes", ge=1, le=256 * 1024 * 1024)
+    expected_content_hash: str | None = Field(
+        default=None,
+        alias="expectedContentHash",
+        pattern=r"^sha256:[a-f0-9]{64}$",
+    )
+
+
+class CsvUploadFinalizeRequest(StrictRequest):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    request_id: str = Field(alias="requestId", min_length=1, max_length=128)
+    session_id: str = Field(alias="sessionId", min_length=1, max_length=128)
+    total_chunks: int = Field(alias="totalChunks", ge=1)
+    total_bytes: int = Field(alias="totalBytes", ge=1, le=256 * 1024 * 1024)
+    content_hash: str = Field(alias="contentHash", pattern=r"^sha256:[a-f0-9]{64}$")
+
+
 class DatasetIdRequest(StrictRequest):
     dataset_id: str = Field(alias="datasetId", min_length=1)
 
@@ -60,6 +81,12 @@ class AssistantRequest(StrictRequest):
     question_id: str = Field(alias="questionId")
     event_id: str | None = Field(default=None, alias="eventId")
     allow_llm_rendering: bool = Field(alias="allowLlmRendering")
+
+
+class AssistantNluRequest(StrictRequest):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    text: str
+    run_id: str = Field(alias="runId", min_length=1)
 
 class TimeRange(StrictRequest):
     start_time: str = Field(alias="startTime", min_length=1)

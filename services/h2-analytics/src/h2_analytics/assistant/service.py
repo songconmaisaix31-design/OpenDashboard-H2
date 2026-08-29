@@ -317,6 +317,17 @@ def _answer_content(
     else:
         raise AssertionError(f"Unhandled assistant question: {question_id}")
 
+    add(
+        "current_run_context",
+        "fact",
+        (
+            f"本回答使用当前运行 {run['runId']} 的 {run['dataset']['rowCount']} 行数据、"
+            f"{run['dataset']['samplingIntervalMinutes']} 分钟采样间隔和 "
+            f"{len(run['events'])} 个已检测事件；这些本地运行数值不代表官方评分或隐藏测试结论。"
+        ),
+        [("knowledge_base", f"run:{run['runId']}:summary", None)],
+    )
+
     if event is not None and question_id not in {"Q03", "Q09"}:
         add(
             "selected_event_context",
