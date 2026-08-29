@@ -7,6 +7,8 @@ columns are rejected at the ingestion boundary.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from h2_analytics import vocabulary
 from h2_analytics.models import DataRow
 from h2_analytics.settings import (
@@ -29,6 +31,13 @@ _ELZ_ACTUAL_CAPACITY = tuple(
 )
 _ELZ_RUN_STATE = tuple(f"elz{index}_run_state" for index in _ELZ_IDS)
 _ELZ_EQUIPMENT = ("ELZ01", "ELZ02", "ELZ03")
+
+
+def _minutes_to_day_end(timestamp: datetime) -> float:
+    """从当前时刻到当日 24:00 的剩余分钟数（C05 前瞻外推的日界口径）。"""
+    midnight = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+    elapsed = (timestamp - midnight).total_seconds() / 60.0
+    return 24.0 * 60.0 - elapsed
 
 
 def _threshold(code: str, name: str) -> float:
@@ -61,10 +70,22 @@ _C05_BESS_TARGET_MAGNITUDE_KW = _threshold(
     "C05", "bessSignatureTargetMagnitudeKw"
 )
 _C05_BESS_TOLERANCE_KW = _threshold("C05", "bessSignatureToleranceKw")
+# 前瞻判据（T03a）：剩余配额按滑窗消耗速率外推，预计在当日日终前耗尽即预警。
+_C05_FORECAST_WINDOW_ROWS = int(
+    _threshold("C05", "forecastDepletionRateWindowRows")
+)
+_C05_FORECAST_MIN_RATE_KWH_PER_MIN = _threshold(
+    "C05", "forecastMinimumDepletionRateKwhPerMin"
+)
 _C06_START_STOP_LOW_KW = _threshold("C06", "avoidableStartStopPowerMinimumKw")
 _C06_START_STOP_HIGH_KW = _threshold("C06", "avoidableStartStopPowerMaximumKw")
 _SOC_TARGET_DEVIATION_PCT = _threshold("C07", "socTargetDeviationPct")
 _C07_RESERVE_MIN_KWH = _threshold("C07", "reserveTargetMinimumKwh")
+# 前瞻判据（T03a）：SOC 轨迹按滑窗速率外推至确认视界，预计越限即预警。
+_C07_FORECAST_HORIZON_MINUTES = _threshold("C07", "forecastHorizonMinutes")
+_C07_FORECAST_SOC_WINDOW_ROWS = int(
+    _threshold("C07", "forecastSocRateWindowRows")
+)
 
 
 class RuleRowDetector:
@@ -89,9 +110,9 @@ class RuleRowDetector:
             candidates.extend(self._detect_c01(rows, index))
             candidates.extend(self._detect_c02(row))
             candidates.extend(self._detect_c04(row))
-            candidates.extend(self._detect_c05(row))
+            candidates.extend(self._detect_c05(rows, index))
             candidates.extend(self._detect_c06(rows, index))
-            candidates.extend(self._detect_c07(row))
+            candidates.extend(self._detect_c07(rows, index))
         return tuple(
             sorted(
                 candidates,
@@ -279,7 +300,22 @@ class RuleRowDetector:
         )
         return (self._candidate(row, "C04", subtype, 0.91),)
 
-    def _detect_c05(self, row: DataRow) -> tuple[DetectionCandidate, ...]:
+    def _detect_c05(
+        self,
+        rows: tuple[DataRow, ...],
+        index: int,
+    ) -> tuple[DetectionCandidate, ...]:
+        # 静态风险路径（既有冻结行为）：低配额日 + 方向化 BESS 签名带。
+        static = self._c05_static_candidate(rows[index])
+        if static:
+            return static
+        # 前瞻路径（T03a）：配额未触静态阈值时，按滑窗消耗速率外推，
+        # 预计在当日日终前耗尽的方向才预警（仅单侧成立可映射官方 subtype）。
+        return self._c05_forecast_candidate(rows, index)
+
+    def _c05_static_candidate(
+        self, row: DataRow
+    ) -> tuple[DetectionCandidate, ...]:
         export_quota = row.value("grid_export_energy_quota_kwh_day")
         import_quota = row.value("grid_import_energy_quota_kwh_day")
         if export_quota is None or import_quota is None:
@@ -314,6 +350,74 @@ class RuleRowDetector:
         ):
             return ()
         return (self._candidate(row, "C05", subtype, 0.80),)
+
+    def _c05_forecast_candidate(
+        self,
+        rows: tuple[DataRow, ...],
+        index: int,
+    ) -> tuple[DetectionCandidate, ...]:
+        row = rows[index]
+        if row.timestamp is None:
+            return ()
+        command = row.value("bess_power_cmd_kw")
+        actual = row.value("bess_power_actual_kw")
+        if command is None or actual is None:
+            return ()
+        # 方向化签名门与静态路径共用（去除签名带属 T05 范畴，此处保持冻结）。
+        qualifying: list[tuple[str, float]] = []
+        for subtype, target in (
+            ("EXPORT_ENERGY_QUOTA_RISK", _C05_BESS_TARGET_MAGNITUDE_KW),
+            ("IMPORT_ENERGY_QUOTA_RISK", -_C05_BESS_TARGET_MAGNITUDE_KW),
+        ):
+            if abs(command - target) > _C05_BESS_TOLERANCE_KW:
+                continue
+            if abs(actual - target) > _C05_BESS_TOLERANCE_KW:
+                continue
+            side = subtype.split("_")[0].lower()
+            remaining = row.value(f"grid_{side}_energy_remaining_kwh")
+            rate = self._energy_depletion_rate(
+                rows, index, f"grid_{side}_energy_used_kwh_day"
+            )
+            if remaining is None or rate is None:
+                continue
+            if rate < _C05_FORECAST_MIN_RATE_KWH_PER_MIN:
+                continue
+            minutes_to_day_end = _minutes_to_day_end(row.timestamp)
+            # 上游口径（02_ALGO_ROBUSTNESS §5）：预计超限时刻早于当日剩余时长。
+            if remaining / rate < minutes_to_day_end:
+                qualifying.append((subtype, target))
+        if len(qualifying) != 1:
+            # 双侧同时耗尽无法选择官方 subtype，零侧耗尽不构成前瞻预警。
+            return ()
+        subtype, _ = qualifying[0]
+        return (self._candidate(row, "C05", subtype, 0.80),)
+
+    def _energy_depletion_rate(
+        self,
+        rows: tuple[DataRow, ...],
+        index: int,
+        used_field: str,
+    ) -> float | None:
+        """滑窗内日累计电量差分得到的平均消耗速率（kWh/min）。"""
+        window_start = index - _C05_FORECAST_WINDOW_ROWS + 1
+        if window_start < 0:
+            return None
+        window = rows[window_start : index + 1]
+        if any(item.timestamp is None for item in window):
+            return None
+        first_used = window[0].value(used_field)
+        last_used = window[-1].value(used_field)
+        if first_used is None or last_used is None:
+            return None
+        first_ts = window[0].timestamp
+        last_ts = window[-1].timestamp
+        if first_ts is None or last_ts is None:
+            return None
+        span_minutes = (last_ts - first_ts).total_seconds() / 60.0
+        if span_minutes <= 0:
+            return None
+        # 跨日重置或数据回退会得到非正差分，自然低于最低速率门而不触发。
+        return (last_used - first_used) / span_minutes
 
     def _detect_c06(
         self,
@@ -374,7 +478,21 @@ class RuleRowDetector:
             ),
         )
 
-    def _detect_c07(self, row: DataRow) -> tuple[DetectionCandidate, ...]:
+    def _detect_c07(
+        self,
+        rows: tuple[DataRow, ...],
+        index: int,
+    ) -> tuple[DetectionCandidate, ...]:
+        # 静态路径（既有冻结行为）：SOC 偏差越限或备用跌破目标。
+        static = self._c07_static_candidate(rows[index])
+        if static:
+            return static
+        # 前瞻路径（T03a）：偏差未越限时，按滑窗 SOC 速率外推至确认视界。
+        return self._c07_forecast_candidate(rows, index)
+
+    def _c07_static_candidate(
+        self, row: DataRow
+    ) -> tuple[DetectionCandidate, ...]:
         soc = row.value("bess_soc_pct")
         target = row.value("soc_target_pct")
         reserve = row.value("bess_regulation_reserve_target_kwh")
@@ -409,3 +527,57 @@ class RuleRowDetector:
                 return ()
             subtype = max(shortfalls, key=lambda item: item[0])[1]
         return (self._candidate(row, "C07", subtype, 0.86),)
+
+    def _c07_forecast_candidate(
+        self,
+        rows: tuple[DataRow, ...],
+        index: int,
+    ) -> tuple[DetectionCandidate, ...]:
+        row = rows[index]
+        soc = row.value("bess_soc_pct")
+        target = row.value("soc_target_pct")
+        reserve = row.value("bess_regulation_reserve_target_kwh")
+        if soc is None or target is None or reserve is None:
+            return ()
+        # 调节备用目标门与静态 shortfall 分支共用：TRAIN 合理工况 N07 的
+        # reserve 全部为 250-300 kWh，被 350 kWh 门排除（见校准记录块）。
+        if reserve < _C07_RESERVE_MIN_KWH:
+            return ()
+        deviation = soc - target
+        rate = self._soc_rate(rows, index)
+        if rate is None:
+            return ()
+        projected = deviation + rate * _C07_FORECAST_HORIZON_MINUTES
+        # 与静态 subtype 语义一致：SOC 将深度低于目标 → 充电余量不足；
+        # 将深度高于目标 → 放电备用不足。同向要求排除恢复途中的反向误警。
+        subtype = None
+        if projected <= -_SOC_TARGET_DEVIATION_PCT and deviation < 0:
+            subtype = "CHARGE_HEADROOM_SHORTFALL"
+        elif projected >= _SOC_TARGET_DEVIATION_PCT and deviation > 0:
+            subtype = "DISCHARGE_RESERVE_SHORTFALL"
+        if subtype is None:
+            return ()
+        return (self._candidate(row, "C07", subtype, 0.86),)
+
+    def _soc_rate(
+        self,
+        rows: tuple[DataRow, ...],
+        index: int,
+    ) -> float | None:
+        """滑窗 SOC 差分得到的平均变化速率（百分点/min）。"""
+        window_start = index - _C07_FORECAST_SOC_WINDOW_ROWS + 1
+        if window_start < 0:
+            return None
+        window = rows[window_start : index + 1]
+        first_ts = window[0].timestamp
+        last_ts = window[-1].timestamp
+        if first_ts is None or last_ts is None:
+            return None
+        first_soc = window[0].value("bess_soc_pct")
+        last_soc = window[-1].value("bess_soc_pct")
+        if first_soc is None or last_soc is None:
+            return None
+        span_minutes = (last_ts - first_ts).total_seconds() / 60.0
+        if span_minutes <= 0:
+            return None
+        return (last_soc - first_soc) / span_minutes

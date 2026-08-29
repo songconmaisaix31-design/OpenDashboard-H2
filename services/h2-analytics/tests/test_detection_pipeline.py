@@ -804,6 +804,193 @@ def test_c07_continues_while_charge_reserve_is_short_after_soc_recovers(
     assert impact.value == pytest.approx(339.474)
 
 
+def _forecast_csv_rows(valid_csv: str, count: int, minute_of_day: int = 23 * 60):
+    """构造 T03a 前瞻用例的基础行序列（每分钟一行，可控当日时刻）。"""
+    imported = DatasetLoader().import_csv(filename="fixture.csv", text=valid_csv)
+    baseline = imported.rows[0]
+    assert baseline.timestamp is not None
+    day = baseline.timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = day + timedelta(minutes=minute_of_day)
+    return baseline, tuple(
+        replace(
+            baseline,
+            index=index,
+            timestamp=start + timedelta(minutes=index),
+            timestamp_text=(start + timedelta(minutes=index)).isoformat(),
+        )
+        for index in range(count)
+    )
+
+
+def test_c05_forecast_warns_when_remaining_exhausts_before_day_end(
+    valid_csv: str,
+) -> None:
+    baseline, rows = _forecast_csv_rows(valid_csv, count=20)
+    # 静态风险路径不触发：双侧配额均高于静态阈值。
+    # 消耗速率 10 kWh/min、剩余 200 kWh、日剩余约 60 分钟 → 外推 20 分钟耗尽。
+    forecast_rows = tuple(
+        replace(
+            row,
+            values={
+                **baseline.values,
+                "grid_export_energy_quota_kwh_day": 6000.0,
+                "grid_import_energy_quota_kwh_day": 30000.0,
+                "grid_export_energy_used_kwh_day": 1000.0 + 10.0 * index,
+                "grid_import_energy_used_kwh_day": 0.0,
+                "grid_export_energy_remaining_kwh": 200.0 - 10.0 * index,
+                "grid_import_energy_remaining_kwh": 30000.0,
+                "bess_power_cmd_kw": 300.0,
+                "bess_power_actual_kw": 300.0,
+            },
+        )
+        for index, row in enumerate(rows)
+    )
+    candidates = tuple(
+        item
+        for item in RuleRowDetector().detect(forecast_rows)
+        if item.code == "C05"
+    )
+
+    # 15 行速率窗口填满后，每行都满足外推耗尽（200-10i)/10 < 日剩余。
+    assert candidates
+    assert all(item.subtype == "EXPORT_ENERGY_QUOTA_RISK" for item in candidates)
+    assert candidates[0].timestamp == forecast_rows[14].timestamp
+
+
+def test_c05_forecast_stays_silent_without_signature_or_rate(
+    valid_csv: str,
+) -> None:
+    baseline, rows = _forecast_csv_rows(valid_csv, count=20)
+
+    def build(command: float, used: "float | tuple[float, float]") -> tuple:
+        def value(index: int) -> float:
+            if isinstance(used, tuple):
+                return used[0] + used[1] * index
+            return used
+
+        return tuple(
+            replace(
+                row,
+                values={
+                    **baseline.values,
+                    "grid_export_energy_quota_kwh_day": 6000.0,
+                    "grid_import_energy_quota_kwh_day": 30000.0,
+                    "grid_export_energy_used_kwh_day": value(index),
+                    "grid_import_energy_used_kwh_day": 0.0,
+                    "grid_export_energy_remaining_kwh": 200.0 - 10.0 * index,
+                    "grid_import_energy_remaining_kwh": 30000.0,
+                    "bess_power_cmd_kw": command,
+                    "bess_power_actual_kw": command,
+                },
+            )
+            for index, row in enumerate(rows)
+        )
+
+    detector = RuleRowDetector()
+    # N05 防线：无 300 kW 签名（TRAIN N05 |cmd| 峰值 167 kW 量级）→ 不触发。
+    assert not any(
+        item.code == "C05" for item in detector.detect(build(150.0, (1000.0, 10.0)))
+    )
+    # 速率不足：used 平坦 → 0 kWh/min 低于下限 → 不触发。
+    assert not any(
+        item.code == "C05" for item in detector.detect(build(300.0, 1000.0))
+    )
+
+
+def test_c07_confirmation_row_yields_positive_lead_time(valid_csv: str) -> None:
+    baseline, rows = _forecast_csv_rows(valid_csv, count=6)
+    deep_deviation_rows = tuple(
+        replace(
+            row,
+            values={
+                **baseline.values,
+                "bess_soc_pct": 20.0,
+                "soc_target_pct": 60.0,
+                "bess_regulation_reserve_target_kwh": 350.0,
+                "bess_available_charge_energy_kwh": 900.0,
+                "bess_available_discharge_energy_kwh": 900.0,
+            },
+        )
+        for row in rows
+    )
+    candidates = tuple(
+        item
+        for item in RuleRowDetector().detect(deep_deviation_rows)
+        if item.code == "C07"
+    )
+    window = EventAggregator().aggregate(
+        rows=deep_deviation_rows,
+        candidates=candidates,
+        sampling_interval_minutes=1.0,
+    )[0]
+
+    # ADR-004：lead_time_minutes = first_detection − start 必须可测为正。
+    assert window.start_time == deep_deviation_rows[0].timestamp
+    assert window.first_detection_time == deep_deviation_rows[2].timestamp
+    assert window.first_detection_time > window.start_time
+
+
+def test_c07_forecast_projects_soc_trend_before_threshold(valid_csv: str) -> None:
+    baseline, rows = _forecast_csv_rows(valid_csv, count=16)
+    # 当前偏差 -9.6（未达静态 10），滑窗速率 -0.25%/min，
+    # 外推 30 分钟 → -17.1 ≤ -10 且同向 → CHARGE_HEADROOM 前瞻预警。
+    soc_rows = tuple(
+        replace(
+            row,
+            values={
+                **baseline.values,
+                "bess_soc_pct": 54.0 - 0.25 * index,
+                "soc_target_pct": 60.0,
+                "bess_regulation_reserve_target_kwh": 350.0,
+                "bess_available_charge_energy_kwh": 900.0,
+                "bess_available_discharge_energy_kwh": 900.0,
+            },
+        )
+        for index, row in enumerate(rows)
+    )
+    candidates = tuple(
+        item
+        for item in RuleRowDetector().detect(soc_rows)
+        if item.code == "C07"
+    )
+    assert candidates
+    assert all(
+        item.subtype == "CHARGE_HEADROOM_SHORTFALL" for item in candidates
+    )
+    # 首个触发行：15 行速率窗口填满（index 14，dev=-9.5）且外推越限。
+    assert candidates[0].timestamp == soc_rows[14].timestamp
+
+
+def test_c07_forecast_blocked_by_reserve_gate_and_recovery(valid_csv: str) -> None:
+    baseline, rows = _forecast_csv_rows(valid_csv, count=16)
+
+    def build(soc_start: float, soc_step: float, reserve: float) -> tuple:
+        return tuple(
+            replace(
+                row,
+                values={
+                    **baseline.values,
+                    "bess_soc_pct": soc_start + soc_step * index,
+                    "soc_target_pct": 60.0,
+                    "bess_regulation_reserve_target_kwh": reserve,
+                    "bess_available_charge_energy_kwh": 900.0,
+                    "bess_available_discharge_energy_kwh": 900.0,
+                },
+            )
+            for index, row in enumerate(rows)
+        )
+
+    detector = RuleRowDetector()
+    # N07 防线：恶化趋势同向，但 reserve=300（<350 门）→ 不触发。
+    assert not any(
+        item.code == "C07" for item in detector.detect(build(54.0, -0.25, 300.0))
+    )
+    # 恢复方向：dev=−8（未达静态阈值）但 SOC 回升 → 外推不越限 → 不触发。
+    assert not any(
+        item.code == "C07" for item in detector.detect(build(52.0, 0.25, 350.0))
+    )
+
+
 class FakeBooster:
     def predict(self, values: Sequence[Sequence[float]]) -> Sequence[Sequence[float]]:
         return [[0.1, 0.9] for _ in values]
