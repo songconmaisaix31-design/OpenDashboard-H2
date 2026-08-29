@@ -69,7 +69,7 @@ export function isEvent(value: unknown): value is H2AnomalyEvent {
       'primaryControlObject', 'affectedEquipment', 'evidence', 'impact',
       'safetyChecks', 'recommendations', 'rootCause', 'rootCauseKind',
       'reviewState', 'provenance', 'requiresHumanConfirmation',
-    ]) ||
+    ], ['rootCauseCitations']) ||
     value.schemaVersion !== 1 ||
     !isNonEmptyString(value.eventId) ||
     !isOneOf(value.code, H2_ANOMALY_CODES) ||

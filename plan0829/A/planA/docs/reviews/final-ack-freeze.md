@@ -31,3 +31,8 @@
 ## §4 交付判定
 
 A 线任务池 T01-T13 ✓（T13=gate-1..6 + 本追认）；T11 gate-6 建议 go（`H2_ML_ENABLED` 默认 off，开关就绪，IF-3 已入 api.md v1.1）；T14 由本记录执行。**A/B 双线合并完成，判定可交付。**
+## §5 实机端到端验证与守卫修复补充（2026-08-30）
+
+- **Playwright 实测**（local 模式，官方验证集 CSV 58MB 经 UI 导入）：导入→质量门禁→分析(52.7s, 200)→工作区注水→助手 Q03 作答全通——答案含事实/计算/推断三分、真实影响值 84.33 kWh、citation 引用链、"未请求语言重述"隔离声明；总览/事件/诊断/分析/助手/报告六页渲染正常（仅 favicon 404 装饰性缺失）
+- **交付阻断级 bug 修复**：`plugins/h2-ems/src/remote-anomaly-validation.ts` isEvent 闭合守卫缺 A3 T12 新增的 `rootCauseCitations` optional 键 → 所有含事件的分析响应被拒、local 导入必失败。修复=键入 optionalKeys（契约 optional 语义）；h2:test 138/138、h2:qa 6/6。交 A3/B 追认
+- **教训登记**：h2:qa 契约测试过 ≠ TS 运行时守卫同步；此后 contracts 加法式字段必须同步 remote-anomaly-validation 白名单（optionalKeys）
