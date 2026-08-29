@@ -22,3 +22,12 @@
 - **事实**：api.md IF-2 定义 `ref_id` 为「record_id 或 alarm_id 字符串」，与 `maintenance_history`（record_id=M-xxx）和 `alarm_log`（alarm_id=A-xx-xxx）吻合；但 `12_operation_log.csv` 官方七列（split/timestamp/operator_role/operation_type/parameter/change/remark）**无 id 列**，字面执行不可能。
 - **现状处理**：T12 实现采用合成确定性引用键 `OP-{YYYYMMDDHHMMSS}-{parameter}`；已验证官方 77 行数据上 (split, timestamp, parameter) 三元组 77/77 唯一，ref_id+timestamp+parameter 可回溯唯一条目（见 `diagnosis/ROOT_CAUSE.md`）。schema 侧 `rootCauseCitations` 为 optional 加法式新增（h2:qa 6/6 过）。
 - **建议方案**：确认 IF-2 `ref_id` 语义放宽为「官方 id 列，或无 id 列时的确定性合成键（可回溯唯一条目）」；若同意请在 api.md 递增版本号并写变更摘要。A3 不单方修改契约，当前实现按上述口径冻结交付。
+---
+
+## 裁决记录（2026-08-29，指挥官授权本会话落地）
+
+- **[A3] IF-2 `ref_id` 语义放宽**：✅ 接受——api.md 已升 **v1.1**（IF-2 官方无 id 列源用 OP- 合成键 + IF-3 ML 演示口径正式化）
+- **[A2]#1 check-all 接入尺子**：✅ 按①落地——`check-all.mjs` 运行时条件装配尺子步骤（`H2_OFFICIAL_DATA_DIR` 就绪时；含环境隔离防变量泄漏改变被测行为），**跨领土代笔交 B 追认**
+- **[A2]#2 candidate 白名单**：✅ 已入库（`models/`、`.ruff_cache/`、`.mypy_cache/`），交 A2 追认
+- **维持挂起**：p2-base tag 指向（a4c6168 vs 7007e3d）、schemaVersion 2→3 通报、detector_version v4→v5（牵动尺子基线重冻结链，A3 已注记由 A2 裁量）
+- **合并期 [I] fixup 追认清单**：reconcile.py float(str())（A3）、ml_verification type:ignore（A1）、candidate 白名单（A2）、service.py import 冲突消解（A1+B 双侧确认）
