@@ -1,5 +1,11 @@
-import type { H2AnomalyEvent, H2SeriesResponse } from '@opendashboard/h2-contracts'
+import type {
+  H2AnalysisRun,
+  H2AnomalyEvent,
+  H2SentinelDataSource,
+} from '@opendashboard/h2-contracts'
 import type { H2NavigationTarget } from '../../routes.ts'
+import type { H2ReviewDraft } from '../../model/review.ts'
+import type { H2ReviewCommandState } from '../../model/view-state.ts'
 import {
   formatH2Confidence,
   formatH2Duration,
@@ -9,24 +15,52 @@ import {
   H2_PROVENANCE_LABELS,
   H2_REVIEW_LABELS,
   H2_SEVERITY_LABELS,
+  H2_SIGN_CONVENTIONS,
 } from '../../model/presentation.ts'
-import { createEventChartOption } from '../../model/chart-options.ts'
+import {
+  createEventChartOption,
+  getEventChartUnitSummary,
+} from '../../model/chart-options.ts'
+import {
+  createH2DiagnosisSeriesQuery,
+  useH2Series,
+} from '../../model/series-loader.ts'
 import { EChartsCanvas } from '../../components/charts/EChartsCanvas.tsx'
 import { PageHeader } from '../../components/common/PageHeader.tsx'
+import { SignConventionNote } from '../../components/common/SignConventionNote.tsx'
 import { StatusBadge } from '../../components/common/StatusBadge.tsx'
 import { EvidencePanel } from '../../components/evidence/EvidencePanel.tsx'
 import { ImpactPanel } from '../../components/impact/ImpactPanel.tsx'
+import { EventReviewPanel } from '../../components/review/EventReviewPanel.tsx'
 import { SafetyPanel } from '../../components/safety/SafetyPanel.tsx'
 
 export interface DiagnosisPageProps {
+  readonly dataSource: H2SentinelDataSource
   readonly event: H2AnomalyEvent | null
   readonly events: readonly H2AnomalyEvent[]
   readonly onNavigate: (target: H2NavigationTarget) => void
-  readonly series: H2SeriesResponse | null
-  readonly seriesError: string | null
+  readonly onReloadReview: () => void
+  readonly onReview: (draft: H2ReviewDraft) => void
+  readonly reviewState: H2ReviewCommandState
+  readonly run: H2AnalysisRun
 }
 
-export function DiagnosisPage({ event, events, onNavigate, series, seriesError }: DiagnosisPageProps) {
+export function DiagnosisPage({
+  dataSource,
+  event,
+  events,
+  onNavigate,
+  onReloadReview,
+  onReview,
+  reviewState,
+  run,
+}: DiagnosisPageProps) {
+  const seriesState = useH2Series(
+    dataSource,
+    event ? createH2DiagnosisSeriesQuery(run, event) : null,
+  )
+  const series = seriesState.status === 'ready' ? seriesState.series : null
+
   if (!event) {
     return (
       <div className="h2-page">
@@ -39,6 +73,9 @@ export function DiagnosisPage({ event, events, onNavigate, series, seriesError }
       </div>
     )
   }
+
+  const runProvenance = run.provenance
+  const runProvenanceTone = runProvenance.mode === 'FIXTURE' ? 'fixture' : 'live'
 
   return (
     <div className="h2-page h2-diagnosis-page">
@@ -75,7 +112,7 @@ export function DiagnosisPage({ event, events, onNavigate, series, seriesError }
             <StatusBadge tone="danger">{H2_SEVERITY_LABELS[event.severity]}风险</StatusBadge>
             <StatusBadge tone="warning">置信度 {formatH2Confidence(event.confidence)}</StatusBadge>
             <StatusBadge tone="neutral">{H2_REVIEW_LABELS[event.reviewState]}</StatusBadge>
-            <StatusBadge tone={event.provenance.mode === 'FIXTURE' ? 'fixture' : 'live'}>{H2_PROVENANCE_LABELS[event.provenance.mode]}</StatusBadge>
+            <StatusBadge tone={runProvenanceTone}>{H2_PROVENANCE_LABELS[runProvenance.mode]}</StatusBadge>
           </div>
           <dl className="h2-event-hero__facts">
             <div><dt>事件区间</dt><dd>{formatH2Timestamp(event.startTime)}–{formatH2Timestamp(event.endTime)}</dd></div>
@@ -83,6 +120,7 @@ export function DiagnosisPage({ event, events, onNavigate, series, seriesError }
             <div><dt>首次发现</dt><dd>{formatH2Timestamp(event.firstDetectionTime)}</dd></div>
             <div><dt>主要控制对象</dt><dd>{event.primaryControlObject.displayName}</dd></div>
             <div><dt>受影响设备</dt><dd>{event.affectedEquipment.map(({ displayName }) => displayName).join('、')}</dd></div>
+            <div><dt>功率符号约定</dt><dd>{H2_SIGN_CONVENTIONS.map(({ label, copy }) => `${label}：${copy}`).join('；')}</dd></div>
           </dl>
         </div>
       </section>
@@ -90,12 +128,13 @@ export function DiagnosisPage({ event, events, onNavigate, series, seriesError }
       <section className="h2-panel h2-chart-panel">
         <div className="h2-panel__heading">
           <div><p className="h2-eyebrow">Synchronized evidence</p><h2>时间对齐趋势与事件区间</h2></div>
-          <span>单位 kW · 阴影为事件区间</span>
+          <span>{getEventChartUnitSummary(event)} · 阴影为事件区间</span>
         </div>
+        <SignConventionNote compact />
         {series ? (
           <EChartsCanvas ariaLabel={`${event.code} 事件时间对齐证据图，含约束线与事件区间`} option={createEventChartOption(series, event)} />
         ) : (
-          <div className="h2-chart-empty" role="status"><strong>趋势数据暂不可用</strong><p>{seriesError ?? '事件结构化证据仍可核验，系统不会绘制推测曲线。'}</p></div>
+          <div className="h2-chart-empty" role="status"><strong>趋势数据暂不可用</strong><p>{getDiagnosisSeriesMessage(seriesState.status)}</p></div>
         )}
       </section>
 
@@ -112,16 +151,29 @@ export function DiagnosisPage({ event, events, onNavigate, series, seriesError }
 
       <SafetyPanel event={event} />
 
+      <EventReviewPanel
+        key={`${event.eventId}:${reviewState.review?.runId ?? 'loading'}`}
+        onReload={onReloadReview}
+        onSubmit={onReview}
+        state={reviewState}
+      />
+
       <section className="h2-panel h2-provenance-detail">
-        <div className="h2-panel__heading"><div><p className="h2-eyebrow">Traceability</p><h2>版本与来源</h2></div><StatusBadge tone="fixture">{H2_PROVENANCE_LABELS[event.provenance.mode]}</StatusBadge></div>
+        <div className="h2-panel__heading"><div><p className="h2-eyebrow">Traceability</p><h2>版本与来源</h2></div><StatusBadge tone={runProvenanceTone}>{H2_PROVENANCE_LABELS[runProvenance.mode]}</StatusBadge></div>
         <dl className="h2-key-values h2-key-values--four">
-          <div><dt>数据指纹</dt><dd>{event.provenance.datasetFingerprint ?? '未提供'}</dd></div>
-          <div><dt>模型版本</dt><dd>{event.provenance.modelVersion ?? '此结果未声明模型版本'}</dd></div>
-          <div><dt>规则版本</dt><dd>{event.provenance.ruleVersion ?? '未提供'}</dd></div>
-          <div><dt>配置版本</dt><dd>{event.provenance.configurationVersion ?? '未提供'}</dd></div>
+          <div><dt>数据指纹</dt><dd>{runProvenance.datasetFingerprint ?? '未提供'}</dd></div>
+          <div><dt>模型版本</dt><dd>{runProvenance.modelVersion ?? '此结果未声明模型版本'}</dd></div>
+          <div><dt>规则版本</dt><dd>{runProvenance.ruleVersion ?? '未提供'}</dd></div>
+          <div><dt>配置版本</dt><dd>{runProvenance.configurationVersion ?? '未提供'}</dd></div>
         </dl>
-        <ul className="h2-limitations">{event.provenance.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+        <ul className="h2-limitations">{runProvenance.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
       </section>
     </div>
   )
+}
+
+function getDiagnosisSeriesMessage(status: 'idle' | 'loading' | 'ready' | 'error'): string {
+  if (status === 'loading') return '正在读取当前事件窗口的时间序列。'
+  if (status === 'error') return '当前事件趋势读取失败；未显示上一事件或推测曲线。'
+  return '当前事件没有可请求的测量或约束变量；结构化证据仍可独立核验。'
 }

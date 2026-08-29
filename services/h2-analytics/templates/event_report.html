@@ -1,63 +1,155 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <title>H2 Sentinel {{ event.eventId if event else run.runId }}</title>
+  <meta charset="utf-8" />
+  <title>{{ title }} · {{ event.eventId if event else run.runId }}</title>
   <style>
-    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.5; color: #172033; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #cbd2dc; padding: 0.5rem; text-align: left; }
+    body { font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.6; color: #172033; }
+    table { border-collapse: collapse; width: 100%; margin-block: 0.75rem 1.5rem; }
+    th, td { border: 1px solid #cbd2dc; padding: 0.5rem; text-align: left; vertical-align: top; }
+    code { overflow-wrap: anywhere; }
     .notice { border-left: 4px solid #c47d00; padding: 0.75rem; background: #fff8e8; }
+    .muted { color: #526174; }
   </style>
 </head>
 <body>
-  <h1>H2 Sentinel {{ "Diagnosis" if event else "Data Quality Report" if kind == "quality_report" else "Period Summary" }}</h1>
-  <p>Run: {{ run.runId }} · Dataset: {{ run.dataset.name }} · Mode: {{ run.dataset.mode }}</p>
-  <p>Dataset fingerprint: {{ run.dataset.fingerprint }}</p>
-  {% if event %}
-  <h2>{{ event.eventId }} — {{ event.title }}</h2>
-  <p>{{ event.startTime }} to {{ event.endTime }}; first detected {{ event.firstDetectionTime }}.</p>
-  <h3>Evidence</h3>
+  <h1>{{ title }}</h1>
+  <h2>报告范围与数据来源</h2>
+  <dl>
+    <dt>生成时间</dt><dd>{{ generated_at }}</dd>
+    <dt>运行 ID</dt><dd><code>{{ run.runId }}</code></dd>
+    <dt>数据集</dt><dd>{{ run.dataset.name }}（原始文件名：{{ run.dataset.sourceFilename }}）</dd>
+    <dt>数据指纹</dt><dd><code>{{ run.dataset.fingerprint }}</code></dd>
+    <dt>来源标记</dt><dd>{{ source_label }}</dd>
+    <dt>来源区间</dt><dd>{{ time_range.startTime }} 至 {{ time_range.endTime }}</dd>
+  </dl>
+
+  {% if kind == "single_event_diagnosis" %}
+  <h2>异常概览</h2>
+  <p><code>{{ event.eventId }}</code> · {{ event.code }} / {{ event.subtype }} · {{ event.severity }}</p>
+  <p>{{ event.title }}</p>
+  <p>开始 {{ event.startTime }}，结束 {{ event.endTime }}，首次检出 {{ event.firstDetectionTime }}。</p>
+  <p>受影响设备：{% for item in event.affectedEquipment %}{{ item.kind }}:<code>{{ item.id }}</code>{% if not loop.last %}；{% endif %}{% endfor %}</p>
+
+  <h2>证据链</h2>
   <table>
-    <thead><tr><th>ID</th><th>Claim</th><th>Conclusion</th></tr></thead>
+    <thead><tr><th>证据 ID</th><th>类型</th><th>变量/时间</th><th>实际值与参考值</th><th>结论</th></tr></thead>
     <tbody>
     {% for item in event.evidence %}
-      <tr><td>{{ item.evidenceId }}</td><td>{{ item.claimKind }}</td><td>{{ item.conclusion }}</td></tr>
+      <tr>
+        <td><code>{{ item.evidenceId }}</code></td>
+        <td>{{ item.claimKind }} / {{ item.kind }}</td>
+        <td>{{ item.variable if item.variable is defined else "未提供变量" }} · {{ item.timestamp if item.timestamp is defined else item.interval.startTime ~ " 至 " ~ item.interval.endTime }}</td>
+        <td>{{ item.actualValue if item.actualValue is defined else "未提供" }}{% if item.unit is defined %} {{ item.unit }}{% endif %}；参考 {{ item.referenceValue if item.referenceValue is defined else "未提供" }}</td>
+        <td>{{ item.conclusion }}</td>
+      </tr>
     {% endfor %}
     </tbody>
   </table>
-  <h3>Impact</h3>
-  <p>{{ event.impact.metric }}: {{ event.impact.value }} {{ event.impact.unit }} ({{ event.impact.formulaVersion }})</p>
-  <h3>Likely cause</h3><p>{{ event.rootCause }}</p>
-  <h3>Safety and recommendation</h3>
-  <ul>{% for check in event.safetyChecks %}<li>{{ check.status }} — {{ check.message }}</li>{% endfor %}</ul>
-  <ul>{% for item in event.recommendations %}<li>{{ item.summary }}</li>{% endfor %}</ul>
-  {% elif kind == "quality_report" %}
-  <h2>Quality status: {{ run.quality.status }}</h2>
-  <p>Report ID: {{ run.quality.reportId }} · Generated at: {{ run.quality.generatedAt }}</p>
-  <dl>
-    <dt>Rows</dt><dd>{{ run.dataset.rowCount }}</dd>
-    <dt>Time range</dt><dd>{{ run.dataset.timeRange.startTime }} to {{ run.dataset.timeRange.endTime }}</dd>
-    <dt>Provenance mode</dt><dd>{{ run.provenance.mode }}</dd>
-    <dt>Provenance source</dt><dd>{{ run.provenance.source }}</dd>
-    <dt>Rule version</dt><dd>{{ run.provenance.ruleVersion }}</dd>
-  </dl>
+
+  <h2>原因判断：事实与推断</h2>
+  <p>事件与证据中的测量、约束和计算属于可核对事实；以下根因字段为 {{ event.rootCauseKind }}，不得扩大为已证实设备因果：</p>
+  <p>{{ event.rootCause }}</p>
+
+  <h2>影响量化</h2>
+  <p><code>{{ event.impact.metric }}</code> = {{ event.impact.value }} {{ event.impact.unit }}；公式版本 <code>{{ event.impact.formulaVersion }}</code>；窗口 {{ event.startTime }} 至 {{ event.endTime }}。</p>
+  <ul>{% for assumption in event.impact.assumptions %}<li>{{ assumption }}</li>{% endfor %}</ul>
+
+  <h2>安全检查</h2>
   <table>
-    <thead><tr><th>Check</th><th>Status</th><th>Severity</th><th>Message</th></tr></thead>
-    <tbody>
-    {% for check in run.quality.checks %}
-      <tr><td>{{ check.code }}</td><td>{{ check.status }}</td><td>{{ check.severity }}</td><td>{{ check.message }}</td></tr>
-    {% endfor %}
-    </tbody>
+    <thead><tr><th>检查 ID</th><th>状态</th><th>说明</th><th>约束</th></tr></thead>
+    <tbody>{% for check in event.safetyChecks %}<tr><td><code>{{ check.checkId }}</code></td><td>{{ check.status }}</td><td>{{ check.message }}</td><td>{{ check.constraintId if check.constraintId is defined else "未提供" }}</td></tr>{% endfor %}</tbody>
   </table>
-  {% if run.quality.warnings %}<h3>Warnings</h3><ul>{% for warning in run.quality.warnings %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
-  {% if run.quality.blockingReasons %}<h3>Blocking reasons</h3><ul>{% for reason in run.quality.blockingReasons %}<li>{{ reason }}</li>{% endfor %}</ul>{% endif %}
-  <h3>Limitations</h3><ul>{% for limitation in run.provenance.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
-  {% else %}
-  <p>Events in this deterministic summary: {{ events|length }}.</p>
-  {% if time_range %}<p>Requested time range: {{ time_range.startTime }} to {{ time_range.endTime }}.</p>{% endif %}
-  <ul>{% for item in events %}<li>{{ item.eventId }} — {{ item.title }}</li>{% endfor %}</ul>
-  {% endif %}
+
+  <h2>建议与人工确认</h2>
+  <ul>{% for item in event.recommendations %}<li><strong>{{ item.actionKind }}</strong>：{{ item.summary }}（{{ item.rationale }}）</li>{% endfor %}</ul>
+  <p>以上建议均为辅助信息，执行前必须由人工确认。</p>
+
+  <h2>人工复核记录</h2>
+  {% if review %}
+  <p>当前状态：{{ review_labels[review.currentState] }}（revision {{ review.revision }}）。操作者名称仅为本地填写的未验证归属，不代表已认证身份。</p>
+  {% if review.entries %}
+  <table>
+    <thead><tr><th>Revision</th><th>操作</th><th>状态变化</th><th>本地操作者</th><th>备注</th><th>服务端时间</th></tr></thead>
+    <tbody>{% for entry in review.entries %}<tr><td>{{ entry.revision }}</td><td>{{ entry.action }}</td><td>{{ review_labels[entry.previousState] }} → {{ review_labels[entry.nextState] }}</td><td>{{ entry.actor.displayName }}</td><td>{{ entry.note if entry.note is defined else "未填写" }}</td><td>{{ entry.createdAt }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p>暂无人工复核记录。</p>{% endif %}
+  {% else %}<p>复核证据不可用。</p>{% endif %}
+
+  <h2>版本与溯源</h2>
+  <dl>
+    <dt>模型版本</dt><dd>{{ run.provenance.modelVersion if run.provenance.modelVersion is defined else "未使用模型版本" }}</dd>
+    <dt>规则版本</dt><dd>{{ run.provenance.ruleVersion }}</dd>
+    <dt>配置版本</dt><dd>{{ run.provenance.configurationVersion }}</dd>
+    <dt>公式版本</dt><dd>{{ event.impact.formulaVersion }}</dd>
+    <dt>渲染器版本</dt><dd>{{ provenance.rendererVersion }}</dd>
+  </dl>
+
+  <h2>安全声明与限制</h2>
+  <ul>{% for limitation in run.provenance.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
   <p class="notice">{{ disclaimer }}</p>
+
+  {% elif kind == "period_summary" %}
+  <h2>数据质量与限制</h2>
+  <p>质量状态：{{ run.quality.status }}；行数 {{ run.dataset.rowCount }}。</p>
+  <p>未加载公开标签，未生成验证指标。</p>
+
+  <h2>异常统计</h2>
+  <p>按异常代码：{% for code, count in code_counts.items() %}<code>{{ code }}</code>={{ count }}{% if not loop.last %}；{% endif %}{% else %}无事件{% endfor %}</p>
+  <p>按严重度：{% for severity, count in severity_counts.items() %}{{ severity }}={{ count }}{% if not loop.last %}；{% endif %}{% else %}无事件{% endfor %}</p>
+  <p>按复核状态：{% for state, count in review_counts.items() %}{{ review_labels[state] }}={{ count }}{% if not loop.last %}；{% endif %}{% endfor %}</p>
+
+  <h2>重点事件</h2>
+  <ul>{% for item in events if item.reviewState == "open" or item.severity in ["high", "critical"] %}<li><code>{{ item.eventId }}</code> · {{ item.code }} · {{ item.severity }} · {{ review_labels[item.reviewState] }}</li>{% else %}<li>当前范围无待复核或高严重度事件。</li>{% endfor %}</ul>
+
+  <h2>影响摘要</h2>
+  <p>不同单位不会合并求和；以下保留各事件的精确指标和值。</p>
+  <ul>{% for item in events %}<li><code>{{ item.eventId }}</code>：<code>{{ item.impact.metric }}</code> = {{ item.impact.value }} {{ item.impact.unit }}</li>{% else %}<li>当前范围无可汇总事件。</li>{% endfor %}</ul>
+
+  <h2>版本、溯源与安全声明</h2>
+  <p>规则 <code>{{ run.provenance.ruleVersion }}</code>；配置 <code>{{ run.provenance.configurationVersion }}</code>；渲染器 <code>{{ provenance.rendererVersion }}</code>。</p>
+  <p class="notice">{{ disclaimer }}</p>
+
+  {% elif kind == "pcc_daily_compliance" %}
+  <h2>日期、时间基准与动态边界</h2>
+  <p>统计范围为 [{{ time_range.startTime }}, {{ time_range.endTime }})，按数据集声明的时间偏移解释。</p>
+  <p>PCC 实际功率使用 <code>pcc_power_actual_kw</code>；动态边界使用 <code>grid_export_power_limit_kw</code> 与 <code>grid_import_power_limit_kw</code>。</p>
+
+  <h2>越限区间、时长与越限电量</h2>
+  {% if pcc_events %}
+  <table>
+    <thead><tr><th>事件</th><th>方向</th><th>区间</th><th>实际功率</th><th>动态上限</th><th>时长</th><th>越限电量</th></tr></thead>
+    <tbody>{% for item in pcc_events %}<tr><td><code>{{ item.event.eventId }}</code></td><td>{{ item.directionZh }}</td><td>{{ item.event.startTime }} 至 {{ item.event.endTime }}</td><td>{{ item.actualPowerKw if item.actualPowerKw is not none else "证据不足" }}{% if item.actualPowerKw is not none %} kW{% endif %}</td><td>{{ item.limitPowerKw if item.limitPowerKw is not none else "证据不足" }}{% if item.limitPowerKw is not none %} kW{% endif %}</td><td>{{ item.durationMinutes }} min</td><td>{{ item.event.impact.value }} {{ item.event.impact.unit }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p>当前日期范围没有可引用的 C04/C05 事件。</p>{% endif %}
+
+  <h2>累计进出电量与配额</h2>
+  <p>证据不足，未计算该项合规结论。当前合同样例未提供当日累计进/出电量变量及官方配额，未以零替代缺失值。</p>
+
+  <h2>相关事件与人工复核</h2>
+  <ul>{% for item in pcc_events %}<li><code>{{ item.event.eventId }}</code> · {{ item.event.code }} · {{ item.reviewStateZh }}</li>{% else %}<li>无相关事件。</li>{% endfor %}</ul>
+
+  <h2>数据质量、公式与假设</h2>
+  <p>质量状态：{{ run.quality.status }}；采样间隔 {{ run.dataset.samplingIntervalMinutes }} min。</p>
+  <ul>{% for item in pcc_events %}<li><code>{{ item.event.eventId }}</code> 使用 <code>{{ item.event.impact.formulaVersion }}</code>：{% for assumption in item.event.impact.assumptions %}{{ assumption }}{% if not loop.last %}；{% endif %}{% endfor %}</li>{% else %}<li>没有可列出的越限公式。</li>{% endfor %}</ul>
+
+  <h2>溯源与安全声明</h2>
+  <p>规则 <code>{{ run.provenance.ruleVersion }}</code>；配置 <code>{{ run.provenance.configurationVersion }}</code>；渲染器 <code>{{ provenance.rendererVersion }}</code>。</p>
+  <p class="notice">{{ disclaimer }}</p>
+
+  {% else %}
+  <h2>质量结论</h2>
+  <p>数据质量状态：{{ run.quality.status }}；数据行数：{{ run.dataset.rowCount }}；时间范围：{{ run.dataset.timeRange.startTime }} 至 {{ run.dataset.timeRange.endTime }}。</p>
+  <table>
+    <thead><tr><th>检查项</th><th>状态</th><th>受影响字段</th><th>观测值</th><th>说明</th></tr></thead>
+    <tbody>{% for check in quality_checks %}<tr><td>{{ check.labelZh }}（<code>{{ check.code }}</code>）</td><td>{{ check.statusZh }}</td><td>{% for field in check.affectedFields %}<code>{{ field }}</code>{% if not loop.last %}、{% endif %}{% else %}无{% endfor %}</td><td>{{ check.observedValue if check.observedValue is defined else "未提供" }}{% if check.unit is defined %} {{ check.unit }}{% endif %}</td><td>{{ check.messageZh }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <h2>限制与不可用状态</h2>
+  <p>未加载公开标签，未生成验证指标。</p>
+  <ul>{% for limitation in run.provenance.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
+  <h2>版本、溯源与安全声明</h2>
+  <p>来源 {{ run.provenance.source }}；规则 <code>{{ run.provenance.ruleVersion }}</code>；配置 <code>{{ run.provenance.configurationVersion }}</code>；渲染器 <code>{{ provenance.rendererVersion }}</code>。</p>
+  <p class="notice">{{ disclaimer }}</p>
+  {% endif %}
 </body>
 </html>

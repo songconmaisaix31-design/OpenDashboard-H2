@@ -1,52 +1,47 @@
-# H2 Sentinel Independent QA
+# H2 Sentinel Independent Remediation QA
 
-This directory is the independent H2 Sentinel black-box QA lane. Its tests
-consume frozen contract assets and public runtime boundaries; they do not modify
-analytics, plugin, Web, integration, or submission code.
+This lane owns `validation/**`, `tests/h2-sentinel/**`, and
+`submission/h2-sentinel/**`. It consumes product contracts and public
+loopback APIs without changing analytics, Web, plugins, root configuration, or
+the read-only official package.
 
-## H0 contract gate
+## Automated gates
 
-Run from the repository root:
-
-```bash
-node tests/h2-sentinel/run-contract-qa.mjs
+```text
 node --test "tests/h2-sentinel/contract/*.test.mjs"
-git diff --check
+npm run h2:qa
+npm run h2:launcher:test
 ```
 
-The first command starts the assembled launcher after C01-C04 pass. It is the
-authoritative A01-A08 execution command and emits a redacted JSON evidence
-record. `npm run h2:qa` invokes the same command through the approved root
-script. The repository's TypeScript contract-owner suite is additional evidence,
-not a substitute for public-runtime checks.
+The contract suite covers:
 
-## Public-runtime evidence
+- exact official 69-field timeseries vocabulary;
+- C01-C07 event matching and per-class metrics;
+- exact affected-equipment submission tokens and 16-column shape;
+- strict source hashes, earliest C04 selection, 30-minute padding, label
+  exclusion, ignored output, and absence of workstation paths;
+- Q01-Q10, review, assistant, report, audit, and submission regressions;
+- two-execution receipt ordering, timing, provenance, and artifact hashes.
 
-The assembled runner uses only the published H6 launcher and HTTP API. It
-allocates loopback ports, parses `READY`, and shuts down via its IPC contract.
-It validates Fixture-no-Python, Local health and bind policy, import/analyze/
-events, deterministic assistant fallback, all six report kinds and their
-format/media/extension/hash contracts, quality HTML and validation JSON
-semantics, exact CSV, redacted errors, occupied-port and redirect timeout
-failures, external-sidecar health lookalikes, PID exit, and port rebind. It
-writes no generated artifact.
+The assembled runner remains the mandatory runtime regression for P1 review,
+assistant, Q09 diagnosis, reports, audit, submission immutability, loopback
+boundaries, and launcher cleanup.
 
-```bash
-node tests/h2-sentinel/assembled/run-assembled-qa.mjs
-```
+## Official-data tools
 
-The older `api/` and `golden-path/` probes remain useful targeted diagnostics,
-but they are not release evidence because they depend on manually supplied URLs.
+See `validation/README.md` for evaluation, overfit, submission checker,
+offline test-set smoke, and the two-run demo runner. See
+`scripts/README.md` for hash-locked C04 slice preparation and receipt
+validation.
 
-## Visual boundary
+Generated official files stay ignored and untracked under
+`tests/h2-sentinel/reports/generated/`. Public labels may appear only in the
+QA manifest or post-analysis evaluation, never in detector CSV input.
 
-No browser-automation dependency is introduced in this QA lane. The automated
-gate verifies only HTTP reachability and source-level entry/navigation facts.
-Coordinator manual review remains required for Fixture desktop and 390 px
-widths: six-page navigation, C03/C04 rendering, Fixture/Live provenance,
-Chinese startup alert, overflow, overlap, clipping, and primary-action
-visibility. Record that result separately from automated PASS/FAIL; do not
-describe it as screenshot regression automation.
+## Evidence boundary
 
-See `ACCEPTANCE_MATRIX.md` for the complete H0/assembly separation and
-`DEFECT_LOG.md` for the mandatory defect record format.
+Passing Lane C tests proves the tools and fixtures in this commit. The final
+official metrics, retained screenshots, measured receipt, and candidate SHA
+remain coordinator-owned until rerun after all lanes are integrated. Fixture,
+HTTP success, route presence, or synthetic receipts cannot substitute for
+those gates.

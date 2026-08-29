@@ -26,10 +26,12 @@
       "enum": [
         "single_event_diagnosis",
         "period_summary",
+        "pcc_daily_compliance",
         "analysis_result_json",
         "submission_csv",
         "validation_metrics",
-        "quality_report"
+        "quality_report",
+        "review_audit_json"
       ]
     },
     "format": { "enum": ["html", "json", "csv"] },
@@ -44,5 +46,47 @@
     },
     "safetyDisclaimer": { "type": "string", "minLength": 1 },
     "provenance": { "type": "object" }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": { "kind": { "const": "single_event_diagnosis" } }
+      },
+      "then": {
+        "required": ["eventId"],
+        "properties": { "format": { "const": "html" } }
+      },
+      "else": { "not": { "required": ["eventId"] } }
+    },
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "enum": ["period_summary", "pcc_daily_compliance", "quality_report"]
+          }
+        }
+      },
+      "then": { "properties": { "format": { "const": "html" } } }
+    },
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": {
+          "kind": {
+            "enum": ["analysis_result_json", "validation_metrics", "review_audit_json"]
+          }
+        }
+      },
+      "then": { "properties": { "format": { "const": "json" } } }
+    },
+    {
+      "if": {
+        "required": ["kind"],
+        "properties": { "kind": { "const": "submission_csv" } }
+      },
+      "then": { "properties": { "format": { "const": "csv" } } }
+    }
+  ]
 }

@@ -4,6 +4,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from h2_analytics import vocabulary
 from h2_analytics.detection import DetectionCandidate
 from h2_analytics.models import DataRow
 
@@ -13,6 +14,9 @@ class AggregationPolicy:
     minimum_rows: int
     confirmation_row: int
     maximum_gap_intervals: int = 1
+    daily: bool = False
+    requires_exact_sampling_interval: bool = False
+    exact_sampling_interval_minutes: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,12 +30,28 @@ class EventWindow:
     first_detection_time: datetime
     confidence: float
     detector_version: str
+    implicated_equipment_ids: tuple[str, ...] = ()
 
 
-POLICIES = {
-    "C03": AggregationPolicy(minimum_rows=5, confirmation_row=5),
-    "C04": AggregationPolicy(minimum_rows=3, confirmation_row=3),
-}
+def _policy(code: str) -> AggregationPolicy:
+    values = vocabulary.detection_thresholds()["classes"][code]["aggregation"]
+    return AggregationPolicy(
+        minimum_rows=int(values["minimumRows"]),
+        confirmation_row=int(values["confirmationRow"]),
+        maximum_gap_intervals=int(values["maximumGapIntervals"]),
+        daily=bool(values["daily"]),
+        requires_exact_sampling_interval=bool(
+            values.get("requiresExactSamplingInterval", False)
+        ),
+        exact_sampling_interval_minutes=(
+            float(values["exactSamplingIntervalMinutes"])
+            if "exactSamplingIntervalMinutes" in values
+            else None
+        ),
+    )
+
+
+POLICIES = {code: _policy(code) for code in vocabulary.anomaly_codes()}
 DEFAULT_POLICY = AggregationPolicy(minimum_rows=3, confirmation_row=3)
 
 
@@ -46,6 +66,14 @@ class EventAggregator:
         rows_by_index = {row.index: row for row in rows}
         grouped: dict[tuple[str, str], list[DetectionCandidate]] = defaultdict(list)
         for candidate in candidates:
+            if candidate.code in {"C01", "C02", "C06"} and not (
+                vocabulary.valid_implicated_equipment_ids(
+                    candidate.code, candidate.implicated_equipment_ids
+                )
+            ):
+                raise vocabulary.VocabularyError(
+                    f"{candidate.code} detector candidate lacks valid equipment attribution."
+                )
             grouped[(candidate.code, candidate.subtype)].append(candidate)
 
         draft_windows: list[
@@ -59,6 +87,15 @@ class EventAggregator:
                 maximum_gap=timedelta(
                     minutes=sampling_interval_minutes * policy.maximum_gap_intervals
                 ),
+                expected_interval=timedelta(
+                    minutes=(
+                        policy.exact_sampling_interval_minutes
+                        if policy.exact_sampling_interval_minutes is not None
+                        else sampling_interval_minutes
+                    )
+                ),
+                daily=policy.daily,
+                requires_exact_interval=policy.requires_exact_sampling_interval,
             ):
                 if len(segment) < policy.minimum_rows:
                     continue
@@ -79,6 +116,21 @@ class EventAggregator:
             confirmation_index = min(policy.confirmation_row - 1, len(segment) - 1)
             confidence = sum(item.confidence for item in segment) / len(segment)
             event_id = f"{code}-{start:%Y%m%d}-{ordinal:03d}"
+            implicated_equipment_ids = tuple(
+                dict.fromkeys(
+                    equipment_id
+                    for candidate in segment
+                    for equipment_id in candidate.implicated_equipment_ids
+                )
+            )
+            if code in {"C01", "C02", "C06"} and not (
+                vocabulary.valid_implicated_equipment_ids(
+                    code, implicated_equipment_ids
+                )
+            ):
+                raise vocabulary.VocabularyError(
+                    f"{code} event equipment attribution is inconsistent."
+                )
             output.append(
                 EventWindow(
                     event_id=event_id,
@@ -90,6 +142,7 @@ class EventAggregator:
                     first_detection_time=segment[confirmation_index].timestamp,
                     confidence=confidence,
                     detector_version=segment[0].detector_version,
+                    implicated_equipment_ids=implicated_equipment_ids,
                 )
             )
         return tuple(output)
@@ -99,13 +152,23 @@ def _segments(
     candidates: list[DetectionCandidate],
     *,
     maximum_gap: timedelta,
+    expected_interval: timedelta,
+    daily: bool = False,
+    requires_exact_interval: bool = False,
 ) -> tuple[tuple[DetectionCandidate, ...], ...]:
     if not candidates:
         return ()
     segments: list[list[DetectionCandidate]] = [[candidates[0]]]
     for candidate in candidates[1:]:
         previous = segments[-1][-1]
-        if candidate.timestamp - previous.timestamp <= maximum_gap:
+        crosses_day = daily and candidate.timestamp.date() != previous.timestamp.date()
+        interval = candidate.timestamp - previous.timestamp
+        interval_matches = (
+            interval == expected_interval
+            if requires_exact_interval
+            else interval <= maximum_gap
+        )
+        if not crosses_day and interval_matches:
             segments[-1].append(candidate)
         else:
             segments.append([candidate])

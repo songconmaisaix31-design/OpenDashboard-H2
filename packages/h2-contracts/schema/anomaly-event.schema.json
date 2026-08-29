@@ -353,6 +353,31 @@
     },
     "rootCause": { "type": "string", "minLength": 1 },
     "rootCauseKind": { "enum": ["fact", "inference"] },
+    "rootCauseCitations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "ref_id",
+          "timestamp",
+          "parameter",
+          "change",
+          "support_score"
+        ],
+        "properties": {
+          "source": {
+            "enum": ["operation_log", "alarm_log", "maintenance_history"]
+          },
+          "ref_id": { "type": "string", "minLength": 1 },
+          "timestamp": { "type": "string", "minLength": 1 },
+          "parameter": { "type": "string", "minLength": 1 },
+          "change": { "type": "string", "minLength": 1 },
+          "support_score": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
     "reviewState": { "enum": ["open", "confirmed", "dismissed", "resolved"] },
     "provenance": { "type": "object" },
     "requiresHumanConfirmation": { "type": "boolean" }

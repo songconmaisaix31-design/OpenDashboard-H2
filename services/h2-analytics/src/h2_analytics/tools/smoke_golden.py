@@ -23,8 +23,8 @@ def main() -> None:
     if [event["code"] for event in run["events"]] != ["C03", "C04"]:
         raise AssertionError("golden smoke did not produce exactly C03 and C04")
     c04 = run["events"][1]
-    if c04["impact"]["value"] != 29.333333333333332:
-        raise AssertionError("C04 impact does not match the corrected contract gate")
+    if c04["impact"]["value"] != 120.0:
+        raise AssertionError("C04 impact does not match the canonical fixture")
 
     event_schema = json.loads(
         (contracts_root / "schema/anomaly-event.schema.json").read_text(encoding="utf-8")

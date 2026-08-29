@@ -3,29 +3,21 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from . import vocabulary
 from .settings import CONFIGURATION_VERSION, RULE_VERSION
 
-ANOMALY_CODES = ("C01", "C02", "C03", "C04", "C05", "C06", "C07")
+ANOMALY_CODES = vocabulary.anomaly_codes()
 SEVERITIES = ("low", "medium", "high", "critical")
-ANOMALY_SUBTYPES_BY_CODE = {
-    "C01": ("SETPOINT_OSCILLATION",),
-    "C02": ("CAPACITY_NOT_SYNCHRONIZED",),
-    "C03": ("BESS_DIRECTION_REVERSED",),
-    "C04": ("EXPORT_POWER_LIMIT_NOT_TRACKED", "IMPORT_POWER_LIMIT_NOT_TRACKED"),
-    "C05": ("EXPORT_ENERGY_QUOTA_RISK", "IMPORT_ENERGY_QUOTA_RISK"),
-    "C06": ("AVOIDABLE_START_STOP", "INEFFICIENT_POWER_ALLOCATION"),
-    "C07": ("CHARGE_HEADROOM_SHORTFALL", "DISCHARGE_RESERVE_SHORTFALL"),
-}
-PRIMARY_IMPACT_METRIC_BY_CODE = {
-    "C01": "bess_extra_regulation_energy_kwh",
-    "C02": "unserved_elz_energy_kwh",
-    "C03": "abnormal_grid_exchange_energy_kwh",
-    "C04": "pcc_power_limit_violation_energy_kwh",
-    "C05": "grid_energy_quota_deviation_kwh",
-    "C06": "extra_energy_consumption_kwh",
-    "C07": "bess_regulation_reserve_shortfall_kwh",
-}
-ASSISTANT_QUESTION_IDS = tuple(f"H2Q{index:02d}" for index in range(1, 11))
+ANOMALY_SUBTYPES_BY_CODE = vocabulary.subtypes_by_code()
+PRIMARY_IMPACT_METRIC_BY_CODE = vocabulary.primary_impact_metric_by_code()
+ASSISTANT_QUESTIONS = tuple(
+    (entry["questionId"], entry["question"])
+    for entry in vocabulary.assistant_questions()
+)
+ASSISTANT_QUESTION_IDS = tuple(
+    question_id for question_id, _ in ASSISTANT_QUESTIONS
+)
+ASSISTANT_PROMPTS = dict(ASSISTANT_QUESTIONS)
 SUBMISSION_COLUMNS = (
     "pred_event_id",
     "start_time",
@@ -46,78 +38,21 @@ SUBMISSION_COLUMNS = (
 )
 
 FIXTURE_FINGERPRINT = (
-    "sha256:799ff8549663152c784ad8d687d0df7108e295cf3d96311b122ad146c624f9ca"
+    "sha256:98373685e71cb8df828f5d5dcc108a7972c46f1e45ca564e36b26a22d9b4e6b1"
 )
 FIXTURE_GENERATED_AT = "2026-01-05T10:45:00Z"
 FIXTURE_LIMITATIONS = (
-    "Synthetic, sanitized C03/C04 contract fixture only.",
+    "Synthetic, sanitized official-schema contract fixture only.",
     "Not an official competition dataset or score artifact.",
 )
 LIVE_LIMITATIONS = (
     "Deterministic local analysis; no official-dataset score is claimed.",
-    "Fallback row rules cover only frozen C03/C04 field mappings.",
+    "Rules cover the official C01-C07 field mappings from the frozen vocabulary.",
 )
 
 FIELD_DEFINITIONS: dict[str, dict[str, Any]] = {
-    "timestamp": {
-        "displayNameZh": "时间戳",
-        "role": "timestamp",
-        "required": True,
-    },
-    "pv_actual_kw": {
-        "displayNameZh": "光伏实际功率",
-        "role": "measurement",
-        "required": True,
-        "unit": "kW",
-    },
-    "bess_power_kw": {
-        "displayNameZh": "储能功率",
-        "role": "measurement",
-        "required": True,
-        "unit": "kW",
-    },
-    "pcc_power_kw": {
-        "displayNameZh": "并网点功率",
-        "role": "measurement",
-        "required": True,
-        "unit": "kW",
-    },
-    "total_electrolyzer_power_kw": {
-        "displayNameZh": "电解槽总功率",
-        "role": "measurement",
-        "required": True,
-        "unit": "kW",
-    },
-    "auxiliary_load_kw": {
-        "displayNameZh": "辅助负荷",
-        "role": "measurement",
-        "required": True,
-        "unit": "kW",
-    },
-    "bess_soc_percent": {
-        "displayNameZh": "储能荷电状态",
-        "role": "measurement",
-        "required": True,
-        "unit": "percent",
-    },
-    "pcc_export_limit_kw": {
-        "displayNameZh": "并网点送出上限",
-        "role": "constraint",
-        "required": True,
-        "unit": "kW",
-    },
-    "pcc_import_limit_kw": {
-        "displayNameZh": "并网点受电上限",
-        "role": "constraint",
-        "required": True,
-        "unit": "kW",
-    },
-    "bess_dispatch_command_kw": {
-        "displayNameZh": "储能调度指令",
-        "role": "measurement",
-        "required": True,
-        "unit": "kW",
-    },
+    name: vocabulary.field_descriptor(name)
+    for name in vocabulary.official_field_names()
 }
 REQUIRED_FIELDS = tuple(FIELD_DEFINITIONS)
 NUMERIC_FIELDS = tuple(name for name in REQUIRED_FIELDS if name != "timestamp")

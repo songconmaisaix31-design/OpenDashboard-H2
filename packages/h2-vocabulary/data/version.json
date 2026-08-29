@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "vocabularyVersion": "h2-official-v1",
+  "sourcePackage": "official H2 competition package",
+  "fieldCount": 69,
+  "anomalyCodes": ["C01", "C02", "C03", "C04", "C05", "C06", "C07"]
+}

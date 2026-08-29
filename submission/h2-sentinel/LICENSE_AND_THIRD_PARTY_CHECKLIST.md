@@ -23,7 +23,9 @@ external submission archive.
 | Preserve required notices | Recorded | Retain `NOTICE` and `THIRD_PARTY_NOTICES.md` in distributions. |
 | Default deterministic analytics dependency set | Recorded | Optional `lightgbm` is not installed or required by the default launcher/smoke path. |
 | pandas and scikit-learn | Not shipped | They are not declared H2 dependencies. |
-| Official data, models, screenshots, generated reports | Not delivered | Require separate origin, license, authorization, and redaction review. |
+| Official package | Read-only integrity boundary recorded | All data/material entries plus the workbook match, 21 of 24 total manifest entries; three top-level requirement/README Markdown or DOCX files differ. The package was not modified or copied into this repository. |
+| Models, screenshots, generated reports | Not included as final evidence | Require separate origin, license, authorization, redaction, and final-candidate review. |
+| Optional StepFun service | Source integration only; no live-provider evidence or credential is included | Operator must confirm account/model entitlement, service terms, data-processing authorization, and the bounded payload disclosure. Deterministic offline behavior must remain available. |
 | Final distribution compatibility | Not certified | Review the actual archive and organizer terms before release. |
 
 ## Submission safeguards

@@ -25,22 +25,25 @@ import { sha256 } from './sha256.ts'
 const REPORT_PROFILES = {
   single_event_diagnosis: { format: 'html', mediaType: 'text/html' },
   period_summary: { format: 'html', mediaType: 'text/html' },
+  pcc_daily_compliance: { format: 'html', mediaType: 'text/html' },
   analysis_result_json: { format: 'json', mediaType: 'application/json' },
   submission_csv: { format: 'csv', mediaType: 'text/csv' },
   validation_metrics: { format: 'json', mediaType: 'application/json' },
   quality_report: { format: 'html', mediaType: 'text/html' },
+  review_audit_json: { format: 'json', mediaType: 'application/json' },
 } as const satisfies Readonly<
   Record<
     H2ReportKind,
     { readonly format: H2ReportFormat; readonly mediaType: H2ReportArtifact['mediaType'] }
   >
 >
-const REPORT_STATUSES = ['ready', 'failed'] as const satisfies readonly H2ReportStatus[]
+const REPORT_STATUSES = ['ready'] as const satisfies readonly H2ReportStatus[]
 
 export function isReportArtifact(value: unknown): value is H2ReportArtifact {
   if (
     !isClosedRecord(value, ['descriptor', 'mediaType', 'content']) ||
     !isString(value.content) ||
+    value.content.length === 0 ||
     value.content.length > 2_000_000 ||
     !isReportDescriptor(value.descriptor)
   ) return false

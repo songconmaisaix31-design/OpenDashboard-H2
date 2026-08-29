@@ -6,6 +6,7 @@ import {
   H2_FIXTURE_ANALYSIS_RUN,
   H2_FIXTURE_ASSISTANT_ANSWER,
   H2_FIXTURE_DATASET,
+  H2_FIXTURE_EVENT_REVIEW,
   H2_FIXTURE_PROVENANCE,
   H2_FIXTURE_QUALITY_REPORT,
   H2_FIXTURE_REPORT_DESCRIPTOR,
@@ -23,6 +24,10 @@ type JsonValue =
 
 interface JsonSchema {
   readonly allOf?: readonly JsonSchema[]
+  readonly if?: JsonSchema
+  readonly then?: JsonSchema
+  readonly else?: JsonSchema
+  readonly not?: JsonSchema
   readonly oneOf?: readonly JsonSchema[]
   readonly type?: string | readonly string[]
   readonly const?: JsonValue
@@ -37,7 +42,9 @@ interface JsonSchema {
   readonly minItems?: number
   readonly maxItems?: number
   readonly minLength?: number
+  readonly maxLength?: number
   readonly pattern?: string
+  readonly uniqueItems?: boolean
 }
 
 const schema = (name: string): JsonSchema =>
@@ -59,6 +66,23 @@ const validate = (
   activeSchema.allOf?.forEach((candidate) => {
     errors.push(...validate(value, candidate, path))
   })
+
+  if (
+    activeSchema.not &&
+    validate(value, activeSchema.not, path).length === 0
+  ) {
+    errors.push(`${path} matches a forbidden schema`)
+  }
+
+  if (activeSchema.if) {
+    const branch =
+      validate(value, activeSchema.if, path).length === 0
+        ? activeSchema.then
+        : activeSchema.else
+    if (branch) {
+      errors.push(...validate(value, branch, path))
+    }
+  }
 
   const oneOf = activeSchema.oneOf
   if (oneOf) {
@@ -98,6 +122,12 @@ const validate = (
       value.length < activeSchema.minLength
     ) {
       errors.push(`${path} is shorter than minLength`)
+    }
+    if (
+      activeSchema.maxLength !== undefined &&
+      value.length > activeSchema.maxLength
+    ) {
+      errors.push(`${path} is longer than maxLength`)
     }
     if (
       activeSchema.pattern !== undefined &&
@@ -145,6 +175,12 @@ const validate = (
       value.forEach((item, index) => {
         errors.push(...validate(item, activeSchema.items as JsonSchema, `${path}[${index}]`))
       })
+    }
+    if (
+      activeSchema.uniqueItems &&
+      new Set(value.map((item) => JSON.stringify(item))).size !== value.length
+    ) {
+      errors.push(`${path} contains duplicate items`)
     }
   }
 
@@ -242,8 +278,134 @@ describe('H2 JSON Schemas', () => {
       schema('report-descriptor.schema.json'),
     )
     assertValid(
+      H2_FIXTURE_EVENT_REVIEW,
+      schema('event-review.schema.json'),
+    )
+    assertValid(
       toH2SubmissionRow(H2_GOLDEN_C03_EVENT),
       schema('submission-row.schema.json'),
+    )
+  })
+
+  it('enforces official assistant IDs and Q09 generated-report presence', () => {
+    const answerSchema = schema('assistant-answer.schema.json')
+    const legacyAlias = {
+      ...H2_FIXTURE_ASSISTANT_ANSWER,
+      questionId: 'H2Q03',
+    }
+    const q09WithoutReport = {
+      ...H2_FIXTURE_ASSISTANT_ANSWER,
+      questionId: 'Q09',
+    }
+    const q09WithReport = {
+      ...q09WithoutReport,
+      sections: [
+        {
+          sectionId: 'generated_report',
+          claimKind: 'recommendation',
+          text: '已生成当前事件的中文诊断报告，后续操作仍须人工确认。',
+          citationIds: ['citation-report'],
+        },
+      ],
+      citations: [
+        {
+          citationId: 'citation-report',
+          claimKind: 'recommendation',
+          sourceType: 'report',
+          sourceId: H2_FIXTURE_REPORT_DESCRIPTOR.reportId,
+          eventId: H2_GOLDEN_C03_EVENT.eventId,
+        },
+      ],
+      generatedReport: {
+        descriptor: H2_FIXTURE_REPORT_DESCRIPTOR,
+        mediaType: 'text/html',
+        content: '<!doctype html><html lang="zh-CN"></html>',
+      },
+    }
+    const nonQ09WithReport = {
+      ...H2_FIXTURE_ASSISTANT_ANSWER,
+      generatedReport: q09WithReport.generatedReport,
+    }
+
+    assert.notDeepEqual(validate(legacyAlias, answerSchema), [])
+    assert.notDeepEqual(validate(q09WithoutReport, answerSchema), [])
+    assertValid(q09WithReport, answerSchema)
+    assert.notDeepEqual(validate(nonQ09WithReport, answerSchema), [])
+  })
+
+  it('validates assistant and report request scope contracts', () => {
+    const assistantRequestSchema = schema('assistant-request.schema.json')
+    const reportRequestSchema = schema('report-request.schema.json')
+    const reviewRequestSchema = schema('review-event-request.schema.json')
+
+    assertValid(
+      {
+        runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+        questionId: 'Q03',
+        eventId: H2_GOLDEN_C03_EVENT.eventId,
+        allowLlmRendering: false,
+      },
+      assistantRequestSchema,
+    )
+    assert.notDeepEqual(
+      validate(
+        {
+          runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+          questionId: 'H2Q03',
+          eventId: H2_GOLDEN_C03_EVENT.eventId,
+          allowLlmRendering: false,
+        },
+        assistantRequestSchema,
+      ),
+      [],
+    )
+    assertValid(
+      {
+        schemaVersion: 1,
+        requestId: 'contract-review-1',
+        runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+        eventId: H2_GOLDEN_C03_EVENT.eventId,
+        action: 'confirm',
+        expectedRevision: 0,
+        actor: {
+          kind: 'local_operator',
+          displayName: '本地值班员',
+        },
+      },
+      reviewRequestSchema,
+    )
+    assert.notDeepEqual(
+      validate(
+        {
+          runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+          questionId: 'Q09',
+          allowLlmRendering: true,
+        },
+        assistantRequestSchema,
+      ),
+      [],
+    )
+    assertValid(
+      {
+        runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+        kind: 'pcc_daily_compliance',
+        timeRange: {
+          startTime: '2026-01-05T00:00:00Z',
+          endTime: '2026-01-06T00:00:00Z',
+        },
+      },
+      reportRequestSchema,
+    )
+    assert.notDeepEqual(
+      validate(
+        {
+          runId: H2_FIXTURE_ANALYSIS_RUN.runId,
+          kind: 'review_audit_json',
+          timeRange: H2_FIXTURE_DATASET.timeRange,
+        },
+        reportRequestSchema,
+      ),
+      [],
     )
   })
 

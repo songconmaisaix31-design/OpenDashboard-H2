@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 1,
+  "detectorVersion": "deterministic-c01-c07-v5",
+  "aggregationPolicyVersion": "h2-events-v2",
+  "sourcePolicy": "Runtime detector inputs are restricted to canonical time-series measurements; public label files are excluded from import and runtime detection.",
+  "classes": {
+    "C01": {
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 5,
+        "maximumGapIntervals": 12,
+        "daily": false
+      },
+      "oscillationWindowRows": 20,
+      "oscillationAmplitudeKw": 200.0,
+      "oscillationTurns": 3,
+      "oscillationTurnKw": 20.0,
+      "stabilitySpanKw": 300.0,
+      "bessMinimumKw": 300.0,
+      "bessRangeKw": 300.0
+    },
+    "C02": {
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 5,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
+      "ratedCapacityKw": 1000.0,
+      "capacitySkewKw": 200.0,
+      "commandExecutionGapKw": 50.0
+    },
+    "C03": {
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 5,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
+      "relativeBandLowRatio": 0.75,
+      "relativeBandHighRatio": 0.85,
+      "plateauToleranceKw": 5.0,
+      "actualTrackingToleranceKw": 5.0,
+      "causalConfirmationRows": 5,
+      "samplingIntervalMinutes": 1,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "eventCount": 40,
+        "inclusiveEventSampleCount": 2717,
+        "eventLengthRows": {
+          "minimum": 36,
+          "maximum": 90
+        },
+        "qualifiedSignatureRunCount": 40,
+        "shortNonLabelRunCount": 3,
+        "shortNonLabelRunLengthRows": 1,
+        "signatureBandChange": {
+          "from": "abs(bess_power_cmd_kw) within 400 +- 1 kW (absolute band)",
+          "to": "relative limit band [0.75, 0.85] x row-level charge/discharge power limit, plus segment plateau (max-min abs(command) <= 5 kW), plus retained causal gate",
+          "rationale": "ADR-003 level-1/2 replacement: TRAIN events hold |command| exactly at 0.8 x the 500 kW limit while healthy constant-power schedules hold 0.9 x limit (evening 450 kW plateaus, 30+ segments) and N03 contexts stay below 0.6 x limit; the absolute 400 +- 1 kW band was TRAIN-only curve fitting that would miss a shifted replay level, whereas the relative band self-adapts to the row's own limits.",
+          "exclusivityEvidence": "A full TRAIN scan of non-event rows with |command| >= 300 kW found 36618 rows and 38 constant-power plateau segments in [350, 450] kW, every plateau at exactly 450 kW (=0.9 x limit) and outside the [375, 425] relative band; 6054 rows in [400, 500) kW are minute-scale oscillating regulation (C01-type) that the plateau gate rejects because neither branch of the causal gate alone is exclusive (plateau segments hit the causal gate in 24/38 and 30/38 segments via power-gap and SOC branches respectively)."
+        },
+        "causalGate": "Within the first five signature samples, the BESS command opposes the load-minus-PV power gap or the SOC target need; BESS actual tracks the command and PCC exchange has the same official sign.",
+        "finding": "The relative-band signature plus plateau gate plus causal gate matched all 40 public TRAIN C03 intervals with zero boundary deviation (start and end exact on all 40) and zero accepted non-event segments, replacing the absolute 400 kW band with byte-identical TRAIN outputs.",
+        "limitation": "The 0.75-0.85 band and 5 kW plateau tolerance remain empirical TRAIN-only calibration anchored on the 500 kW limit; held-out events replayed at other relative levels (for example 0.9 x limit) would need the enterprise Q2 answer to adjudicate.",
+        "heldOutPolicy": "Validation is acceptance-only and does not set C03 thresholds or causal logic."
+      }
+    },
+    "C04": {
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 3,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
+      "bessMarkerMinimumKw": 425.0,
+      "bessMarkerMaximumKw": 475.0,
+      "pccViolationMinimumKw": 600.0,
+      "fixtureCommandGapKw": 500.0,
+      "execurabilityBessChannelFloorKw": 1.0,
+      "execurabilityElzChannelFloorKw": 1.0,
+      "execurabilityConstrainedConfidence": 0.8,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "execurabilityMatrix": {
+          "design": "T07/A-4 three-branch executability matrix applied per candidate row: SUFFICIENT_HEADROOM keeps the candidate at full confidence when either direction-matched corrective channel has headroom (EXPORT: BESS charge channel charge_limit - charging usage, or ELZ upward headroom on a running unit; IMPORT: BESS discharge channel, or ELZ downward headroom above minimum stable power); a channel with missing data is ignored and the remaining channels decide; CONSTRAINED_HEADROOM keeps the candidate at 0.8 confidence when all available channels are pinned; UNVERIFIABLE_DATA drops the candidate to observation when every channel's data is missing.",
+          "constraintSource": "SOC 20-90 pct, BESS 500 kW charge/discharge limits, ELZ 300-1000 kW stable band via H2Constraints, frozen from the official control-constraints table in h2-vocabulary.",
+          "trainEvidence": "All 40 public TRAIN C04 event rows carry the 425-475 kW BESS marker, so the opposite-direction BESS channel alone holds at least 25 kW headroom - every TRAIN row grades SUFFICIENT and TRAIN outputs stay byte-identical.",
+          "normalContextGuard": "N04 contexts (PCC dynamic limit correctly executed) produce no C04 candidates before the matrix, so the matrix cannot fire there; the pcc_export/import_power_limit_kw columns are absent across all 525600 TRAIN rows and are deliberately not used by the matrix.",
+          "limitation": "The 1 kW channel floors are non-zero presence checks, not tuned margins; held-out data pinning both channels exactly would need the enterprise Q2 answer to adjudicate the CONSTRAINED semantics."
+        },
+        "heldOutPolicy": "Validation is acceptance-only and does not set C04 thresholds or matrix parameters."
+      }
+    },
+    "C05": {
+      "aggregation": {
+        "minimumRows": 4,
+        "confirmationRow": 4,
+        "maximumGapIntervals": 1,
+        "daily": true,
+        "requiresExactSamplingInterval": true,
+        "exactSamplingIntervalMinutes": 1
+      },
+      "exportQuotaMinimumKwh": 4500.0,
+      "importQuotaMinimumKwh": 20000.0,
+      "relativeBandLowRatio": 0.55,
+      "relativeBandHighRatio": 0.7,
+      "actualTrackingToleranceKw": 5.0,
+      "plateauToleranceKw": 5.0,
+      "forecastDepletionRateWindowRows": 15,
+      "forecastMinimumDepletionRateKwhPerMin": 1.0,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "eventCount": 40,
+        "subtypeEventCounts": {
+          "EXPORT_ENERGY_QUOTA_RISK": 20,
+          "IMPORT_ENERGY_QUOTA_RISK": 20
+        },
+        "finding": "All 40 labeled C05 intervals were exactly the sustained low-quota BESS command/actual runs at +300 kW for export or -300 kW for import; the immediately preceding and following rows were outside the signature.",
+        "signatureBandChange": {
+          "from": "bess command/actual within ±300 kW ± 1 kW on the risk direction (absolute frozen band)",
+          "to": "direction-consistent relative band [0.55, 0.7] x row-level charge/discharge power limit, actual tracking within 5 kW, and a plateau anchor requiring each in-band row to stay within 5 kW of the first row of its contiguous in-band run; the low-quota static gate is retained as the exclusivity backbone",
+          "rationale": "ADR-003 level-1 replacement: TRAIN events hold the BESS command exactly at 0.6 x the 500 kW limit on the risk direction (jump-onset, then a perfectly flat plateau), so the relative band self-adapts to row limits and shifted replay levels. The band floor sits at 0.55 x limit because C07 recovery events and healthy afternoon schedules both hold exactly 250 kW (0.5 x limit) on non-low-quota days; the plateau anchor excludes asymptotic ramp segments that drift toward the band level.",
+          "exclusivityEvidence": "Full TRAIN scans found (a) 21 non-event in-band plateau segments in the wider [250, 350] kW window - 8 perfect 250.0 kW afternoon plateaus (0.5 x limit, excluded by the band floor) and 13 drifting 270-290 kW runs (excluded by the plateau anchor: their rows sit 6-21 kW above their run's first row); (b) every C07 event day carries quota 4800-5800/23500-26000, far above the static gate, and C07 BESS levels are exactly 250 kW; (c) on all 40 C05 event days zero in-band minutes occur outside the official intervals after the plateau anchor."
+        },
+        "toleranceRationale": "Public TRAIN command and actual values were exactly at the subtype target; the inclusive 1 kW band is a narrow numeric tolerance and was not tuned from validation.",
+        "minimumRowsRationale": {
+          "samplingIntervalMinutes": 1,
+          "requiresBessCommandAndActual": true,
+          "shortNonLabelSegmentCount": 15,
+          "shortNonLabelSegmentsByLengthMinutes": {
+            "1": 4,
+            "3": 11
+          },
+          "maximumShortNonLabelSegmentMinutes": 3,
+          "minimumNoFalsePositiveRows": 4,
+          "conclusion": "Four sustained one-minute samples are the minimum public-TRAIN confirmation with no false-positive segments under the frozen signature."
+        },
+        "earlyWarningDefinition": "Early warning means confirmation before the first positive hard quota-excess measurement; because the event is backdated to its first causal BESS sample, firstDetectionTime is not required to precede event start.",
+        "forecast": {
+          "design": "When the static low-quota branch does not fire, extrapolate the sliding-window depletion rate of grid_*_energy_used_kwh_day and warn on the direction whose remaining quota is projected to exhaust strictly before the day ends, gated by the same directional 300 kW signature band as the static branch (signature removal is T05 scope).",
+          "thresholdsRationale": "The 15-row (15-minute) rate window matches the exact one-minute sampling contract and spans enough of the sustained 300 kW runs to estimate their 8.1-18.0 kWh/min TRAIN depletion rates; the 1.0 kWh/min minimum rate floor equals a 60 kW sustained net flow and excludes zero-crossing noise and cross-day used-counter resets (which yield non-positive differences).",
+          "trainEvidence": "All 40 events also satisfied the static branch on their first inclusive row (export quota 2200 < 4500, import quota 12500 < 20000), so the forecast branch left TRAIN outputs byte-identical; projected exhaustion inside events ranged 144-390 minutes against hard quota-excess delays of 144-642 minutes after the official start.",
+          "normalContextGuard": "Every TRAIN N05 context held |bess_power_cmd_kw| at most 167.4 kW (mean 28-85 kW), never entering the 300 kW signature band, so the forecast branch cannot fire there even when a low-remaining, fast-burning evening would otherwise extrapolate to exhaustion."
+        },
+        "limitation": "The public-v4.0 competition signature is an empirical rule calibrated on public TRAIN, not a universally established physical law.",
+        "heldOutPolicy": "Validation is acceptance-only and does not set C05 detection thresholds."
+      }
+    },
+    "C06": {
+      "aggregation": {
+        "minimumRows": 30,
+        "confirmationRow": 10,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
+      "allocationTrackingToleranceKw": 1.0,
+      "targetBalanceToleranceKw": 1.0,
+      "elz2ShareBandLow": 0.28,
+      "elz2ShareBandHigh": 0.32,
+      "elz3ShareBandLow": 0.45,
+      "elz3ShareBandHigh": 0.55,
+      "elz3CapacityPinShareCeiling": 0.5,
+      "elz3CapacityPinToleranceKw": 2.0,
+      "shareAnchorTolerance": 0.01,
+      "specificEnergyAdvantageKwhPerKg": 0.5,
+      "minimumEquivalentReallocationKw": 1.0,
+      "equivalentReallocationReferenceKw": 50.0,
+      "avoidableStartStopBandLowRatio": 0.35,
+      "avoidableStartStopBandHighRatio": 0.45,
+      "avoidableStartStopTwoUnitMarginRatio": 0.95,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "sourceFiles": {
+          "timeseries": {
+            "sha256": "67513c9b1d443d25eb1258a6f58252c02cdb438f701a7921e2f8dacc365a6c51",
+            "byteCount": 236991870,
+            "dataRowCount": 525600
+          },
+          "eventLabels": {
+            "sha256": "50f84b18f905b584b3e3f9d35ed02438179b392af2090c27827f7f659993720f",
+            "byteCount": 176117,
+            "dataRowCount": 280
+          }
+        },
+        "avoidableStartStop": {
+          "eventCount": 20,
+          "inclusiveEventSampleCount": 3332,
+          "eventLengthRows": {
+            "minimum": 105,
+            "maximum": 236
+          },
+          "signatureRunCount": 20,
+          "extraSignatureRunCount": 0,
+          "signatureBandChange": {
+            "from": "all three units' actual power inside the absolute band 390-410 kW with run_state >= 2",
+            "to": "each unit's actual power within [0.35, 0.45] x its own row-level actual available capacity with run_state >= 2, plus an avoidability causal gate requiring the EMS total target to fit within 0.95 x 2 x the smallest unit capacity",
+            "rationale": "ADR-003 level-1/2 replacement: TRAIN events hold all three units exactly at 400 kW (=0.40 x the 1000 kW capacity) while the absolute 390-410 kW band would miss the same low-load pattern replayed on a differently sized fleet; the capacity-relative band self-adapts to per-unit capacity and the causal gate pins the 'avoidable' semantics (two units can carry the current target).",
+            "exclusivityEvidence": "A full TRAIN scan of the relative band found exactly the 20 labeled intervals at exact boundaries and zero extra segments; the wider [350, 450] kW window (denominator 1000 kW) additionally caught four 1-2-minute segments on 2025-11-27 where ELZ03 was capacity-degraded (407-454 kW on a 407-454 kW capacity, ratio 1.0) and ELZ01/02 held 0.46-0.47 x capacity - all excluded by the per-unit capacity denominator and the causal gate (target 2780 kW far above 2 x 407 kW)."
+          },
+          "finding": "The capacity-relative band plus the two-unit avoidability gate matched all 20 public TRAIN AVOIDABLE_START_STOP intervals at exact boundaries with no extra signature runs; every event row holds all three units at exactly 400 kW with target 1200 kW (0.40 x capacity, target 63 pct of the two-unit carry limit).",
+          "precedence": "The persistent AVOIDABLE_START_STOP signature is evaluated before transition-sensitive efficiency allocation so a recent state change cannot reclassify the opening rows."
+        },
+        "inefficientPowerAllocation": {
+          "eventCount": 20,
+          "inclusiveEventSampleCount": 3265,
+          "eventLengthRows": {
+            "minimum": 111,
+            "maximum": 235
+          },
+          "signatureRunCount": 20,
+          "exactBoundaryMatchCount": 20,
+          "extraSignatureRunCount": 0,
+          "maximumTrackingErrorKw": 0.0,
+          "maximumTargetBalanceErrorKw": 0.001,
+          "maximumElz2ShareErrorKw": 0.0006,
+          "maximumElz3ShareErrorKw": 0.0005,
+          "minimumFeasibleReallocationKw": 1.04,
+          "minimumMeasuredSpecificEnergyAdvantageKwhPerKg": 1.585,
+          "minimumCurveSpecificEnergyAdvantageKwhPerKg": 1.483333,
+          "selectedPairSampleCounts": {
+            "ELZ01->ELZ02": 792,
+            "ELZ01->ELZ03": 169,
+            "ELZ02->ELZ03": 401,
+            "ELZ03->ELZ01": 234,
+            "ELZ03->ELZ02": 1669
+          },
+          "signatureBandChange": {
+            "from": "ELZ02 power within 1 kW of 0.30 x EMS target AND ELZ03 power within 1 kW of min(0.50 x target, actual capacity) (frozen share match)",
+            "to": "ELZ02 share band [0.28, 0.32] x target with a sliding-window run anchor (each in-band row's share within 0.01 of its contiguous run's first row); ELZ03 structural gate: share within [0.45, 0.55] x target OR capacity-pinned (capacity below 0.50 x target with power within 2 kW of capacity); the bounded equivalent-output efficiency gate is retained unchanged",
+            "rationale": "ADR-003 level-1/2 replacement: TRAIN events hold ELZ02 share exactly at 0.3000 (floating-point noise ~3e-7) while ELZ3 target share is capacity-dependent (0.333-0.500), so exact frozen shares would miss the same pattern replayed at a drifted allocation point; the share band centers on 0.30 with two-sided margins and the run anchor excludes drifting in-band segments, mirroring the C05 plateau anchor.",
+            "exclusivityEvidence": "A full TRAIN scan of rows passing the availability+tracking+balance preface found zero non-event rows with ELZ02 share inside [0.28, 0.32] - the nearest observed shares are 0.23-0.24 (160 rows) and 0.33-0.35 (15766 rows, the natural one-third allocation at high load), leaving >= 0.01/0.04 gaps on both sides of the band; the efficiency gate alone (share condition removed) matched 21 extra long segments including N02-type capacity-derated healthy contexts, proving the share condition is the exclusivity backbone and cannot be deleted, only relativized."
+          },
+          "signature": "All three available units track their commands and the EMS total target; ELZ02 carries a share of target inside the [0.28, 0.32] band (TRAIN events hold exactly 0.30) anchored to its contiguous run's first-row share, while ELZ03 either carries at least [0.45, 0.55] of target or runs pinned at its actual capacity when that capacity is below half the target. Every qualifying row must also prove a bounded equivalent-output reference from a higher measured-specific-energy stable unit to a lower-specific-energy stable unit with actual headroom, preserving total power and retaining the advantage on the frozen per-unit curves.",
+          "derivationProcedure": [
+            "Scan every public TRAIN row without reading labels into runtime detection.",
+            "Form contiguous one-minute runs from the allocation marker and the per-row feasible equivalent-output reference.",
+            "Compare derived runs with public TRAIN C06 labels only inside the offline calibration report and count exact boundaries and non-label runs.",
+            "Reproduce hashes, impact statistics and signature statistics with python -m h2_analytics.tools.calibrate_c06 TIMESERIES LABELS; the report retains no official rows."
+          ],
+          "finding": "The share-band marker plus the sliding-window run anchor and the per-row capacity, run-state, measured-specific-energy and efficiency-curve feasibility gate matched all 20 public TRAIN INEFFICIENT_POWER_ALLOCATION intervals at inclusive boundaries with no extra signature runs (byte-identical TRAIN outputs versus the frozen-share marker)."
+        },
+        "limitation": "These public-v4.0 persistence and allocation signatures are empirical TRAIN-only competition rules, not universal physical laws or proof of a hardware fault.",
+        "heldOutPolicy": "Validation is acceptance-only and does not set C06 thresholds, persistence, or subtype precedence."
+      }
+    },
+    "C07": {
+      "aggregation": {
+        "minimumRows": 5,
+        "confirmationRow": 3,
+        "maximumGapIntervals": 1,
+        "daily": false
+      },
+      "socTargetDeviationPct": 10.0,
+      "reserveTargetMinimumKwh": 350.0,
+      "forecastHorizonMinutes": 30.0,
+      "forecastSocRateWindowRows": 15,
+      "execurabilityBessChannelFloorKw": 1.0,
+      "execurabilitySocChannelFloorPct": 0.5,
+      "execurabilityConstrainedConfidence": 0.75,
+      "calibration": {
+        "split": "public_train",
+        "competitionPackageVersion": "public-v4.0",
+        "eventCount": 40,
+        "confirmationRowChange": {
+          "from": 1,
+          "to": 3,
+          "rationale": "confirmationRow=1 made first_detection_time coincide with the official start row (lead_time_minutes=0, violating the ADR-004 target >0). Three sustained samples confirm the event while keeping boundaries and matching unchanged, yielding lead_time_minutes=2 under the exact one-minute sampling contract."
+        },
+        "forecast": {
+          "design": "When neither static branch fires (deviation below socTargetDeviationPct and no reserve shortfall), extrapolate the sliding-window SOC rate over forecastHorizonMinutes and warn on the projected threshold crossing in the deviation's own direction.",
+          "thresholdsRationale": "The 15-row (15-minute) rate window matches the one-minute sampling contract and matches the C05 forecast window; 30 minutes is the confirmation horizon, sized so TRAIN events' post-jump sustained rows remain inside the window while EMS corrective reversals inside N07 contexts need a full horizon to be excluded.",
+          "trainEvidence": "All 40 public TRAIN C07 intervals satisfied a static branch on their first inclusive row (jump-type onset: deviation within +-8 pct across the preceding 120 minutes, then -35..-45 pct or +8..+16 pct at the official start), so the forecast branch is a pure fallback that leaves TRAIN outputs byte-identical.",
+          "normalContextGuard": "Every TRAIN N07 context carries reserve 250-300 kWh, below the 350 kWh gate shared with the static shortfall branch, so the forecast branch cannot fire there; the one deteriorating N07 trajectory (context ending at deviation -8.94 pct, ~0.13 pct/min) was verified to stay excluded by this gate alone."
+        },
+        "execurabilityMatrix": {
+          "design": "T07/A-4 three-branch executability matrix applied per candidate row on both static and forecast paths: SUFFICIENT_HEADROOM keeps the candidate at full confidence when either direction-matched corrective channel has headroom (CHARGE_HEADROOM: BESS charge channel, or SOC upper boundary distance to 90 pct; DISCHARGE_RESERVE: BESS discharge channel, or SOC lower boundary distance to 20 pct); a channel with missing data is ignored and the remaining channels decide; CONSTRAINED_HEADROOM keeps the candidate at 0.75 confidence when all available channels are pinned; UNVERIFIABLE_DATA drops the candidate to observation when every channel's data is missing.",
+          "constraintSource": "SOC 20-90 pct and BESS 500 kW limits via H2Constraints, frozen from the official control-constraints table in h2-vocabulary.",
+          "trainEvidence": "TRAIN C07 event rows hold the BESS at a constant 250 kW corrective command, leaving at least 250 kW on the opposite-direction channel, and event SOC sits far from the violated boundary, so every TRAIN row grades SUFFICIENT and TRAIN outputs stay byte-identical (40/40 events, FN 0, FP 0).",
+          "normalContextGuard": "N07 contexts produce no C07 candidates (reserve below the 350 kWh gate) before the matrix, so the matrix cannot fire there.",
+          "limitation": "The 1 kW / 0.5 pct channel floors are non-zero presence checks, not tuned margins; held-out data pinning both channels exactly would need the enterprise Q2 answer to adjudicate the CONSTRAINED semantics."
+        },
+        "finding": "Official C07 intervals are jump-onset sustained-recovery windows: BESS holds a constant 250 kW corrective command (negative for CHARGE_HEADROOM, positive for DISCHARGE_RESERVE) throughout, so onset cannot precede the official start and 'early warning' means confirming well before deep-discharge consequences while keeping lead_time_minutes>0.",
+        "limitation": "The reserve gate that separates events from N07 contexts is empirical TRAIN-only calibration; held-out contexts combining reserve >=350 kWh with a deteriorating-but-benign SOC trend would need the enterprise Q2 answer to adjudicate.",
+        "heldOutPolicy": "Validation is acceptance-only and does not set C07 thresholds, the confirmation row, or forecast parameters."
+      }
+    }
+  }
+}

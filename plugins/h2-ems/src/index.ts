@@ -3,7 +3,11 @@ export { createFixtureH2EmsDataSource } from './fixture-data-source.ts'
 export {
   createLiveH2EmsDataSource,
   H2_EMS_LIVE_ROUTES,
+  H2_EMS_REQUEST_TIMEOUTS_MS,
+  type H2EmsRequestTimeouts,
   type H2EmsLiveAdapterOptions,
+  type H2EmsLiveDataSource,
+  type H2NluDataSourceCapability,
 } from './live-data-source.ts'
 export {
   createH2EmsPlugin,

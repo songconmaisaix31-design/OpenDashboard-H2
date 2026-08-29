@@ -16,8 +16,12 @@ dependencies.
   recommendations, and review state: `H2AnomalyEvent`
 - Provenance vocabulary: `FIXTURE`, `LIVE_ANALYSIS`, `DERIVED`, `MODEL`,
   `RULE`, and `LLM_RENDERED`
-- Assistant question and answer contracts for the ten official questions
-- Report descriptors for HTML, JSON, CSV, validation, and quality artifacts
+- Assistant request and answer contracts for the official `Q01`-`Q10`
+  questions, including the `Q09` generated-report invariant
+- Append-only local event-review requests, entries, projections, receipts, and
+  audit-export contracts with optimistic concurrency and idempotency
+- Report descriptors and request-scope schemas for HTML, JSON, CSV,
+  validation, PCC daily compliance, quality, and review-audit artifacts
 - Exact `submission.csv` row type, column order, row mapping, and serializer
 - `H2SentinelDataSource`, the only Web-facing data source interface
 - API envelopes for success, warning, and redacted-error responses
@@ -32,6 +36,8 @@ dependencies.
 - `confidence` is normalized to `0..1`.
 - Every operational recommendation is advisory and carries
   `requiresHumanConfirmation: true`.
+- Human review changes only the projected `reviewState`; it does not change
+  detector evidence, impact, provenance, or submission mapping.
 - Fixture provenance is explicit and must not be represented as live analysis.
 - Fixture CSV files are checked out with LF endings so byte-level dataset
   fingerprints remain stable when Git uses `core.autocrlf=true` on Windows.
@@ -39,16 +45,19 @@ dependencies.
   official competition dataset or score artifact.
 - The submission header is exactly `H2_SUBMISSION_COLUMNS` in source order.
 
-## CCR-H4-001 Correction
+## Official Vocabulary and Fixture
 
-The C04 fixture's `pcc_power_limit_violation_energy_kwh` is
-`29.333333333333332`. The previous `86.5` value incorrectly overstated the
-impact. The authoritative C04 calculation uses the eight inclusive one-minute
-samples from `2026-01-05T10:32:00Z` through `2026-01-05T10:39:00Z`: each has
-`pcc_power_kw=720` and `pcc_export_limit_kw=500`, so the evidence is
-`sum(max(720 - 500, 0) / 60) = 29.333333333333332 kWh`. The CSV and its LF
-byte fingerprint are unchanged; the JSON and TypeScript C04 evidence and impact
-representations are corrected together and covered by a focused regression test.
+The contract package reads the frozen 69-field vocabulary from
+`packages/h2-vocabulary`. The sanitized 22-row fixture uses the same canonical
+header and retains explicit `FIXTURE` provenance; deprecated names exist only
+in the reviewed compatibility map. Its C04 sample contains eight inclusive
+one-minute rows at 1,400 kW against a 500 kW export limit, so the deterministic
+fixture impact is `8 * (1400 - 500) / 60 = 120 kWh`.
+
+Event severity remains the stable API enum (`low`, `medium`, `high`,
+`critical`). The submission mapper separately emits the official Chinese
+severity and control-object vocabulary plus the frozen comma-separated
+equipment tokens, while keeping the exact 16-column order.
 
 ## Data Source Modes
 
@@ -62,6 +71,9 @@ representations are corrected together and covered by a focused regression test.
 - Report exports return a serializable artifact containing descriptor, media
   type, and string content. Period summaries may provide a canonical time
   range; exports never expose a local path or URL.
+- Review consumers rehydrate history with `getEventReview(runId, eventId)` and
+  mutate it with `reviewEvent(request)`. `requestId` replay is exactly-once and
+  `expectedRevision` prevents lost updates.
 
 ## Focused Verification
 

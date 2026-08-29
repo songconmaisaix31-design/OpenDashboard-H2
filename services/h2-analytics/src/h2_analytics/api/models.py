@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Literal
 
-from h2_analytics.contracts import ASSISTANT_QUESTION_IDS
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class StrictRequest(BaseModel):
@@ -12,6 +12,27 @@ class StrictRequest(BaseModel):
 class CsvImportRequest(StrictRequest):
     filename: str = Field(min_length=1, max_length=128)
     text: str
+
+
+class CsvUploadSessionRequest(StrictRequest):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    request_id: str = Field(alias="requestId", min_length=1, max_length=128)
+    filename: str = Field(min_length=1, max_length=255)
+    declared_bytes: int = Field(alias="declaredBytes", ge=1, le=256 * 1024 * 1024)
+    expected_content_hash: str | None = Field(
+        default=None,
+        alias="expectedContentHash",
+        pattern=r"^sha256:[a-f0-9]{64}$",
+    )
+
+
+class CsvUploadFinalizeRequest(StrictRequest):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    request_id: str = Field(alias="requestId", min_length=1, max_length=128)
+    session_id: str = Field(alias="sessionId", min_length=1, max_length=128)
+    total_chunks: int = Field(alias="totalChunks", ge=1)
+    total_bytes: int = Field(alias="totalBytes", ge=1, le=256 * 1024 * 1024)
+    content_hash: str = Field(alias="contentHash", pattern=r"^sha256:[a-f0-9]{64}$")
 
 
 class DatasetIdRequest(StrictRequest):
@@ -61,13 +82,11 @@ class AssistantRequest(StrictRequest):
     event_id: str | None = Field(default=None, alias="eventId")
     allow_llm_rendering: bool = Field(alias="allowLlmRendering")
 
-    @field_validator("question_id")
-    @classmethod
-    def known_question(cls, value: str) -> str:
-        if value not in ASSISTANT_QUESTION_IDS:
-            raise ValueError("unsupported assistant question")
-        return value
 
+class AssistantNluRequest(StrictRequest):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    text: str
+    run_id: str = Field(alias="runId", min_length=1)
 
 class TimeRange(StrictRequest):
     start_time: str = Field(alias="startTime", min_length=1)
@@ -79,3 +98,19 @@ class ReportRequest(StrictRequest):
     kind: str
     event_id: str | None = Field(default=None, alias="eventId")
     time_range: TimeRange | None = Field(default=None, alias="timeRange")
+
+
+class LocalReviewActor(StrictRequest):
+    kind: Literal["local_operator"]
+    display_name: str = Field(alias="displayName", min_length=1, max_length=64)
+
+
+class ReviewEventRequest(StrictRequest):
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    request_id: str = Field(alias="requestId", min_length=1, max_length=128)
+    run_id: str = Field(alias="runId", min_length=1)
+    event_id: str = Field(alias="eventId", min_length=1)
+    action: Literal["confirm", "reject", "resolve", "reopen", "add_note"]
+    expected_revision: int = Field(alias="expectedRevision", ge=0)
+    actor: LocalReviewActor
+    note: str | None = Field(default=None, max_length=2000)

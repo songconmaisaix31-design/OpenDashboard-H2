@@ -59,7 +59,11 @@ export function unwrapRemoteEnvelope<T>(
       !isProvenance(value.provenance) ||
       !isRedactedError(value.error)
     ) invalid()
-    throw new H2EmsAdapterError('remote_error', value.error.retryable)
+    throw new H2EmsAdapterError(
+      'remote_error',
+      value.error.retryable,
+      value.error.code,
+    )
   }
 
   invalid()
@@ -265,16 +269,20 @@ export function verifyRemoteIdentity<T>(
 function isApiWarning(value: unknown): boolean {
   return (
     isClosedRecord(value, ['code', 'message', 'evidenceIds'], ['field']) &&
-    isNonEmptyString(value.code) &&
+    isSafeErrorCode(value.code) &&
     isNonEmptyString(value.message) &&
     isOptionalString(value, 'field') &&
     isStringArray(value.evidenceIds)
   )
 }
 
+function isSafeErrorCode(value: unknown): value is string {
+  return isString(value) && /^[a-z][a-z0-9_.-]{0,127}$/u.test(value)
+}
+
 function isRedactedError(
   value: unknown,
-): value is { readonly retryable: boolean } {
+): value is { readonly code: string; readonly retryable: boolean } {
   return (
     isClosedRecord(value, [
       'code',

@@ -1,0 +1,339 @@
+import type {
+  H2AnomalyCode,
+  H2AnomalySubtypeForCode,
+  H2EquipmentRef,
+} from './anomaly.ts'
+import type { H2AssistantQuestion, H2AssistantQuestionId } from './assistant.ts'
+import { H2_ASSISTANT_QUESTIONS } from './assistant.ts'
+import type { H2DatasetField } from './dataset.ts'
+
+import assistantQuestionsData from '../../h2-vocabulary/data/assistant-questions.json'
+import anomalyTaxonomyData from '../../h2-vocabulary/data/anomaly-taxonomy.json'
+import deprecatedFieldMapData from '../../h2-vocabulary/data/deprecated-field-map.json'
+import equipmentData from '../../h2-vocabulary/data/equipment.json'
+import fieldsData from '../../h2-vocabulary/data/fields.json'
+import impactFormulasData from '../../h2-vocabulary/data/impact-formulas.json'
+import submissionEquipmentTokensData from '../../h2-vocabulary/data/submission-equipment-tokens.json'
+
+export type H2OfficialSeverity = '中' | '高'
+
+export interface H2FieldDefinition {
+  readonly name: string
+  readonly chineseName: string
+  readonly category: string
+  readonly dataType: string
+  readonly unit: string
+  readonly sign: string
+  readonly description: string
+  readonly formula: string
+  readonly isDerived: boolean
+  readonly relatedAnomaly: readonly string[]
+  readonly sourceFile: string
+}
+
+export interface H2AnomalyTaxonomyEntry {
+  readonly code: H2AnomalyCode
+  readonly nameZh: string
+  readonly primaryControlObject: string
+  readonly primaryImpactMetric: string
+  readonly primaryImpactMetricZh: string
+  readonly severity: H2OfficialSeverity
+  readonly subtypes: readonly {
+    readonly code: string
+    readonly nameZh: string
+  }[]
+  readonly affectedEquipment: readonly {
+    readonly equipmentId: string
+    readonly equipmentName: string
+  }[]
+}
+
+export interface H2EquipmentEntry {
+  readonly equipment_id: string
+  readonly equipment_name: string
+  readonly rated_capacity: string
+  readonly control_relationship: string
+  readonly related_tags: string
+  readonly constraint_note: string
+}
+
+export interface H2AssistantQuestionZh extends H2AssistantQuestion {
+  readonly question: string
+}
+
+export interface H2DeprecatedFieldMapping {
+  readonly internal: string
+  readonly official: string | null
+  readonly derived?: string
+  readonly note: string
+}
+
+export interface H2ImpactFormulaConfig {
+  readonly schemaVersion: 1
+  readonly formulaVersion: 'impact-c06-v3'
+  readonly source: {
+    readonly calibrationSplit: 'public_train'
+    readonly competitionPackageVersion: 'public-v4.0'
+    readonly derivation: string
+    readonly sourceFiles: Readonly<
+      Record<'timeseries' | 'eventLabels', {
+        readonly sha256: string
+        readonly byteCount: number
+        readonly dataRowCount: number
+      }>
+    >
+    readonly derivationProcedure: readonly string[]
+    readonly heldOutPolicy: string
+  }
+  readonly classes: {
+    readonly C03: {
+      readonly formulaVersion: 'impact-c03-v2'
+      readonly formula: string
+      readonly socTrackingGainKwPerPct: number
+      readonly derivationProcedure: readonly string[]
+      readonly calibrationStatistics: {
+        readonly eventCount: number
+        readonly inclusiveSampleCount: number
+        readonly actualPowerMagnitudeKwMinutes: string
+        readonly signedSocDeviationPctMinutes: string
+        readonly referenceImpactKwh: string
+        readonly aggregateDerivedSocTrackingGainKwPerPct: string
+        readonly calibratedSocTrackingGainKwPerPct: string
+        readonly calculatedImpactKwh: string
+        readonly roundedReferenceMatchCount: number
+        readonly maximumAbsoluteRoundedResidualKwh: string
+        readonly meanAbsoluteRoundedResidualKwh: string
+      }
+      readonly roundingPolicy: string
+      readonly rationale: string
+      readonly limitation: string
+      readonly heldOutPolicy: string
+    }
+    readonly C06: {
+      readonly targetField: 'ems_total_elz_target_kw'
+      readonly formula: string
+      readonly subtypeRates: Readonly<
+        Record<H2AnomalySubtypeForCode<'C06'>, number>
+      >
+      readonly calibrationStatistics: {
+        readonly eventCount: number
+        readonly subtypes: Readonly<
+          Record<H2AnomalySubtypeForCode<'C06'>, {
+            readonly eventCount: number
+            readonly inclusiveSampleCount: number
+            readonly targetKwMinutes: string
+            readonly targetEnergyKwh: string
+            readonly referenceImpactKwh: string
+            readonly aggregateDerivedRate: string
+            readonly calibratedRate: string
+            readonly perEventDerivedRateMinimum: string
+            readonly perEventDerivedRateMaximum: string
+            readonly roundedReferenceMatchCount: number
+            readonly maximumAbsoluteRoundedResidualKwh: string
+          }>
+        >
+      }
+      readonly roundingPolicy: string
+      readonly rationale: string
+    }
+  }
+}
+
+export const H2_OFFICIAL_FIELDS: readonly H2FieldDefinition[] =
+  (fieldsData as { readonly fields: readonly H2FieldDefinition[] }).fields
+
+export const H2_ANOMALY_TAXONOMY: readonly H2AnomalyTaxonomyEntry[] =
+  anomalyTaxonomyData as readonly H2AnomalyTaxonomyEntry[]
+
+export const H2_EQUIPMENT: readonly H2EquipmentEntry[] =
+  equipmentData as readonly H2EquipmentEntry[]
+
+export const H2_DEPRECATED_FIELD_MAPPINGS: readonly H2DeprecatedFieldMapping[] =
+  (deprecatedFieldMapData as {
+    readonly mappings: readonly H2DeprecatedFieldMapping[]
+  }).mappings
+
+export const H2_IMPACT_FORMULAS =
+  impactFormulasData as H2ImpactFormulaConfig
+
+const SUBMISSION_EQUIPMENT_TOKENS_BY_CODE = (
+  submissionEquipmentTokensData as {
+    readonly tokensByCode: Readonly<Record<H2AnomalyCode, readonly string[]>>
+  }
+).tokensByCode
+
+const PER_EVENT_ELECTROLYZER_TOKENS = new Set(['ELZ1', 'ELZ2', 'ELZ3'])
+
+const FIELD_BY_NAME = new Map<string, H2FieldDefinition>(
+  H2_OFFICIAL_FIELDS.map(
+    (field) => [field.name, field],
+  ),
+)
+
+const TAXONOMY_BY_CODE = new Map<H2AnomalyCode, H2AnomalyTaxonomyEntry>(
+  H2_ANOMALY_TAXONOMY.map((entry) => [
+    entry.code,
+    entry,
+  ]),
+)
+
+const EQUIPMENT_BY_KEY = new Map<string, H2EquipmentEntry>(
+  H2_EQUIPMENT.map((entry) => [
+    normalizeEquipmentKey(entry.equipment_id),
+    entry,
+  ]),
+)
+
+/**
+ * Returns the official 69-field definition for a variable name, or undefined
+ * when the name is not part of the frozen vocabulary.
+ */
+export function fieldByName(name: string): H2FieldDefinition | undefined {
+  return FIELD_BY_NAME.get(name)
+}
+
+/** Converts an official vocabulary entry into the runtime dataset contract. */
+export function toH2DatasetField(field: H2FieldDefinition): H2DatasetField {
+  const role =
+    field.name === 'timestamp'
+      ? 'timestamp'
+      : field.category === '电网约束'
+        ? 'constraint'
+        : 'measurement'
+  return {
+    name: field.name,
+    displayNameZh: field.chineseName,
+    role,
+    required: true,
+    ...(field.unit ? { unit: field.unit } : {}),
+  }
+}
+
+/** Returns the official anomaly-taxonomy entry for a code, or undefined. */
+export function anomalyTaxonomyByCode(
+  code: H2AnomalyCode,
+): H2AnomalyTaxonomyEntry | undefined {
+  return TAXONOMY_BY_CODE.get(code)
+}
+
+/** Returns frozen official submission equipment tokens for an anomaly code. */
+export function submissionEquipmentTokensByCode(
+  code: H2AnomalyCode,
+): readonly string[] {
+  return SUBMISSION_EQUIPMENT_TOKENS_BY_CODE[code]
+}
+
+/** Resolves event-specific C01/C02 equipment within the official token rules. */
+export function submissionEquipmentTokensForEvent(
+  code: H2AnomalyCode,
+  affectedEquipment: readonly H2EquipmentRef[],
+): readonly string[] {
+  const resolvedTokens = affectedEquipment.map(submissionEquipmentToken)
+  const eventTokens = [
+    ...new Set(
+      resolvedTokens.filter((token): token is string => token !== undefined),
+    ),
+  ]
+  if (code === 'C01' || code === 'C02' || code === 'C06') {
+    if (resolvedTokens.some((token) => token === undefined)) {
+      throw new Error(`${code} equipment attribution is incomplete.`)
+    }
+    if (code === 'C06') {
+      if (
+        eventTokens.length < 2 ||
+        eventTokens.length > 3 ||
+        !eventTokens.every((token) => PER_EVENT_ELECTROLYZER_TOKENS.has(token))
+      ) {
+        throw new Error('C06 equipment attribution is invalid.')
+      }
+      return submissionEquipmentTokensByCode(code)
+    }
+    if (!validSubmissionEquipmentTokens(code, eventTokens)) {
+      throw new Error(`${code} equipment attribution is invalid.`)
+    }
+    return eventTokens
+  }
+  return validSubmissionEquipmentTokens(code, eventTokens)
+    ? eventTokens
+    : submissionEquipmentTokensByCode(code)
+}
+
+/** Validates the official per-code token cardinality and exact token sets. */
+export function validSubmissionEquipmentTokens(
+  code: H2AnomalyCode,
+  tokens: readonly string[],
+): boolean {
+  if (new Set(tokens).size !== tokens.length) return false
+  if (code === 'C01') {
+    const electrolyzers = tokens.filter((token) => token.startsWith('ELZ'))
+    return (
+      tokens.length === 4 &&
+      electrolyzers.length === 2 &&
+      electrolyzers.every((token) => PER_EVENT_ELECTROLYZER_TOKENS.has(token)) &&
+      tokens.includes('BESS') &&
+      tokens.includes('PCC')
+    )
+  }
+  if (code === 'C02') {
+    return tokens.length === 1 && PER_EVENT_ELECTROLYZER_TOKENS.has(tokens[0] ?? '')
+  }
+  const expected = submissionEquipmentTokensByCode(code)
+  return (
+    tokens.length === expected.length &&
+    expected.every((token) => tokens.includes(token))
+  )
+}
+
+function submissionEquipmentToken(ref: H2EquipmentRef): string | undefined {
+  if (ref.kind === 'BESS' || ref.kind === 'PCC' || ref.kind === 'PV') {
+    return ref.kind
+  }
+  return /^ELZ0[1-3]$/.test(ref.id) ? `ELZ${ref.id.slice(-1)}` : undefined
+}
+
+function normalizeEquipmentKey(value: string): string {
+  return value.replace(/[^a-z0-9]/gi, '').toLocaleLowerCase('en-US')
+}
+
+/**
+ * Resolves an equipment reference to its official equipment name. Reference
+ * identifiers are normalized (for example `bess-01` -> `BESS01`) before the
+ * official equipment table is consulted; unknown references fall back to the
+ * event-provided display name.
+ */
+export function equipmentNameForRef(ref: {
+  readonly id: string
+  readonly displayName: string
+}): string {
+  return EQUIPMENT_BY_KEY.get(normalizeEquipmentKey(ref.id))?.equipment_name ?? ref.displayName
+}
+
+/** Returns the official equipment entry for an id, or undefined. */
+export function equipmentById(id: string): H2EquipmentEntry | undefined {
+  return EQUIPMENT_BY_KEY.get(normalizeEquipmentKey(id))
+}
+
+function assistantQuestionZh(questionId: H2AssistantQuestionId): string | undefined {
+  // Contract ids are the official ids, so no prefix translation is needed.
+  return (assistantQuestionsData as readonly { readonly questionId: string; readonly question: string }[]).find(
+    (item) => item.questionId === questionId,
+  )?.question
+}
+
+/**
+ * The ten official operations questions (Q01-Q10, Chinese) joined with the
+ * contract question identifiers used by H2SentinelDataSource.
+ */
+export const H2_ASSISTANT_QUESTIONS_ZH: readonly H2AssistantQuestionZh[] =
+  H2_ASSISTANT_QUESTIONS.map((question) => ({
+    ...question,
+    question: assistantQuestionZh(question.questionId) ?? question.prompt,
+  }))
+
+/** Maps a legacy internal field name to its official name, when it exists. */
+export function deprecatedFieldName(internal: string): string | null {
+  const mapping = H2_DEPRECATED_FIELD_MAPPINGS.find(
+    (item) => item.internal === internal,
+  )
+  return mapping?.official ?? null
+}

@@ -1,30 +1,72 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from collections import Counter
-from datetime import datetime, timedelta
+from copy import deepcopy
+from datetime import UTC, datetime, timedelta
+import os
+from threading import Lock
 from typing import Any
 
 from h2_analytics.contracts import ANOMALY_CODES, SEVERITIES, build_provenance
-from h2_analytics.assistant import AssistantService
-from h2_analytics.detection import RowDetector, RuleRowDetector
+from h2_analytics.assistant import (
+    AssistantService,
+    LlmRenderingConfig,
+    StepFunRenderer,
+    resolve_intent,
+)
+from h2_analytics.assistant.llm_client import llm_rendering_config_from_environment
+from h2_analytics.detection import (
+    RowDetector,
+    RuleRowDetector,
+    filter_c03_candidates,
+    sanitized_fixture_c03_candidates,
+)
+from h2_analytics.detection.ml_verification import ml_supplemental_candidates
+from h2_analytics.settings import H2_ML_ENABLED
 from h2_analytics.diagnosis import DiagnosisBuilder
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.events import EventAggregator
-from h2_analytics.ingestion import DatasetLoader
+from h2_analytics.ingestion import CsvUploadSessionManager, DatasetLoader
 from h2_analytics.models import ImportedDataset
 from h2_analytics.reports import ReportRenderer
+from h2_analytics.review import (
+    append_review_entry,
+    create_event_review,
+    normalize_review_request,
+)
+from h2_analytics.settings import H2_STREAMING_IMPORT_ENABLED
 
 
 class AnalyticsService:
-    def __init__(self, detector: RowDetector | None = None) -> None:
+    def __init__(
+        self,
+        detector: RowDetector | None = None,
+        *,
+        clock: Callable[[], datetime] | None = None,
+        streaming_import_enabled: bool = H2_STREAMING_IMPORT_ENABLED,
+        upload_manager: CsvUploadSessionManager | None = None,
+        llm_config: LlmRenderingConfig | None = None,
+        llm_renderer: StepFunRenderer | None = None,
+    ) -> None:
         self._loader = DatasetLoader()
+        self._streaming_import_enabled = streaming_import_enabled
+        self._uploads = upload_manager
+        self._uses_default_detector = detector is None
         self._detector = detector or RuleRowDetector()
         self._aggregator = EventAggregator()
         self._diagnosis = DiagnosisBuilder()
         self._assistant = AssistantService()
+        self._llm_renderer = llm_renderer or StepFunRenderer(llm_config)
         self._reports = ReportRenderer()
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._datasets: dict[str, ImportedDataset] = {}
         self._runs: dict[str, dict[str, Any]] = {}
+        self._reviews: dict[str, dict[str, dict[str, Any]]] = {}
+        self._review_lock = Lock()
+        self._review_receipts: dict[
+            tuple[str, str], tuple[dict[str, Any], dict[str, Any]]
+        ] = {}
 
     @property
     def detector_version(self) -> str:
@@ -35,6 +77,44 @@ class AnalyticsService:
         dataset_id = imported.manifest["datasetId"]
         self._datasets[dataset_id] = imported
         return {"dataset": imported.manifest, "quality": imported.quality}
+
+    def create_csv_upload_session(
+        self,
+        *,
+        request_id: str,
+        filename: str,
+        declared_bytes: int,
+        expected_content_hash: str | None,
+    ) -> dict[str, Any]:
+        self._require_streaming_import()
+        return self._upload_manager().create(
+            request_id=request_id,
+            filename=filename,
+            declared_bytes=declared_bytes,
+            expected_content_hash=expected_content_hash,
+        )
+
+    def upload_csv_chunk(self, **request: Any) -> dict[str, Any]:
+        self._require_streaming_import()
+        return self._upload_manager().append_chunk(**request)
+
+    def finalize_csv_upload(self, **request: Any) -> dict[str, Any]:
+        self._require_streaming_import()
+        receipt, imported = self._upload_manager().finalize(**request)
+        dataset_id = imported.manifest["datasetId"]
+        self._datasets[dataset_id] = imported
+        receipt["result"] = {
+            "dataset": imported.manifest,
+            "quality": imported.quality,
+        }
+        return receipt
+
+    def cleanup_expired_uploads(self) -> int:
+        return self._uploads.cleanup_expired() if self._uploads is not None else 0
+
+    def close(self) -> None:
+        if self._uploads is not None:
+            self._uploads.close()
 
     def list_datasets(self) -> list[dict[str, Any]]:
         return [
@@ -53,6 +133,32 @@ class AnalyticsService:
                 details=tuple(imported.quality["blockingReasons"]),
             )
         candidates = self._detector.detect(imported.rows)
+        fixture_candidates = (
+            sanitized_fixture_c03_candidates(
+                manifest=imported.manifest,
+                rows=imported.rows,
+            )
+            if self._uses_default_detector
+            else ()
+        )
+        if self._uses_default_detector and _ml_verification_enabled():
+            # P1-9c ML 校验层（ADR-001 灰度混合）：规则为主、ML 只补充——
+            # 规则候选原样保留，补充候选与规则/fixture 候选 (row, code, subtype) 排他。
+            candidates = (
+                *candidates,
+                *fixture_candidates,
+                *ml_supplemental_candidates(
+                    imported.rows,
+                    (*candidates, *fixture_candidates),
+                ),
+            )
+        else:
+            candidates = (*candidates, *fixture_candidates)
+        if imported.manifest["mode"] == "LIVE_ANALYSIS":
+            candidates = filter_c03_candidates(
+                rows=imported.rows,
+                candidates=candidates,
+            )
         windows = self._aggregator.aggregate(
             rows=imported.rows,
             candidates=candidates,
@@ -61,7 +167,6 @@ class AnalyticsService:
         events = [
             self._diagnosis.build(window=window, manifest=imported.manifest)
             for window in windows
-            if window.code in {"C03", "C04"}
         ]
         generated_at = imported.manifest["provenance"]["generatedAt"]
         completed_at = _plus_one_second(generated_at)
@@ -93,7 +198,19 @@ class AnalyticsService:
                 model_version=self._detector.version,
             ),
         }
-        self._runs[run_id] = run
+        with self._review_lock:
+            existing_reviews = self._reviews.get(run_id, {})
+            reviews: dict[str, dict[str, Any]] = {}
+            for event in events:
+                event_id = event["eventId"]
+                review = existing_reviews.get(event_id) or create_event_review(
+                    run_id=run_id,
+                    event=event,
+                )
+                event["reviewState"] = review["currentState"]
+                reviews[event_id] = review
+            self._reviews[run_id] = reviews
+            self._runs[run_id] = run
         return run
 
     def get_run(self, run_id: str) -> dict[str, Any]:
@@ -110,6 +227,79 @@ class AnalyticsService:
             if event["eventId"] == event_id:
                 return event
         raise AnalyticsError("event.not_found", "Anomaly event was not found.")
+
+    def get_event_review(self, run_id: str, event_id: str) -> dict[str, Any]:
+        with self._review_lock:
+            if run_id not in self._runs:
+                raise AnalyticsError(
+                    "review.run_not_found",
+                    "未找到指定的分析运行。",
+                )
+            try:
+                return deepcopy(self._reviews[run_id][event_id])
+            except KeyError as error:
+                raise AnalyticsError(
+                    "review.event_not_found",
+                    "当前运行中不存在指定事件。",
+                ) from error
+
+    def review_event(self, request: dict[str, Any]) -> dict[str, Any]:
+        normalized = normalize_review_request(request)
+        run_id = normalized["runId"]
+        event_id = normalized["eventId"]
+        with self._review_lock:
+            if run_id not in self._runs:
+                raise AnalyticsError(
+                    "review.run_not_found",
+                    "未找到指定的分析运行。",
+                )
+            try:
+                review = self._reviews[run_id][event_id]
+            except KeyError as error:
+                raise AnalyticsError(
+                    "review.event_not_found",
+                    "当前运行中不存在指定事件。",
+                ) from error
+
+            receipt_key = (run_id, normalized["requestId"])
+            prior = self._review_receipts.get(receipt_key)
+            if prior is not None:
+                prior_request, prior_receipt = prior
+                if prior_request != normalized:
+                    raise AnalyticsError(
+                        "review.idempotency_conflict",
+                        "该 requestId 已用于不同的复核请求。",
+                    )
+                replayed = deepcopy(prior_receipt)
+                replayed["replayed"] = True
+                return replayed
+
+            if normalized["expectedRevision"] != review["revision"]:
+                raise AnalyticsError(
+                    "review.conflict",
+                    "复核记录已更新，请刷新后基于最新版本重试。",
+                )
+
+            entry, updated_review = append_review_entry(
+                review=review,
+                request=normalized,
+                created_at=_timestamp(self._clock()),
+            )
+            self._reviews[run_id][event_id] = updated_review
+            self.get_event(run_id, event_id)["reviewState"] = updated_review[
+                "currentState"
+            ]
+            receipt = {
+                "schemaVersion": 1,
+                "replayed": False,
+                "entry": entry,
+                "review": updated_review,
+            }
+            self._review_receipts[receipt_key] = (
+                deepcopy(normalized),
+                deepcopy(receipt),
+            )
+            return deepcopy(receipt)
 
     def get_series(
         self,
@@ -155,12 +345,60 @@ class AnalyticsService:
         event_id: str | None,
         allow_llm_rendering: bool,
     ) -> dict[str, Any]:
-        return self._assistant.answer(
-            run=self.get_run(run_id),
+        try:
+            run = self.get_run(run_id)
+        except AnalyticsError as error:
+            if error.code == "run.not_found":
+                raise AnalyticsError(
+                    "assistant.run_not_found",
+                    "未找到指定的分析运行。",
+                ) from error
+            raise
+        reviews = self._review_snapshot(run_id)
+        answer = self._assistant.answer(
+            run=run,
             question_id=question_id,
             event_id=event_id,
-            allow_llm_rendering=allow_llm_rendering,
+            allow_llm_rendering=False,
+            report_factory=lambda selected_event_id: self._reports.render(
+                run=run,
+                kind="single_event_diagnosis",
+                event_id=selected_event_id,
+                reviews=reviews,
+            ),
         )
+        rendering = self._llm_renderer.render(
+            deterministic_answer=answer,
+            requested=allow_llm_rendering,
+        )
+        if rendering["status"] == "rendered":
+            rendered = deepcopy(answer)
+            rendered["mode"] = "LLM_RENDERED"
+            rendered["sections"][0]["text"] = rendering["renderedText"]
+            rendered["provenance"] = rendering["provenance"]
+            return rendered
+        if allow_llm_rendering and rendering["status"] == "fallback":
+            fallback = deepcopy(answer)
+            fallback["provenance"]["rendererVersion"] = (
+                f"stepfun-compatible-renderer-v1:{rendering['reason']}"
+            )
+            fallback["provenance"]["limitations"] = [
+                *fallback["provenance"]["limitations"],
+                f"LLM rendering fallback: {rendering['reason']}.",
+            ]
+            return fallback
+        return answer
+
+    def resolve_assistant_intent(self, *, run_id: str, text: str) -> dict[str, Any]:
+        try:
+            self.get_run(run_id)
+        except AnalyticsError as error:
+            if error.code == "run.not_found":
+                raise AnalyticsError(
+                    "assistant.run_not_found", "未找到指定的分析运行。"
+                ) from error
+            raise
+        return resolve_intent(text)
 
     def export_report(
         self,
@@ -170,12 +408,31 @@ class AnalyticsService:
         event_id: str | None = None,
         time_range: dict[str, str] | None = None,
     ) -> dict[str, Any]:
-        return self._reports.render(
-            run=self.get_run(run_id),
-            kind=kind,
-            event_id=event_id,
-            time_range=time_range,
-        )
+        try:
+            run = self.get_run(run_id)
+        except AnalyticsError as error:
+            if error.code == "run.not_found":
+                raise AnalyticsError(
+                    "report.run_not_found",
+                    "未找到指定的分析运行。",
+                ) from error
+            raise
+        try:
+            reviews = self._review_snapshot(run_id)
+            return self._reports.render(
+                run=run,
+                kind=kind,
+                event_id=event_id,
+                time_range=time_range,
+                reviews=reviews,
+            )
+        except AnalyticsError:
+            raise
+        except Exception as error:
+            raise AnalyticsError(
+                "report.render_failed",
+                "报告生成失败，内部细节已隐藏。",
+            ) from error
 
     def export_submission(self, run_id: str) -> dict[str, Any]:
         return self.export_report(run_id=run_id, kind="submission_csv")
@@ -185,6 +442,51 @@ class AnalyticsService:
             return self._datasets[dataset_id]
         except KeyError as error:
             raise AnalyticsError("dataset.not_found", "Dataset was not found.") from error
+
+    def _review_snapshot(self, run_id: str) -> dict[str, dict[str, Any]]:
+        with self._review_lock:
+            return deepcopy(self._reviews[run_id])
+
+    def _require_streaming_import(self) -> None:
+        if not self._streaming_import_enabled:
+            raise AnalyticsError(
+                "upload.disabled", "分块导入未启用，旧版单请求导入仍可使用。"
+            )
+
+    def _upload_manager(self) -> CsvUploadSessionManager:
+        self._require_streaming_import()
+        if self._uploads is None:
+            self._uploads = CsvUploadSessionManager(loader=self._loader)
+        return self._uploads
+
+
+def create_runtime_service() -> AnalyticsService:
+    return AnalyticsService(
+        streaming_import_enabled=streaming_import_enabled_from_environment(),
+        llm_config=llm_rendering_config_from_environment(),
+    )
+
+
+def streaming_import_enabled_from_environment(
+    environ: Mapping[str, str] | None = None,
+) -> bool:
+    environment = os.environ if environ is None else environ
+    value = environment.get("H2_STREAMING_IMPORT_ENABLED")
+    if value is None:
+        return H2_STREAMING_IMPORT_ENABLED
+    if value not in {"true", "false"}:
+        raise RuntimeError("H2_STREAMING_IMPORT_ENABLED must be true or false.")
+    return value == "true"
+
+
+def _ml_verification_enabled() -> bool:
+    """P1-9c 灰度开关：settings 预置 False；env ``H2_ML_ENABLED=true`` 为灰度
+    评测通道（evaluate.mjs → launcher → ``uv run`` 全链 env 透传，与
+    ``H2_LLM_ENABLED`` 同式）。默认（无 env、常量 False）= 纯规则模式。
+    """
+    if os.environ.get("H2_ML_ENABLED", "").strip().lower() == "true":
+        return True
+    return H2_ML_ENABLED
 
 
 def _plus_one_second(value: str) -> str:
@@ -200,3 +502,9 @@ def _parse_timestamp(value: str) -> datetime:
     if parsed.tzinfo is None:
         raise AnalyticsError("time.invalid", "Timestamp must include a timezone.")
     return parsed
+
+
+def _timestamp(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")

@@ -10,6 +10,7 @@ import {
   H2_FIXTURE_QUALITY_REPORT,
   H2_GOLDEN_C03_EVENT,
   H2_GOLDEN_C04_EVENT,
+  type H2AssistantRequest,
 } from '@opendashboard/h2-contracts'
 import {
   createFixtureH2EmsDataSource,
@@ -291,7 +292,7 @@ describe('H2 EMS remote response validation', () => {
       mutate(answer)
       await rejectsInvalid(() => sourceFor(envelope(answer)).ask({
         runId: 'run-1',
-        questionId: 'H2Q01',
+        questionId: 'H2Q01' as unknown as H2AssistantRequest['questionId'],
         allowLlmRendering: false,
       }))
     }

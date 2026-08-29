@@ -1,43 +1,67 @@
-# H2 Sentinel Submission Handoff
+# H2 Sentinel P2 B-Line Submission Handoff
 
-## Identity and scope
+## Scope and current truth
 
-- Submission working branch: `competition/h2-sentinel`.
-- Original H6 integration gate: `8bcc8d59e352def535c26504683975959ff7f18d`.
-- Current coordinator-verified assembled snapshot; final candidate SHA is pending coordinator handoff.
-- Owned write path: `submission/h2-sentinel/**`.
-- Scope: current H6 evidence packaging only. No product code, contracts, root manifests, CI, launcher, tests, `MEMORY.md`, or `main` branch was modified.
+- Lane C owns only `validation/**`, `tests/h2-sentinel/**`, and
+  `submission/h2-sentinel/**`.
+- Integrated P1 facts are repeatable through Q01-Q10, review, Q09, report,
+  audit, submission, provenance, and launcher regression gates.
+- Historical worker failures remain historical and are not current defects.
+- The package remains read-only. All data/material entries plus the workbook
+  match, 21 of 24 total manifest entries; the three top-level
+  requirement/README Markdown or DOCX files differ.
+- No official package file, root file, product code, contract, analytics code,
+  Web code, plugin, nested worktree, or main branch was modified.
+- No final official metric, retained screenshot, measured receipt, organizer
+  result, deployment, remote CI result, or final candidate SHA is claimed.
+- P2 dependency and coordinator-integration SHAs, owned-path summaries,
+  verification gates, rollback, and limitations are recorded in
+  [P2-B-IMPLEMENTATION-RECORD.md](../../docs/competition/h2-sentinel/P2-B-IMPLEMENTATION-RECORD.md).
+- The operator path, exact commands, environment-variable names, 16-column
+  order, signs, and troubleshooting are recorded in
+  [OPERATOR_RUNBOOK.md](OPERATOR_RUNBOOK.md).
+- Coordinator commit `40b3d391f42a13071f959bd753456afb9e02b2d5`
+  adds strict `H2_STREAMING_IMPORT_ENABLED=true` Local opt-in. Coordinator
+  evidence records a successful standard-launcher HTTP full-file import with
+  provider environment cleared, 29 chunks, 525,600 rows, exact size/hash,
+  finalized session, and passed quality; browser file-picker and external
+  evidence remain pending.
 
-## Delivered documentation
+## Delivered
 
-- Updated README, claims ledger, runtime checklist, demo/fallback script, judge checklist, ten-page narrative, architecture narrative, screenshot plan, and license checklist for the assembled H6 candidate.
-- Kept explicit distinctions among current runtime checks, sanitized Fixture evidence, Local deterministic results, manual Chrome observations, and unverified or undelivered evidence.
-- Kept the package validator in `scripts/validate-submission.ps1` unchanged.
+- Exact official 69-field slice preparation with strict source hashes,
+  earliest-C04 selection, inclusive 30-minute padding, label exclusion,
+  ignored output, and relative-path manifest receipts.
+- C01-C07 event-level evaluation, disjoint-window overfit sentinel, exact
+  affected-equipment submission checker, and full test-set offline smoke.
+- A reproducible two-execution scripted local workflow covering import,
+  analysis, evidence read, review, Q09 diagnosis, review audit, and submission.
+- QA fixtures for official vocabulary, event matching, equipment tokens,
+  package-integrity wording, P1 regressions, and detector-input privacy.
+- Updated submission evidence that distinguishes historical snapshots,
+  repeatable integrated facts, and final coordinator-owned evidence.
 
-## Evidence basis
+## Verification
 
-- [H6 integration handoff](../../scripts/h2-sentinel/HANDOFF.md)
-- [H2 contracts handoff](../../packages/h2-contracts/HANDOFF.md)
-- [H2 analytics handoff](../../services/h2-analytics/HANDOFF.md)
-- [H2 plugin handoff](../../plugins/h2-ems/HANDOFF.md)
-- [H2 Web handoff](../../apps/web/src/features/h2-sentinel/HANDOFF.md)
-- [H2 QA matrix](../../tests/h2-sentinel/ACCEPTANCE_MATRIX.md)
+Lane C verification comprises the complete Node contract/tool suite,
+`npm run h2:qa`, supported launcher tests, the submission package checker, a
+changed-path/ignored-output audit, and `git diff --check`. Exact outcomes and
+the Lane C commit SHA are carried in the Orca `worker_done` message.
 
-The assembled verification recorded 92 repository tests, 60 focused H2 tests, 32 Python pytest cases, nine launcher tests, five assembled QA groups, and nine H2 smoke scenarios. Its production build processed 684 modules and emitted 900.01 kB minified JavaScript (297.15 kB gzip) plus 47.44 kB CSS, with the expected greater-than-500-kB warning. Manual Chrome review covered desktop and 390x844 Fixture flows without document-width overflow; no screenshot asset or automated visual suite is claimed.
+## Exact final coordinator gates
 
-## Resolved report-format correction
+After integrating Lane A and Lane B, the coordinator must run from one clean
+final candidate SHA:
 
-Plugin source `92f7b78027b9492a5a5fe8ced2e851ed4199aeaa`, integrated by the coordinator as `abe454b`, resolves the H6-discovered Fixture mismatch. Single-event diagnosis, period summary, and quality reports now produce deterministic safe HTML with matching media types and filenames. JSON and CSV report kinds retain their corresponding formats. The Local C03 HTML report and two-row, exact-16-column `submission.csv` remain separate Local deterministic evidence; neither output is official-data, score, or deployment proof.
+1. full repository, H2, Python, build, and launcher checks;
+2. official validation evaluation with overall and C01-C07 metrics;
+3. the disjoint train-window overfit sentinel;
+4. full official test-set offline smoke plus exact submission checker;
+5. two consecutive scripted validation-slice executions plus receipt
+   validation;
+6. desktop and 390x844 visual inspection with retained screenshots; and
+7. changed-path, ignored-output, official-data absence, source-integrity, and
+   package-wording audits.
 
-## Verification commands
-
-```powershell
-pwsh -NoProfile -File submission/h2-sentinel/scripts/validate-submission.ps1
-git diff --check -- submission/h2-sentinel
-```
-
-The validator covers ten required documents, ten narrative pages, local links, and placeholder language. It does not validate runtime behavior, official data, validation metrics, deployment, remote CI, screenshots, or network isolation.
-
-## Project memory
-
-`MEMORY.md` was not updated because it is outside the sole write allowlist.
+Generated official files must remain ignored and untracked. Project
+`MEMORY.md` remains coordinator-owned and was not updated by Lane C.

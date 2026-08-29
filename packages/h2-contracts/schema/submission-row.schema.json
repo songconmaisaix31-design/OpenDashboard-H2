@@ -57,7 +57,7 @@
         "DISCHARGE_RESERVE_SHORTFALL"
       ]
     },
-    "severity": { "enum": ["low", "medium", "high", "critical"] },
+    "severity": { "enum": ["中", "高"] },
     "primary_control_object": { "type": "string", "minLength": 1 },
     "affected_equipment": { "type": "string", "minLength": 1 },
     "confidence": { "type": "number", "minimum": 0, "maximum": 1 },

@@ -9,6 +9,7 @@ import {
 import { H2SentinelView } from '../H2SentinelView.tsx'
 import {
   INITIAL_H2_COMMAND_STATE,
+  INITIAL_H2_REVIEW_COMMAND_STATE,
   type H2WorkspaceState,
 } from '../model/view-state.ts'
 import {
@@ -23,24 +24,67 @@ import {
 } from '../routes.ts'
 import {
   CORRECTED_C04_IMPACT_KWH,
+  createH2WebFixtureDataSource,
   H2_WEB_FIXTURE_C04_EVENT,
   H2_WEB_FIXTURE_EVENTS,
   H2_WEB_FIXTURE_RUN,
 } from './fixture-data-source.ts'
 
 const noop = () => undefined
+const fixtureDataSource = createH2WebFixtureDataSource()
 
-const readyState: H2WorkspaceState = {
+const readyState = {
   status: 'ready',
   workspace: {
     mode: 'FIXTURE',
     datasets: [H2_WEB_FIXTURE_RUN.dataset],
     run: H2_WEB_FIXTURE_RUN,
     events: H2_WEB_FIXTURE_EVENTS,
-    series: null,
-    seriesError: 'Focused SSR test does not render a chart instance.',
   },
-}
+} as const satisfies H2WorkspaceState
+
+const liveProvenance = {
+  ...H2_WEB_FIXTURE_RUN.provenance,
+  mode: 'LIVE_ANALYSIS',
+  source: 'local-import',
+} as const
+const liveEvents = H2_WEB_FIXTURE_EVENTS.map((event) => ({
+  ...event,
+  provenance: liveProvenance,
+}))
+const liveDataset = {
+  ...H2_WEB_FIXTURE_RUN.dataset,
+  datasetId: 'live-dataset',
+  name: 'Imported H2 dataset',
+  mode: 'LIVE_ANALYSIS',
+  sourceFilename: 'live-input.csv',
+  provenance: liveProvenance,
+} as const
+const liveRun = {
+  ...H2_WEB_FIXTURE_RUN,
+  runId: 'run-live-analysis',
+  dataset: liveDataset,
+  quality: {
+    ...H2_WEB_FIXTURE_RUN.quality,
+    datasetId: liveDataset.datasetId,
+    checks: H2_WEB_FIXTURE_RUN.quality.checks.map((check) => ({
+      ...check,
+      provenance: liveProvenance,
+    })),
+    provenance: liveProvenance,
+  },
+  events: liveEvents,
+  provenance: liveProvenance,
+} as const
+const liveReadyState = {
+  status: 'ready',
+  workspace: {
+    mode: 'LIVE_ANALYSIS',
+    datasets: [liveDataset],
+    run: liveRun,
+    events: liveEvents,
+  },
+} as const satisfies H2WorkspaceState
 
 describe('H2 Sentinel presentation', () => {
   it('keeps all six top-level views directly addressable', () => {
@@ -49,7 +93,7 @@ describe('H2 Sentinel presentation', () => {
       [{ route: 'events' }, '异常事件中心'],
       [{ route: 'diagnosis', eventId: H2_WEB_FIXTURE_EVENTS[0].eventId }, '证据链'],
       [{ route: 'analysis' }, '字段字典'],
-      [{ route: 'assistant' }, '十个运行问题'],
+      [{ route: 'assistant' }, '十个官方问题'],
       [{ route: 'reports' }, '竞赛提交结果'],
     ] as const satisfies readonly [H2NavigationTarget, string][]
 
@@ -69,6 +113,159 @@ describe('H2 Sentinel presentation', () => {
     assert.match(markup, /29\.33/)
     assert.doesNotMatch(markup, /86\.5/)
     assert.match(markup, /必须人工确认/)
+    assert.match(markup, /正在读取当前事件窗口/)
+  })
+
+  it('keeps overview shortcuts and diagnosis source badges truthful for each mode', () => {
+    const fixtureOverview = renderView(readyState, { route: 'overview' })
+    assert.match(fixtureOverview, /Fixture examples/)
+    assert.match(fixtureOverview, /C03 \/ C04 固定样例直达/)
+    assert.match(fixtureOverview, /两次以内直达详情/)
+    assert.match(fixtureOverview, /样例就绪/)
+    assert.match(fixtureOverview, /h2-badge--fixture[^>]*>样例就绪<\/span>/)
+
+    const liveOverview = renderView(liveReadyState, { route: 'overview' })
+    assert.match(liveOverview, /Official capabilities/)
+    assert.match(liveOverview, /C03 \/ C04 当前运行事件直达/)
+    assert.match(liveOverview, /仅显示当前运行已检出事件/)
+    assert.match(liveOverview, /LIVE · 当前运行/)
+    assert.match(liveOverview, /h2-badge--live[^>]*>LIVE · 当前运行<\/span>/)
+    assert.doesNotMatch(liveOverview, /Fixture examples|FIXTURE|固定样例|两次以内直达详情|样例就绪|h2-badge--fixture/)
+
+    const fixtureDiagnosis = renderView(readyState, {
+      route: 'diagnosis',
+      eventId: H2_WEB_FIXTURE_EVENTS[0].eventId,
+    })
+    assert.match(fixtureDiagnosis, /h2-badge--fixture[^>]*>固定样例<\/span>/)
+
+    const liveEvent = liveEvents[0]
+    assert.ok(liveEvent)
+    const liveDiagnosis = renderView(liveReadyState, {
+      route: 'diagnosis',
+      eventId: liveEvent.eventId,
+    })
+    assert.match(liveDiagnosis, /h2-badge--live[^>]*>本地实时分析<\/span>/)
+    assert.doesNotMatch(liveDiagnosis, /Fixture examples|FIXTURE|固定样例|样例就绪|h2-badge--fixture/)
+  })
+
+  it('renders only the canonical run source identity when workspace or event fields disagree', () => {
+    const fixtureRunWithLiveWorkspaceFields = {
+      status: 'ready',
+      workspace: {
+        ...readyState.workspace,
+        mode: 'LIVE_ANALYSIS',
+        events: liveEvents,
+      },
+    } as const satisfies H2WorkspaceState
+    const liveRunWithFixtureWorkspaceFields = {
+      status: 'ready',
+      workspace: {
+        ...liveReadyState.workspace,
+        mode: 'FIXTURE',
+        events: H2_WEB_FIXTURE_EVENTS,
+      },
+    } as const satisfies H2WorkspaceState
+    const fixtureEventId = H2_WEB_FIXTURE_EVENTS[0].eventId
+
+    for (const navigation of [
+      { route: 'overview' },
+      { route: 'events' },
+      { route: 'diagnosis', eventId: fixtureEventId },
+      { route: 'analysis' },
+      { route: 'assistant' },
+      { route: 'reports' },
+    ] as const satisfies readonly H2NavigationTarget[]) {
+      assertOnlyFixtureSourceIdentity(
+        renderView(fixtureRunWithLiveWorkspaceFields, navigation),
+      )
+      assertOnlyLiveSourceIdentity(
+        renderView(liveRunWithFixtureWorkspaceFields, navigation),
+      )
+    }
+  })
+
+  it('makes the judge path, C01-C07 coverage, source identity, and sign conventions visible', () => {
+    const overviewMarkup = renderView(readyState, { route: 'overview' })
+    assert.match(overviewMarkup, /一条路径完成核验、复核与导出/)
+    assert.match(overviewMarkup, /数据源 \/ 导入/)
+    assert.match(overviewMarkup, /证据链/)
+    assert.match(overviewMarkup, /人工复核/)
+    assert.match(overviewMarkup, /Q01–Q10 助手/)
+    assert.match(overviewMarkup, /报告 \/ 提交导出/)
+    assert.match(overviewMarkup, new RegExp(H2_WEB_FIXTURE_RUN.dataset.sourceFilename))
+    assert.match(overviewMarkup, new RegExp(H2_WEB_FIXTURE_RUN.dataset.fingerprint))
+    assert.match(overviewMarkup, /无控制权限/)
+    assert.match(overviewMarkup, /最近 24 小时/)
+    for (const code of ['C01', 'C02', 'C03', 'C04', 'C05', 'C06', 'C07']) {
+      assert.match(overviewMarkup, new RegExp(code))
+    }
+    assert.match(overviewMarkup, /PCC.*正值上网（送出），负值下网（受电）/s)
+    assert.match(overviewMarkup, /储能.*正值放电，负值充电/s)
+
+    const analysisMarkup = renderView(readyState, { route: 'analysis' })
+    assert.match(analysisMarkup, /符号约定/)
+    assert.match(analysisMarkup, /正值上网（送出），负值下网（受电）/)
+    assert.match(analysisMarkup, /正值放电，负值充电/)
+    assert.match(analysisMarkup, /正在读取所选变量/)
+  })
+
+  it('keeps arbitrary measurement and constraint fields selectable in Analysis', () => {
+    const fields = [
+      ...H2_WEB_FIXTURE_RUN.dataset.fields,
+      {
+        name: 'arbitrary_manifest_measurement_kw',
+        displayNameZh: '任意清单测量字段',
+        role: 'measurement',
+        required: false,
+        unit: 'kW',
+      },
+      {
+        name: 'metadata_only_field',
+        displayNameZh: '仅元数据字段',
+        role: 'metadata',
+        required: false,
+      },
+    ] as const
+    const run = {
+      ...H2_WEB_FIXTURE_RUN,
+      dataset: { ...H2_WEB_FIXTURE_RUN.dataset, fields },
+    }
+    const state = {
+      status: 'ready',
+      workspace: {
+        ...readyState.workspace,
+        run,
+      },
+    } as const satisfies H2WorkspaceState
+    const markup = renderView(state, { route: 'analysis' })
+    const select = markup.match(/<select[\s\S]*?<\/select>/u)?.[0]
+
+    assert.ok(select)
+    assert.match(select, /arbitrary_manifest_measurement_kw/)
+    assert.doesNotMatch(select, /metadata_only_field/)
+  })
+
+  it('blocks downstream judge steps when the data-quality gate is blocked', () => {
+    const blockedState: H2WorkspaceState = {
+      status: 'ready',
+      workspace: {
+        ...readyState.workspace,
+        run: {
+          ...H2_WEB_FIXTURE_RUN,
+          quality: {
+            ...H2_WEB_FIXTURE_RUN.quality,
+            status: 'blocked',
+            blockingReasons: ['缺少官方必填字段'],
+          },
+        },
+      },
+    }
+    const markup = renderView(blockedState, { route: 'overview' })
+    assert.match(markup, /质量门禁已阻断后续分析/)
+    assert.match(markup, /缺少官方必填字段/)
+    assert.match(markup, /暂不可用/)
+    assert.match(markup, /disabled=""/)
+    assert.match(markup, /未生成替代事件或推测结论/)
   })
 
   it('distinguishes loading, empty, error, and unknown safety states', () => {
@@ -157,14 +354,40 @@ function renderView(
   return renderToStaticMarkup(
     <H2SentinelView
       commandState={commandState}
+      dataSource={fixtureDataSource}
       navigation={navigation}
       onAsk={noop}
+      onCancelImport={noop}
       onDownload={noop}
       onExport={noop}
       onImport={noop}
       onNavigate={noop}
+      onReloadReview={noop}
       onRetry={noop}
+      onReview={noop}
+      onSelectEvent={noop}
+      onSubmitFollowUp={async () => ({ status: 'stale' })}
+      reviewState={INITIAL_H2_REVIEW_COMMAND_STATE}
+      selectedEventId={navigation.eventId ?? null}
       workspaceState={workspaceState}
     />,
+  )
+}
+
+function assertOnlyFixtureSourceIdentity(markup: string): void {
+  assert.match(markup, /FIXTURE · 固定样例/)
+  assert.match(markup, /h2-badge--fixture/)
+  assert.doesNotMatch(
+    markup,
+    /LIVE_ANALYSIS · 本地数据|本地实时分析|Official capabilities|LIVE · 当前运行|h2-badge--live/,
+  )
+}
+
+function assertOnlyLiveSourceIdentity(markup: string): void {
+  assert.match(markup, /LIVE_ANALYSIS · 本地数据/)
+  assert.match(markup, /h2-badge--live/)
+  assert.doesNotMatch(
+    markup,
+    /FIXTURE · 固定样例|Fixture examples|固定样例直达|样例就绪|h2-badge--fixture/,
   )
 }

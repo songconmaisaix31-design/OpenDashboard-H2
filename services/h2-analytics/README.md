@@ -32,17 +32,20 @@ provider without inferring an official score or dataset result.
 |---|---|---|
 | `single_event_diagnosis` | HTML | `text/html` |
 | `period_summary` | HTML | `text/html` |
+| `pcc_daily_compliance` | HTML | `text/html` |
 | `analysis_result_json` | JSON | `application/json` |
 | `validation_metrics` | JSON | `application/json` |
 | `quality_report` | HTML | `text/html` |
+| `review_audit_json` | JSON | `application/json` |
 | `submission_csv` | CSV | `text/csv` |
 
-The quality HTML artifact contains the dataset/run identity, quality status,
-row count, time range, checks, warnings or blocking reasons, provenance,
-limitations, and the human-confirmation disclaimer. HTML is rendered through
-Jinja autoescaping; imported filenames and report values are never inserted as
-trusted markup. The JSON validation artifact contains the run ID, quality
-payload, and provenance. Submission output remains the frozen 16-column CSV.
+Judge-visible HTML is Simplified Chinese, declares `lang="zh-CN"`, uses only
+bounded local styles, and is rendered through Jinja autoescaping. Imported
+filenames, event prose, actor labels, and review notes are never inserted as
+trusted markup. `validation_metrics` fails with `report.metrics_unavailable`
+until labels, split identity, matching rules, and versioned configuration are
+available; quality data is not misrepresented as validation metrics.
+Submission output remains the frozen 16-column CSV.
 
 ## Route map
 
@@ -51,6 +54,13 @@ payload, and provenance. Submission output remains the frozen 16-column CSV.
 actual FastAPI route table. FastAPI documentation and OpenAPI routes are
 disabled; no unlisted framework route is exposed.
 
+Review history is available at
+`GET /api/v1/h2-sentinel/runs/{runId}/events/{eventId}/review`; append-only
+mutations use
+`POST /api/v1/h2-sentinel/runs/{runId}/events/{eventId}:review`. Mutations are
+serialized in process, enforce `expectedRevision`, and deduplicate exact
+`requestId` replay without changing detector or submission fields.
+
 Browser traffic is expected to use the H6 same-origin proxy. The sidecar does
 not add permissive CORS behavior; Host and Origin checks remain limited to
 `127.0.0.1`, `localhost`, and `::1`.
@@ -58,11 +68,21 @@ not add permissive CORS behavior; Host and Origin checks remain limited to
 ## Deterministic detector boundary
 
 `RuleRowDetector` is the always-available fallback and implements the frozen
-C03 and C04 field mappings. Its C04 confirmation margin is externalized in
-`H2Constraints`; impact still integrates only the eight corrected inclusive
-violation rows. `LightGbmRowDetector` accepts an already-loaded, approved
-booster and never a user-supplied model path. Remaining class impact identities
-are declared, but this gate does not guess unfrozen official field mappings.
+C01-C07 mappings against the canonical 69-field vocabulary. Detection and
+aggregation thresholds are versioned in
+`packages/h2-vocabulary/data/detection-thresholds.json`; public label columns
+are rejected before parsing and are never passed to a detector. Evidence,
+impact formulas, safety constraints, and human-confirmation recommendations
+are emitted for every class. `LightGbmRowDetector` remains an injection seam
+for an already-loaded, approved booster and never accepts a user-supplied model
+path; the default and no-LLM paths remain deterministic.
+
+Single in-memory imports are bounded at 96 MiB and 180,000 rows. This accepts
+the supplied validation and test files while rejecting the larger train file
+during iteration before its rows are fully materialized. Train evaluation must
+use the coordinator-owned offline UTC-day chunk/overfit path; it is not accepted
+as one Web/service request. These are enforced local-runtime boundaries, not
+organizer-score or production-performance claims.
 
 ## Reuse decisions
 

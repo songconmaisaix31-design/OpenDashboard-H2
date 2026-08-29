@@ -24,6 +24,7 @@ export type {
   H2Recommendation,
   H2RecommendationActionKind,
   H2ReviewState,
+  H2RootCauseCitation,
   H2SafetyCheck,
   H2SafetyStatus,
   H2Severity,
@@ -55,6 +56,32 @@ export type {
 } from './assistant.ts'
 export { H2_ASSISTANT_QUESTIONS } from './assistant.ts'
 export type {
+  H2AnomalyTaxonomyEntry,
+  H2AssistantQuestionZh,
+  H2DeprecatedFieldMapping,
+  H2EquipmentEntry,
+  H2FieldDefinition,
+  H2ImpactFormulaConfig,
+  H2OfficialSeverity,
+} from './vocabulary.ts'
+export {
+  H2_ANOMALY_TAXONOMY,
+  H2_ASSISTANT_QUESTIONS_ZH,
+  H2_DEPRECATED_FIELD_MAPPINGS,
+  H2_EQUIPMENT,
+  H2_IMPACT_FORMULAS,
+  H2_OFFICIAL_FIELDS,
+  anomalyTaxonomyByCode,
+  deprecatedFieldName,
+  equipmentById,
+  equipmentNameForRef,
+  fieldByName,
+  submissionEquipmentTokensByCode,
+  submissionEquipmentTokensForEvent,
+  toH2DatasetField,
+  validSubmissionEquipmentTokens,
+} from './vocabulary.ts'
+export type {
   H2DatasetField,
   H2DatasetFieldRole,
   H2DatasetManifest,
@@ -70,10 +97,30 @@ export type {
   H2SeriesRequest,
   H2SeriesResponse,
 } from './data-source.ts'
+export type {
+  H2CsvUploadChunkReceipt,
+  H2CsvUploadChunkRequest,
+  H2CsvUploadFinalizeReceipt,
+  H2CsvUploadFinalizeRequest,
+  H2CsvUploadSession,
+  H2CsvUploadSessionCreateRequest,
+  H2CsvUploadSessionStatus,
+  H2StreamingCsvDataSource,
+} from './ingestion.ts'
+export { H2_STREAMING_IMPORT_LIMITS } from './ingestion.ts'
+export type {
+  H2NluMatchedResult,
+  H2NluRefusedResult,
+  H2NluRefusalReason,
+  H2NluRequest,
+  H2NluResult,
+} from './nlu.ts'
+export { H2_NLU_MAX_INPUT_CHARS } from './nlu.ts'
 export {
   H2_FIXTURE_ANALYSIS_RUN,
   H2_FIXTURE_ASSISTANT_ANSWER,
   H2_FIXTURE_DATASET,
+  H2_FIXTURE_EVENT_REVIEW,
   H2_FIXTURE_PROVENANCE,
   H2_FIXTURE_QUALITY_REPORT,
   H2_FIXTURE_REPORT_DESCRIPTOR,
@@ -87,6 +134,15 @@ export type {
   H2TimeRange,
 } from './provenance.ts'
 export { H2_PROVENANCE_MODES } from './provenance.ts'
+export type {
+  H2AssistantRenderedResult,
+  H2AssistantRenderingDisabledResult,
+  H2AssistantRenderingFallbackReason,
+  H2AssistantRenderingFallbackResult,
+  H2AssistantRenderingResult,
+  H2DeterministicRenderingProvenance,
+  H2LlmRenderingProvenance,
+} from './rendering.ts'
 export type {
   H2DataQualityReport,
   H2DataQualityStatus,
@@ -103,6 +159,18 @@ export type {
   H2ReportStatus,
 } from './report.ts'
 export type {
+  H2EventReview,
+  H2LocalReviewActor,
+  H2ReviewAction,
+  H2ReviewAuditEvent,
+  H2ReviewAuditEventSnapshot,
+  H2ReviewAuditExport,
+  H2ReviewEntry,
+  H2ReviewEventRequest,
+  H2ReviewMutationReceipt,
+} from './review.ts'
+export { H2_REVIEW_ACTIONS, nextH2ReviewState } from './review.ts'
+export type {
   H2SubmissionColumn,
   H2SubmissionRow,
   H2SubmissionRowForCode,
@@ -113,3 +181,8 @@ export {
   toH2SubmissionCells,
   toH2SubmissionRow,
 } from './submission.ts'
+export type {
+  H2ChartPresentation,
+  H2ChartRequirement,
+} from './visualization.ts'
+export { H2_EVENT_CHART_REQUIREMENTS } from './visualization.ts'

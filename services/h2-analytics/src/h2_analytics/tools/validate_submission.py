@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from h2_analytics import vocabulary
 from h2_analytics.contracts import (
     ANOMALY_SUBTYPES_BY_CODE,
     PRIMARY_IMPACT_METRIC_BY_CODE,
@@ -30,6 +31,18 @@ def validate_submission_text(text: str) -> dict[str, Any]:
             raise ValueError(f"row {index} has an invalid code/subtype pair")
         if row["primary_impact_metric"] != PRIMARY_IMPACT_METRIC_BY_CODE.get(code):
             raise ValueError(f"row {index} has an invalid code/impact pair")
+        if row["severity"] != vocabulary.severity_by_code().get(code):
+            raise ValueError(f"row {index} has an invalid official severity")
+        if row["primary_control_object"] != (
+            vocabulary.primary_control_object_by_code().get(code)
+        ):
+            raise ValueError(f"row {index} has an invalid primary control object")
+        equipment_tokens = tuple(row["affected_equipment"].split(","))
+        if (
+            any(token.strip() != token for token in equipment_tokens)
+            or not vocabulary.valid_affected_equipment_tokens(code, equipment_tokens)
+        ):
+            raise ValueError(f"row {index} has invalid affected equipment")
         confidence = float(row["confidence"])
         if not 0 <= confidence <= 1:
             raise ValueError(f"row {index} confidence is outside zero to one")

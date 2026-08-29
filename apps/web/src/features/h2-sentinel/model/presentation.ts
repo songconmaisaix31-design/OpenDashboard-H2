@@ -4,8 +4,10 @@ import type {
   H2AnomalyEvent,
   H2ClaimKind,
   H2DataQualityStatus,
+  H2DatasetField,
   H2DatasetMode,
   H2EvidenceValue,
+  H2Provenance,
   H2ProvenanceMode,
   H2ReviewState,
   H2SafetyStatus,
@@ -14,13 +16,13 @@ import type {
 } from '@opendashboard/h2-contracts'
 
 export const H2_CODE_LABELS = {
-  C01: '电解槽设定值振荡',
-  C02: '可用容量未同步',
+  C01: '电解槽功率指令振荡',
+  C02: '设备可用容量未同步导致功率指令持续偏差',
   C03: '储能充放电方向异常',
-  C04: '并网点功率边界跟踪异常',
-  C05: '电网能量配额风险',
+  C04: 'PCC上下网功率边界跟踪异常',
+  C05: '上下网电量配额执行异常',
   C06: '多电解槽负荷分配异常',
-  C07: 'SOC 与调节裕度异常',
+  C07: '储能SOC目标轨迹与调节裕度管理异常',
 } as const satisfies Readonly<Record<H2AnomalyCode, string>>
 
 export const H2_SEVERITY_LABELS = {
@@ -33,8 +35,8 @@ export const H2_SEVERITY_LABELS = {
 export const H2_REVIEW_LABELS = {
   open: '待复核',
   confirmed: '已确认',
-  dismissed: '已排除',
-  resolved: '已解决',
+  dismissed: '已驳回',
+  resolved: '已闭环',
 } as const satisfies Readonly<Record<H2ReviewState, string>>
 
 export const H2_CLAIM_LABELS = {
@@ -61,6 +63,43 @@ export const H2_SAFETY_LABELS = {
   not_applicable: '不适用',
 } as const satisfies Readonly<Record<H2SafetyStatus, string>>
 
+/** Official power directions used consistently in overview, charts, and diagnosis. */
+export const H2_SIGN_CONVENTIONS = [
+  { id: 'pcc', label: 'PCC', copy: '正值上网（送出），负值下网（受电）' },
+  { id: 'bess', label: '储能', copy: '正值放电，负值充电' },
+] as const
+
+const H2_FIELD_SIGN_COPY = {
+  pcc_power_actual_kw: H2_SIGN_CONVENTIONS[0].copy,
+  pcc_power_kw: H2_SIGN_CONVENTIONS[0].copy,
+  bess_power_cmd_kw: H2_SIGN_CONVENTIONS[1].copy,
+  bess_power_actual_kw: H2_SIGN_CONVENTIONS[1].copy,
+  bess_dispatch_command_kw: H2_SIGN_CONVENTIONS[1].copy,
+  bess_power_kw: H2_SIGN_CONVENTIONS[1].copy,
+} as const satisfies Readonly<Record<string, string>>
+
+export interface H2FieldDictionaryRow {
+  readonly name: string
+  readonly chineseName: string
+  readonly role: string
+  readonly unit: string
+  readonly sign: string
+  readonly required: boolean
+}
+
+export function toH2FieldDictionaryRows(
+  fields: readonly H2DatasetField[],
+): readonly H2FieldDictionaryRow[] {
+  return fields.map((field) => ({
+    name: field.name,
+    chineseName: field.displayNameZh,
+    role: field.role,
+    unit: field.unit ?? '',
+    sign: H2_FIELD_SIGN_COPY[field.name as keyof typeof H2_FIELD_SIGN_COPY] ?? '',
+    required: field.required,
+  }))
+}
+
 export const H2_QUALITY_LABELS = {
   passed: '质量检查通过',
   warning: '存在质量警告',
@@ -73,12 +112,99 @@ export const H2_MODE_COPY = {
     description: '合成脱敏数据，仅用于可重复演示，不代表官方数据或成绩。',
   },
   LIVE_ANALYSIS: {
-    label: 'LIVE · 本地分析',
+    label: 'LIVE_ANALYSIS · 本地数据',
     description: '来自已导入数据的本地分析结果，建议仍需人工确认。',
   },
 } as const satisfies Readonly<
   Record<H2DatasetMode, { readonly label: string; readonly description: string }>
 >
+
+type H2ProvenancePresentationKind =
+  | 'fixture'
+  | 'explicit_validation_slice'
+  | 'explicit_full_validation'
+  | 'hint_validation_slice'
+  | 'hint_full_validation'
+  | 'local'
+
+export interface H2ProvenancePresentation {
+  readonly label: string
+  readonly description: string
+}
+
+const H2_PROVENANCE_PRESENTATION = {
+  fixture: H2_MODE_COPY.FIXTURE,
+  explicit_validation_slice: {
+    label: 'LIVE_ANALYSIS · 验证集切片',
+    description: '来自公开验证数据的本地准备切片；不是完整验证集、隐藏测试结果或官方成绩。',
+  },
+  explicit_full_validation: {
+    label: 'LIVE_ANALYSIS · 完整验证集',
+    description: '来自完整公开验证数据的本地分析；不是隐藏测试结果、官方成绩或生产证明。',
+  },
+  hint_validation_slice: {
+    label: 'LIVE_ANALYSIS · 未核验文件名提示（验证集切片）',
+    description: '文件名或数据集名称看起来像验证集切片，但来源身份未核验；只有独立 manifest/receipt 才能确认公共来源身份。',
+  },
+  hint_full_validation: {
+    label: 'LIVE_ANALYSIS · 未核验文件名提示（完整验证集）',
+    description: '文件名或数据集名称看起来像完整验证集，但来源身份未核验；只有独立 manifest/receipt 才能确认公共来源身份。',
+  },
+  local: H2_MODE_COPY.LIVE_ANALYSIS,
+} as const satisfies Readonly<
+  Record<H2ProvenancePresentationKind, H2ProvenancePresentation>
+>
+
+export function getH2ProvenancePresentation(
+  provenance: H2Provenance,
+  sourceHints: readonly string[] = [],
+): H2ProvenancePresentation {
+  return H2_PROVENANCE_PRESENTATION[classifyH2Provenance(provenance, sourceHints)]
+}
+
+export function getH2ProvenanceLabel(
+  provenance: H2Provenance,
+  sourceHints: readonly string[] = [],
+): string {
+  return getH2ProvenancePresentation(provenance, sourceHints).label
+}
+
+function classifyH2Provenance(
+  provenance: H2Provenance,
+  sourceHints: readonly string[],
+): H2ProvenancePresentationKind {
+  if (provenance.mode === 'FIXTURE') return 'fixture'
+
+  const explicitEvidence = normalizeH2ProvenanceEvidence([
+    provenance.source,
+    ...provenance.limitations,
+  ])
+  if (hasH2ValidationSliceMarker(explicitEvidence)) return 'explicit_validation_slice'
+  if (hasH2FullValidationMarker(explicitEvidence)) return 'explicit_full_validation'
+
+  const hintEvidence = normalizeH2ProvenanceEvidence(sourceHints)
+  if (hasH2ValidationSliceMarker(hintEvidence)) return 'hint_validation_slice'
+  if (hasH2FullValidationMarker(hintEvidence)) return 'hint_full_validation'
+  return 'local'
+}
+
+function normalizeH2ProvenanceEvidence(values: readonly string[]): string {
+  return values.join(' ').toLocaleLowerCase('zh-CN')
+}
+
+function hasH2ValidationSliceMarker(evidence: string): boolean {
+  return evidence.includes('validation slice') ||
+    evidence.includes('validation-slice') ||
+    evidence.includes('validation_slice') ||
+    evidence.includes('验证集切片')
+}
+
+function hasH2FullValidationMarker(evidence: string): boolean {
+  return evidence.includes('full validation') ||
+    evidence.includes('full-validation') ||
+    evidence.includes('full_validation') ||
+    evidence.includes('完整验证集')
+}
 
 export interface H2OverviewMetric {
   readonly label: string

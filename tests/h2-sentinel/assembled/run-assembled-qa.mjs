@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
 import { dirname, resolve } from 'node:path'
@@ -15,13 +15,29 @@ const fixtureCsvPath = resolve(repositoryRoot, 'packages/h2-contracts/fixtures/t
 const mainPath = resolve(repositoryRoot, 'apps/web/src/main.tsx')
 const shellPath = resolve(repositoryRoot, 'apps/web/src/features/h2-sentinel/components/common/H2Shell.tsx')
 const fixtureDataSourcePath = pathToFileURL(resolve(repositoryRoot, 'plugins/h2-ems/src/fixture-data-source.ts')).href
+const webFeaturePath = resolve(repositoryRoot, 'apps/web/src/features/h2-sentinel')
+const pluginSourcePath = resolve(repositoryRoot, 'plugins/h2-ems/src')
+
+const assistantQuestionIds = Array.from({ length: 10 }, (_, index) => `Q${String(index + 1).padStart(2, '0')}`)
+const diagnosisSections = [
+  '报告范围与数据来源',
+  '异常概览',
+  '证据链',
+  '原因判断：事实与推断',
+  '影响量化',
+  '安全检查',
+  '建议与人工确认',
+  '人工复核记录',
+  '版本与溯源',
+  '安全声明与限制',
+]
 
 const outcomes = []
 const activeLaunchers = new Set()
 
 function safeDetail(error) {
   const detail = error instanceof Error ? error.message : String(error)
-  return /(?:[A-Za-z]:\\|\/Users\/|\/home\/|authorization:|api[_-]?key|password|token|secret)/i.test(detail)
+  return /(?:[A-Za-z]:\\|\/Users\/|\/home\/|authorization:|api[_-]?key|password|cookie|credential|private[_ -]?key|token|secret|\.env)/i.test(detail)
     ? 'redacted assertion failure'
     : detail.replace(/\s+/g, ' ').slice(0, 240)
 }
@@ -220,7 +236,7 @@ async function rawHttpRequest(baseUrl, route, headers) {
 }
 
 function assertSafePublicText(text) {
-  assert.doesNotMatch(text, /(?:[A-Za-z]:\\|\\\\|\/(?:Users|home|etc)\/|traceback|authorization:|api[_-]?key|password|private[_ -]?key|token|secret)/i)
+  assert.doesNotMatch(text, /(?:[A-Za-z]:\\|\\\\|\/(?:Users|home|etc)\/|traceback|authorization:|api[_-]?key|password|cookie|credential|private[_ -]?key|token|secret|\.env)/i)
 }
 
 function assertSuccess(result) {
@@ -249,6 +265,88 @@ function assertArtifact(artifact, expected) {
   assert.equal(artifact.descriptor.status, 'ready')
   assert.equal(artifact.descriptor.contentHash, `sha256:${createHash('sha256').update(artifact.content).digest('hex')}`)
   assertSafePublicText(`${artifact.descriptor.safetyDisclaimer}\n${artifact.content}`)
+}
+
+function assertChineseHtml(content, requiredSections = []) {
+  assert.match(content, /^<!doctype html>/i)
+  assert.match(content, /<html lang=["']zh-CN["']>/i)
+  assert.match(content, /<meta charset=["']utf-8["']/i)
+  assert.match(content, /[\u4e00-\u9fff]/)
+  assert.match(content, /所有操作建议均须人工确认/)
+  assert.doesNotMatch(content, /<script\b|https?:\/\//i)
+  let previousPosition = -1
+  for (const section of requiredSections) {
+    const position = content.indexOf(section)
+    assert.ok(position > previousPosition, `Chinese report section is missing or out of order: ${section}`)
+    previousPosition = position
+  }
+}
+
+function assertAssistantAnswer(answer, expected) {
+  assert.equal(answer.schemaVersion, 1)
+  assert.equal(answer.runId, expected.runId)
+  assert.equal(answer.questionId, expected.questionId)
+  assert.equal(answer.mode, 'DETERMINISTIC_TEMPLATE')
+  assert.equal(answer.refusedControlClaim, true)
+  assert.equal(answer.provenance.mode, 'LIVE_ANALYSIS')
+  assert.notEqual(answer.provenance.source, 'sanitized-golden-fixture')
+  if (expected.eventId === undefined) {
+    assert.equal(answer.eventId, undefined)
+  } else {
+    assert.equal(answer.eventId, expected.eventId)
+  }
+  assert.ok(answer.sections.length > 0)
+  assert.equal(new Set(answer.sections.map(({ sectionId }) => sectionId)).size, answer.sections.length)
+  assert.equal(new Set(answer.citations.map(({ citationId }) => citationId)).size, answer.citations.length)
+  const citations = new Map(answer.citations.map((citation) => [citation.citationId, citation]))
+  const referenced = new Set()
+  for (const section of answer.sections) {
+    assert.match(section.text, /[\u4e00-\u9fff]/)
+    assert.ok(section.citationIds.length > 0)
+    assert.equal(new Set(section.citationIds).size, section.citationIds.length)
+    for (const citationId of section.citationIds) {
+      const citation = citations.get(citationId)
+      assert.ok(citation, `Assistant citation must resolve: ${citationId}`)
+      assert.equal(citation.claimKind, section.claimKind)
+      referenced.add(citationId)
+    }
+  }
+  assert.deepEqual([...referenced].sort(), [...citations.keys()].sort())
+  assert.doesNotMatch(JSON.stringify(answer), /H2Q\d{2}/)
+
+  if (expected.questionId === 'Q09') {
+    assert.ok(answer.generatedReport)
+    assertArtifact(answer.generatedReport, {
+      kind: 'single_event_diagnosis',
+      format: 'html',
+      mediaType: 'text/html',
+      filename: /-diagnosis\.html$/,
+    })
+    assert.equal(answer.generatedReport.descriptor.runId, expected.runId)
+    assert.equal(answer.generatedReport.descriptor.eventId, expected.eventId)
+    assertChineseHtml(answer.generatedReport.content, diagnosisSections)
+    const reportCitations = answer.citations.filter(({ sourceType }) => sourceType === 'report')
+    assert.equal(reportCitations.length, 1)
+    assert.equal(reportCitations[0].sourceId, answer.generatedReport.descriptor.reportId)
+    assert.equal(reportCitations[0].eventId, expected.eventId)
+  } else {
+    assert.equal(answer.generatedReport, undefined)
+  }
+}
+
+async function readSourceTree(root) {
+  const parts = []
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const path = resolve(root, entry.name)
+    if (entry.isDirectory()) {
+      if (entry.name !== 'test' && entry.name !== 'preview') {
+        parts.push(await readSourceTree(path))
+      }
+    } else if (/\.tsx?$/.test(entry.name)) {
+      parts.push(await readFile(path, 'utf8'))
+    }
+  }
+  return parts.join('\n')
 }
 
 function escapeRegex(value) {
@@ -355,6 +453,29 @@ async function verifySourceLevelEntryContract() {
   }
 }
 
+async function verifyP1WebSourceContract() {
+  const [webSource, pluginSource] = await Promise.all([
+    readSourceTree(webFeaturePath),
+    readSourceTree(pluginSourcePath),
+  ])
+  const combined = `${webSource}\n${pluginSource}`
+  assert.doesNotMatch(combined, /H2Q\d{2}/)
+  assert.match(webSource, /H2_ASSISTANT_QUESTIONS/)
+  assert.match(pluginSource, /getEventReview/)
+  assert.match(pluginSource, /reviewEvent/)
+  assert.match(webSource, /getEventReview/)
+  assert.match(webSource, /reviewEvent/)
+  assert.match(webSource, /requestId/)
+  assert.match(webSource, /expectedRevision/)
+  for (const label of ['待复核', '已确认', '已驳回', '已闭环']) {
+    assert.match(webSource, new RegExp(label))
+  }
+  assert.match(webSource, /本地.*未验证|未验证.*本地/)
+  assert.match(webSource, /LIVE_ANALYSIS · 验证集切片/)
+  assert.match(combined, /pcc_daily_compliance/)
+  assert.match(combined, /review_audit_json/)
+}
+
 async function testFixtureLaunchAndArtifact() {
   const webPort = await freePort()
   const session = await startLauncher(['--mode', 'fixture', '--web-port', String(webPort)])
@@ -366,10 +487,16 @@ async function testFixtureLaunchAndArtifact() {
     const h2 = await fetch(session.ready.webUrl, { signal: AbortSignal.timeout(5_000) })
     assert.equal(h2.ok, true)
     const artifact = await fixtureReportArtifact()
-    assert.equal(artifact.mediaType, 'text/html')
-    assert.equal(artifact.descriptor.format, 'html')
-    assert.match(artifact.descriptor.filename, /^[A-Za-z0-9][A-Za-z0-9._-]*$/)
-    assert.equal(artifact.descriptor.contentHash, `sha256:${createHash('sha256').update(artifact.content).digest('hex')}`)
+    assertArtifact(artifact, {
+      kind: 'single_event_diagnosis',
+      format: 'html',
+      mediaType: 'text/html',
+      filename: /\.html$/,
+    })
+    assert.equal(artifact.descriptor.provenance.mode, 'FIXTURE')
+    assert.match(artifact.content, /FIXTURE/)
+    assert.doesNotMatch(artifact.content, /LIVE_ANALYSIS · 验证集切片/)
+    assertChineseHtml(artifact.content, diagnosisSections)
   } finally {
     await stopLauncher(session)
   }
@@ -401,39 +528,253 @@ async function testLocalCanonicalApiAndExports() {
     assertRedactedError(invalidOrigin, 403)
     assert.equal(invalidOrigin.body.error.code, 'boundary.invalid_origin')
 
-    const csv = await readFile(fixtureCsvPath, 'utf8')
+    const liveRows = parseCsv(await readFile(fixtureCsvPath, 'utf8'))
+    const header = liveRows[0]
+    const timestampIndex = header.indexOf('timestamp')
+    const commandIndex = header.indexOf('bess_power_cmd_kw')
+    const actualIndex = header.indexOf('bess_power_actual_kw')
+    const pccActualIndex = header.indexOf('pcc_power_actual_kw')
+    for (const row of liveRows.slice(1)) {
+      if (row[timestampIndex] >= '2026-01-05T10:32:00Z') continue
+      // LIVE C03 requires the official 400 kW signature to track in the commanded direction.
+      row[commandIndex] = '-400'
+      row[actualIndex] = '-400'
+      row[pccActualIndex] = '-400'
+    }
+    const csv = `${liveRows.map((row) => row.join(',')).join('\n')}\n`
     const imported = assertSuccess(await request(
       session.ready.analyticsUrl,
       '/api/v1/h2-sentinel/datasets:import',
-      { filename: 'tiny-valid-timeseries.csv', text: csv },
+      { filename: 'validation-slice-<script>.csv', text: csv },
     ))
     assert.ok(imported.dataset.datasetId)
+    assert.equal(imported.dataset.mode, 'LIVE_ANALYSIS')
+    assert.equal(imported.dataset.provenance.mode, 'LIVE_ANALYSIS')
+    assert.notEqual(imported.dataset.provenance.source, 'sanitized-golden-fixture')
+    assert.equal(
+      imported.dataset.fingerprint,
+      `sha256:${createHash('sha256').update(csv).digest('hex')}`,
+    )
     const run = assertSuccess(await request(
       session.ready.analyticsUrl,
       '/api/v1/h2-sentinel/datasets:analyze',
       { datasetId: imported.dataset.datasetId },
     ))
+    assert.equal(run.dataset.mode, 'LIVE_ANALYSIS')
+    assert.equal(run.provenance.mode, 'LIVE_ANALYSIS')
+    assert.notEqual(run.runId, 'run-fixture-h2-sentinel-golden')
     assert.deepEqual(run.events.map((event) => event.code), ['C03', 'C04'])
-    assert.equal(run.events[1].impact.value, 29.333333333333332)
+    assert.equal(run.events[1].impact.value, 120)
     const events = assertSuccess(await request(
       session.ready.analyticsUrl,
       '/api/v1/h2-sentinel/runs/events',
       { runId: run.runId },
     ))
     assert.deepEqual(events.map((event) => event.eventId), ['C03-20260105-001', 'C04-20260105-001'])
+    const eventSnapshots = structuredClone(events)
 
-    const assistantFirst = assertSuccess(await request(
+    const eventByQuestion = new Map([
+      ['Q03', events[0].eventId],
+      ['Q09', events[1].eventId],
+    ])
+    const assistantAnswers = new Map()
+    for (const questionId of assistantQuestionIds) {
+      const eventId = eventByQuestion.get(questionId)
+      const payload = {
+        runId: run.runId,
+        questionId,
+        ...(eventId === undefined ? {} : { eventId }),
+      }
+      const withoutLlm = assertSuccess(await request(
+        session.ready.analyticsUrl,
+        '/api/v1/h2-sentinel/assistant:ask',
+        { ...payload, allowLlmRendering: false },
+      ))
+      const withLlmCompatibilityFlag = assertSuccess(await request(
+        session.ready.analyticsUrl,
+        '/api/v1/h2-sentinel/assistant:ask',
+        { ...payload, allowLlmRendering: true },
+      ))
+      assert.deepEqual(withLlmCompatibilityFlag, withoutLlm)
+      assertAssistantAnswer(withoutLlm, { runId: run.runId, questionId, eventId })
+      assistantAnswers.set(questionId, withoutLlm)
+    }
+
+    const legacyAlias = await request(
       session.ready.analyticsUrl,
       '/api/v1/h2-sentinel/assistant:ask',
       { runId: run.runId, questionId: 'H2Q03', eventId: events[0].eventId, allowLlmRendering: false },
-    ))
-    const assistantSecond = assertSuccess(await request(
+    )
+    assertRedactedError(legacyAlias, 422)
+    assert.equal(legacyAlias.body.error.code, 'assistant.question_unknown')
+    assert.match(legacyAlias.body.error.message, /[\u4e00-\u9fff]/)
+
+    const missingEvent = await request(
       session.ready.analyticsUrl,
       '/api/v1/h2-sentinel/assistant:ask',
-      { runId: run.runId, questionId: 'H2Q03', eventId: events[0].eventId, allowLlmRendering: false },
+      { runId: run.runId, questionId: 'Q03', allowLlmRendering: false },
+    )
+    assertRedactedError(missingEvent, 400)
+    assert.equal(missingEvent.body.error.code, 'assistant.event_required')
+    const mismatchedEvent = await request(
+      session.ready.analyticsUrl,
+      '/api/v1/h2-sentinel/assistant:ask',
+      { runId: run.runId, questionId: 'Q02', eventId: events[0].eventId, allowLlmRendering: false },
+    )
+    assertRedactedError(mismatchedEvent, 409)
+    assert.equal(mismatchedEvent.body.error.code, 'assistant.event_mismatch')
+
+    const submissionBeforeReview = assertSuccess(await request(
+      session.ready.analyticsUrl,
+      '/api/v1/h2-sentinel/submissions:export',
+      { runId: run.runId },
     ))
-    assert.equal(assistantFirst.mode, 'DETERMINISTIC_TEMPLATE')
-    assert.deepEqual(assistantSecond, assistantFirst)
+    const reviewEventId = events[0].eventId
+    const reviewRoute = `/api/v1/h2-sentinel/runs/${encodeURIComponent(run.runId)}/events/${encodeURIComponent(reviewEventId)}:review`
+    const reviewGetRoute = `/api/v1/h2-sentinel/runs/${encodeURIComponent(run.runId)}/events/${encodeURIComponent(reviewEventId)}/review`
+    const initialReview = assertSuccess(await request(session.ready.analyticsUrl, reviewGetRoute))
+    assert.equal(initialReview.currentState, 'open')
+    assert.equal(initialReview.revision, 0)
+    assert.deepEqual(initialReview.entries, [])
+
+    const firstReviewRequest = {
+      schemaVersion: 1,
+      requestId: 'p1-note-1',
+      runId: run.runId,
+      eventId: reviewEventId,
+      action: 'add_note',
+      expectedRevision: 0,
+      actor: {
+        kind: 'local_operator',
+        displayName: '<img src=x onerror=alert(1)>',
+      },
+      note: '<script>alert("review")</script>',
+    }
+    const firstReview = assertSuccess(await request(
+      session.ready.analyticsUrl,
+      reviewRoute,
+      firstReviewRequest,
+    ))
+    assert.equal(firstReview.replayed, false)
+    assert.equal(firstReview.review.currentState, 'open')
+    assert.equal(firstReview.review.revision, 1)
+    const replay = assertSuccess(await request(
+      session.ready.analyticsUrl,
+      reviewRoute,
+      firstReviewRequest,
+    ))
+    assert.equal(replay.replayed, true)
+    assert.equal(replay.entry.entryId, firstReview.entry.entryId)
+    assert.equal(replay.review.revision, 1)
+
+    const transitions = [
+      ['confirm', undefined, 'open', 'confirmed'],
+      ['reopen', '重新复核。', 'confirmed', 'open'],
+      ['reject', '与现场记录不一致。', 'open', 'dismissed'],
+      ['reopen', '补充记录后重新复核。', 'dismissed', 'open'],
+      ['confirm', '第二次确认。', 'open', 'confirmed'],
+      ['resolve', '现场处置完成并记录。', 'confirmed', 'resolved'],
+      ['reopen', '闭环后复查。', 'resolved', 'open'],
+    ]
+    let revision = 1
+    for (const [action, note, previousState, nextState] of transitions) {
+      const receipt = assertSuccess(await request(
+        session.ready.analyticsUrl,
+        reviewRoute,
+        {
+          schemaVersion: 1,
+          requestId: `p1-${action}-${revision}`,
+          runId: run.runId,
+          eventId: reviewEventId,
+          action,
+          expectedRevision: revision,
+          actor: { kind: 'local_operator', displayName: '本地复核员' },
+          ...(note === undefined ? {} : { note }),
+        },
+      ))
+      revision += 1
+      assert.equal(receipt.replayed, false)
+      assert.equal(receipt.entry.previousState, previousState)
+      assert.equal(receipt.entry.nextState, nextState)
+      assert.equal(receipt.review.currentState, nextState)
+      assert.equal(receipt.review.revision, revision)
+    }
+    assert.equal(revision, 8)
+
+    const staleRevision = await request(
+      session.ready.analyticsUrl,
+      reviewRoute,
+      {
+        schemaVersion: 1,
+        requestId: 'p1-stale-revision',
+        runId: run.runId,
+        eventId: reviewEventId,
+        action: 'add_note',
+        expectedRevision: 7,
+        actor: { kind: 'local_operator', displayName: '本地复核员' },
+        note: '该版本已经过期。',
+      },
+    )
+    assertRedactedError(staleRevision, 409)
+    assert.equal(staleRevision.body.error.code, 'review.conflict')
+
+    const idempotencyConflict = await request(
+      session.ready.analyticsUrl,
+      reviewRoute,
+      { ...firstReviewRequest, note: '同一 requestId 的不同语义。' },
+    )
+    assertRedactedError(idempotencyConflict, 409)
+    assert.equal(idempotencyConflict.body.error.code, 'review.idempotency_conflict')
+
+    const invalidTransition = await request(
+      session.ready.analyticsUrl,
+      reviewRoute,
+      {
+        schemaVersion: 1,
+        requestId: 'p1-invalid-resolve',
+        runId: run.runId,
+        eventId: reviewEventId,
+        action: 'resolve',
+        expectedRevision: revision,
+        actor: { kind: 'local_operator', displayName: '本地复核员' },
+        note: '不能从 open 直接闭环。',
+      },
+    )
+    assertRedactedError(invalidTransition, 409)
+    assert.equal(invalidTransition.body.error.code, 'review.invalid_transition')
+
+    const missingNote = await request(
+      session.ready.analyticsUrl,
+      reviewRoute,
+      {
+        schemaVersion: 1,
+        requestId: 'p1-reject-without-note',
+        runId: run.runId,
+        eventId: reviewEventId,
+        action: 'reject',
+        expectedRevision: revision,
+        actor: { kind: 'local_operator', displayName: '本地复核员' },
+      },
+    )
+    assertRedactedError(missingNote, 422)
+    assert.equal(missingNote.body.error.code, 'review.note_required')
+
+    const finalReview = assertSuccess(await request(session.ready.analyticsUrl, reviewGetRoute))
+    assert.equal(finalReview.currentState, 'open')
+    assert.equal(finalReview.revision, 8)
+    assert.equal(finalReview.entries.length, 8)
+    const eventsAfterReview = assertSuccess(await request(
+      session.ready.analyticsUrl,
+      '/api/v1/h2-sentinel/runs/events',
+      { runId: run.runId },
+    ))
+    assert.deepEqual(eventsAfterReview, eventSnapshots)
+    const submissionAfterReview = assertSuccess(await request(
+      session.ready.analyticsUrl,
+      '/api/v1/h2-sentinel/submissions:export',
+      { runId: run.runId },
+    ))
+    assert.equal(submissionAfterReview.content, submissionBeforeReview.content)
 
     const reportRequests = [
       {
@@ -445,10 +786,24 @@ async function testLocalCanonicalApiAndExports() {
       },
       {
         kind: 'period_summary',
-        payload: { runId: run.runId, kind: 'period_summary', timeRange: run.dataset.timeRange },
+        payload: { runId: run.runId, kind: 'period_summary' },
         format: 'html',
         mediaType: 'text/html',
         filename: /-period-summary\.html$/,
+      },
+      {
+        kind: 'pcc_daily_compliance',
+        payload: {
+          runId: run.runId,
+          kind: 'pcc_daily_compliance',
+          timeRange: {
+            startTime: '2026-01-05T00:00:00Z',
+            endTime: '2026-01-06T00:00:00Z',
+          },
+        },
+        format: 'html',
+        mediaType: 'text/html',
+        filename: /-pcc-daily-compliance\.html$/,
       },
       {
         kind: 'analysis_result_json',
@@ -465,18 +820,18 @@ async function testLocalCanonicalApiAndExports() {
         filename: /^submission\.csv$/,
       },
       {
-        kind: 'validation_metrics',
-        payload: { runId: run.runId, kind: 'validation_metrics' },
-        format: 'json',
-        mediaType: 'application/json',
-        filename: /-validation-metrics\.json$/,
-      },
-      {
         kind: 'quality_report',
         payload: { runId: run.runId, kind: 'quality_report' },
         format: 'html',
         mediaType: 'text/html',
         filename: /-quality-report\.html$/,
+      },
+      {
+        kind: 'review_audit_json',
+        payload: { runId: run.runId, kind: 'review_audit_json' },
+        format: 'json',
+        mediaType: 'application/json',
+        filename: /^review-audit-.*\.json$/,
       },
     ]
     const reports = new Map()
@@ -493,25 +848,63 @@ async function testLocalCanonicalApiAndExports() {
       } else {
         assert.equal(artifact.descriptor.eventId, undefined)
       }
+      assert.equal(artifact.descriptor.provenance.mode, 'LIVE_ANALYSIS')
+      if (expected.format === 'html') assertChineseHtml(artifact.content)
       reports.set(expected.kind, artifact)
     }
 
     const analysisResult = JSON.parse(reports.get('analysis_result_json').content)
     assert.equal(analysisResult.runId, run.runId)
     assert.deepEqual(analysisResult.events.map((event) => event.eventId), events.map((event) => event.eventId))
-    const validation = JSON.parse(reports.get('validation_metrics').content)
-    assert.equal(validation.reportKind, 'validation_metrics')
-    assert.equal(validation.runId, run.runId)
-    assert.deepEqual(validation.quality, run.quality)
-    assert.deepEqual(validation.provenance, run.provenance)
+    assert.equal(analysisResult.provenance.mode, 'LIVE_ANALYSIS')
+
+    const validationUnavailable = await request(
+      session.ready.analyticsUrl,
+      '/api/v1/h2-sentinel/reports:export',
+      { runId: run.runId, kind: 'validation_metrics' },
+    )
+    assertRedactedError(validationUnavailable, 409)
+    assert.equal(validationUnavailable.body.error.code, 'report.metrics_unavailable')
+    assert.match(validationUnavailable.body.error.message, /未生成验证指标/)
+
+    const diagnosisHtml = reports.get('single_event_diagnosis').content
+    assertChineseHtml(diagnosisHtml, diagnosisSections)
+    assert.match(diagnosisHtml, /&lt;img src=x onerror=alert\(1\)&gt;/)
+    assert.match(diagnosisHtml, /&lt;script&gt;alert/)
+    assert.doesNotMatch(diagnosisHtml, /<img src=x|<script>alert/)
+
+    const periodHtml = reports.get('period_summary').content
+    for (const heading of ['数据质量与限制', '异常统计', '重点事件', '影响摘要', '版本、溯源与安全声明']) {
+      assert.match(periodHtml, new RegExp(heading))
+    }
+    assert.match(periodHtml, /未加载公开标签，未生成验证指标/)
+
+    const pccHtml = reports.get('pcc_daily_compliance').content
+    for (const heading of ['日期、时间基准与动态边界', '越限区间、时长与越限电量', '累计进出电量与配额', '相关事件与人工复核', '数据质量、公式与假设', '溯源与安全声明']) {
+      assert.match(pccHtml, new RegExp(heading))
+    }
+    assert.match(pccHtml, /证据不足，未计算该项合规结论/)
+    assert.match(pccHtml, /120/)
+
     const qualityHtml = reports.get('quality_report').content
-    assert.match(qualityHtml, /H2 Sentinel Data Quality Report/)
-    assert.match(qualityHtml, new RegExp(`Quality status: ${escapeRegex(run.quality.status)}`))
-    assert.match(qualityHtml, new RegExp(escapeRegex(run.quality.reportId)))
-    assert.match(qualityHtml, /<th>Check<\/th><th>Status<\/th><th>Severity<\/th><th>Message<\/th>/)
+    assert.match(qualityHtml, /氢哨数据质量报告/)
+    assert.match(qualityHtml, /数据质量状态/)
+    assert.match(qualityHtml, /<th>检查项<\/th><th>状态<\/th><th>受影响字段<\/th><th>观测值<\/th><th>说明<\/th>/)
+    assert.match(qualityHtml, /未加载公开标签，未生成验证指标/)
     for (const qualityCheck of run.quality.checks) {
       assert.match(qualityHtml, new RegExp(escapeRegex(qualityCheck.code)))
     }
+
+    const auditArtifact = reports.get('review_audit_json')
+    const audit = JSON.parse(auditArtifact.content)
+    assert.equal(audit.exportKind, 'event_review_audit')
+    assert.equal(audit.runId, run.runId)
+    assert.equal(audit.actorIdentityNotice, 'local_operator_labels_are_unverified')
+    assert.deepEqual(audit.events.map(({ event }) => event.eventId), events.map(({ eventId }) => eventId))
+    assert.equal(audit.events[0].review.revision, 8)
+    assert.equal(audit.events[1].review.revision, 0)
+    assert.equal(audit.events[0].review.entries[0].note, firstReviewRequest.note)
+    assert.equal(audit.provenance.mode, 'LIVE_ANALYSIS')
 
     const submission = reports.get('submission_csv')
     const submissionRows = parseCsv(submission.content)
@@ -523,8 +916,8 @@ async function testLocalCanonicalApiAndExports() {
       'requires_human_confirmation',
     ])
     assert.deepEqual(submissionRows.slice(1).map((row) => [row[0], row[3], row[13]]), [
-      ['C03-20260105-001', 'C03', '112.4'],
-      ['C04-20260105-001', 'C04', '29.333333333333332'],
+      [events[0].eventId, 'C03', String(events[0].impact.value)],
+      [events[1].eventId, 'C04', '120.0'],
     ])
     assertSafePublicText(submission.content)
     const dedicatedSubmission = assertSuccess(await request(
@@ -533,6 +926,8 @@ async function testLocalCanonicalApiAndExports() {
       { runId: run.runId },
     ))
     assert.equal(dedicatedSubmission.content, submission.content)
+    assert.equal(dedicatedSubmission.content, submissionBeforeReview.content)
+    assert.doesNotMatch(submission.content.split(/\r?\n/, 1)[0], /review|actor|note|revision/i)
 
     const missingRun = await request(
       session.ready.analyticsUrl,
@@ -540,6 +935,15 @@ async function testLocalCanonicalApiAndExports() {
       { datasetId: 'unknown-dataset' },
     )
     assertRedactedError(missingRun, 404)
+
+    const validationSliceArtifacts = [
+      assistantAnswers.get('Q09').generatedReport,
+      ...[...reports.values()].filter(({ descriptor }) => descriptor.format === 'html'),
+    ]
+    for (const artifact of validationSliceArtifacts) {
+      assert.match(artifact.content, /LIVE_ANALYSIS · 验证集切片/)
+      assert.doesNotMatch(artifact.content, /FIXTURE ·/)
+    }
   } finally {
     await stopLauncher(session)
   }
@@ -659,8 +1063,11 @@ async function testLaunchFailureBoundaries() {
     unhealthy.listen({ host: LOOPBACK, port: unhealthyPort }, resolvePromise)
   })
   try {
+    const webPort = await freePort()
     const session = startExpectedFailure([
-      '--mode', 'local', '--external-sidecar-url', `http://${LOOPBACK}:${unhealthyPort}/`, '--health-timeout-ms', '500',
+      '--mode', 'local', '--web-port', String(webPort),
+      '--external-sidecar-url', `http://${LOOPBACK}:${unhealthyPort}/`,
+      '--health-timeout-ms', '500',
     ])
     const result = await waitForExit(session.child, 10_000)
     assert.equal(result.code, 1)
@@ -670,21 +1077,22 @@ async function testLaunchFailureBoundaries() {
   }
 }
 
-await check('A02/A05', 'Fixture launcher starts without a Python sidecar, exports a C03 HTML artifact, and cleans its owned Web process', testFixtureLaunchAndArtifact)
-await check('A01/A03/A04/A05/A07', 'Local public API import, analysis, six report/export contracts, deterministic assistant, loopback boundary, and redacted error', testLocalCanonicalApiAndExports)
+await check('A02/A05/P1-RPT', 'Fixture launcher starts without a Python sidecar, exports a Chinese C03 HTML artifact, preserves Fixture provenance, and cleans its owned Web process', testFixtureLaunchAndArtifact)
+await check('P1-API/P1-QA', 'Local public API verifies Q01-Q10, review reliability, seven available report/export contracts, submission immutability, provenance, loopback, and redacted errors', testLocalCanonicalApiAndExports)
 await check('A04/A07', 'Occupied ports and redirecting sidecar readiness fail visibly and safely', testLaunchFailureBoundaries)
 await check('A04', 'External sidecar accepts only the exact canonical health envelope and leaves external ownership intact', testExternalSidecarHealthContract)
 await check('A06/A08', 'Source-level generic/H2 entry, closed invalid-mode alert, and six-page navigation contract', verifySourceLevelEntryContract)
+await check('P1-W2', 'Web and adapter source consume official questions, review workflow, validation-slice provenance, and new report kinds', verifyP1WebSourceContract)
 
 for (const child of activeLaunchers) {
   if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
 }
 
 const summary = {
-  contract: 'h2-sentinel-assembled-qa-v2',
+  contract: 'h2-sentinel-p1-assembled-qa-v3',
   results: outcomes,
   counts: Object.fromEntries(['PASS', 'FAIL'].map((status) => [status, outcomes.filter((item) => item.status === status).length])),
-  visualVerification: 'MANUAL_REQUIRED: no browser automation dependency was added; inspect Fixture desktop and 390px widths separately.',
+  visualVerification: 'COORDINATOR_MANUAL_REQUIRED: inspect desktop and 390x844 validation-slice review, conflict, report download, and provenance states.',
 }
 console.log(JSON.stringify(summary))
 if (outcomes.some((item) => item.status === 'FAIL')) process.exitCode = 1

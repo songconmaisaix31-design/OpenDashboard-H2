@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "formulaVersion": "impact-c06-v3",
+  "source": {
+    "calibrationSplit": "public_train",
+    "competitionPackageVersion": "public-v4.0",
+    "derivation": "Independent read-only calibration from the public TRAIN split only.",
+    "sourceFiles": {
+      "timeseries": {
+        "sha256": "67513c9b1d443d25eb1258a6f58252c02cdb438f701a7921e2f8dacc365a6c51",
+        "byteCount": 236991870,
+        "dataRowCount": 525600
+      },
+      "eventLabels": {
+        "sha256": "50f84b18f905b584b3e3f9d35ed02438179b392af2090c27827f7f659993720f",
+        "byteCount": 176117,
+        "dataRowCount": 280
+      }
+    },
+    "derivationProcedure": [
+      "Select only C06 intervals from public TRAIN labels.",
+      "Sum ems_total_elz_target_kw over every inclusive one-minute event sample and divide by 60 to obtain target energy.",
+      "Divide each subtype's summed reference impact by its summed target energy, round the coefficient to three decimals, and verify every event rounds back to its published three-decimal impact.",
+      "Reproduce with python -m h2_analytics.tools.calibrate_c06 TIMESERIES LABELS; the tool emits hashes and aggregate statistics without retaining official rows."
+    ],
+    "heldOutPolicy": "Held-out validation is acceptance-only and is never used to set rates."
+  },
+  "classes": {
+    "C01": {
+      "formulaVersion": "impact-c01-v2",
+      "formula": "sum(abs(bess_power_actual_kw - socTrackingGainKwPerPct * (bess_soc_pct - soc_target_pct)) * samplingIntervalMinutes / 60) over inclusive event rows",
+      "socTrackingGainKwPerPct": 17.892,
+      "derivationProcedure": [
+        "Use only public TRAIN C01 labels and their inclusive time-series rows.",
+        "Compare candidate baselines per event against reference_impact_value: the in-window median matched 36/40 within 10%, pre-event window medians matched at most 38/40, and the SOC-tracking counterfactual matched 40/40 within rounding.",
+        "The SOC-tracking gain is inherited from the C03 TRAIN calibration (same coefficient, never re-fit) because both official reference baselines reduce to the same SOC-tracking response under the positive-discharge convention.",
+        "Reproduce with python -m h2_analytics.impact.reconcile TIMESERIES LABELS --split train; validation is acceptance-only and is never an input to the baseline choice."
+      ],
+      "calibrationStatistics": {
+        "eventCount": 40,
+        "inWindowMedianBaselineWithin10PercentCount": 36,
+        "preEventMedianBaselineBestWithin10PercentCount": 38,
+        "socTrackingBaselineWithin10PercentCount": 40
+      },
+      "roundingPolicy": "Retain full precision during calculation; round only at export.",
+      "rationale": "The official reference baseline BESS power is the SOC-tracking counterfactual response; setpoint-oscillation impact is the integrated absolute deviation from it.",
+      "limitation": "Rows missing BESS actual power or either SOC value contribute no estimate, mirroring the C03 policy.",
+      "heldOutPolicy": "Held-out validation is acceptance-only and is never used to set the C01 baseline."
+    },
+    "C02": {
+      "formulaVersion": "impact-c02-v2",
+      "formula": "sum over affected electrolyzers of max(0, elz_power_cmd_kw - elz_power_actual_kw) * samplingIntervalMinutes / 60 over inclusive event rows",
+      "affectedEquipmentSource": "window implicated_equipment_ids restricted to ELZ01/ELZ02/ELZ03; an empty set falls back to all three units so blind inputs degrade instead of crashing",
+      "derivationProcedure": [
+        "Use only public TRAIN C02 labels and their inclusive time-series rows.",
+        "Compare candidate aggregation scopes per event against reference_impact_value: summing the positive command-actual gap over all three electrolyzers matched 23/40 within 10%, while summing only the labeled affected unit matched 40/40 within rounding.",
+        "Available/run-state filters did not change the all-unit scope mismatch, confirming the official scope is the affected unit rather than a running-state filter.",
+        "Reproduce with python -m h2_analytics.impact.reconcile TIMESERIES LABELS --split train; validation is acceptance-only and is never an input to the scope choice."
+      ],
+      "calibrationStatistics": {
+        "eventCount": 40,
+        "allUnitsScopeWithin10PercentCount": 23,
+        "affectedOnlyScopeWithin10PercentCount": 40
+      },
+      "roundingPolicy": "Retain full precision during calculation; round only at export.",
+      "rationale": "Unserved electrolyzer energy is attributed to the unit whose capacity was not synchronized; other units' tracking gaps belong to normal regulation and are excluded by the official reference.",
+      "limitation": "Runtime scope depends on the detector attributing the same unit as the official label; attribution quality is tracked separately by detection metrics.",
+      "heldOutPolicy": "Held-out validation is acceptance-only and is never used to set the C02 scope."
+    },
+    "C03": {
+      "formulaVersion": "impact-c03-v2",
+      "formula": "sum(abs(bess_power_actual_kw - socTrackingGainKwPerPct * (bess_soc_pct - soc_target_pct)) * samplingIntervalMinutes / 60) over inclusive event rows",
+      "socTrackingGainKwPerPct": 17.892,
+      "derivationProcedure": [
+        "Use only public TRAIN C03 labels and their inclusive time-series rows.",
+        "Treat gain * (bess_soc_pct - soc_target_pct) as the counterfactual SOC-tracking BESS response under the official positive-discharge and negative-charge convention.",
+        "Solve one aggregate TRAIN-only gain from total reference impact, actual BESS magnitude, and signed SOC deviation, then round the gain to three decimals before freezing it.",
+        "Reproduce with python -m h2_analytics.tools.calibrate_c03 TIMESERIES LABELS; validation is not an input to the tool."
+      ],
+      "calibrationStatistics": {
+        "eventCount": 40,
+        "inclusiveSampleCount": 2717,
+        "actualPowerMagnitudeKwMinutes": "1086800",
+        "signedSocDeviationPctMinutes": "-484.624",
+        "referenceImpactKwh": "18257.849",
+        "aggregateDerivedSocTrackingGainKwPerPct": "17.89209779127736141833668989",
+        "calibratedSocTrackingGainKwPerPct": "17.892",
+        "calculatedImpactKwh": "18257.84821013333333333333334",
+        "roundedReferenceMatchCount": 0,
+        "maximumAbsoluteRoundedResidualKwh": "0.059",
+        "meanAbsoluteRoundedResidualKwh": "0.0202"
+      },
+      "roundingPolicy": "Retain full precision during calculation; round only at export.",
+      "rationale": "The SOC-tracking gain is an empirical public-TRAIN calibration coefficient, not a physical BESS constraint.",
+      "limitation": "The public files expose rounded event measurements rather than the hidden unrounded counterfactual trace; the frozen gain reproduces aggregate TRAIN reference impact within 0.001 kWh while event-level rounded residuals remain explicitly reported.",
+      "heldOutPolicy": "Held-out validation is acceptance-only and is never used to set the C03 gain."
+    },
+    "C06": {
+      "targetField": "ems_total_elz_target_kw",
+      "formula": "sum(ems_total_elz_target_kw * subtypeRate * samplingIntervalMinutes / 60) over inclusive event rows",
+      "subtypeRates": {
+        "AVOIDABLE_START_STOP": 0.018,
+        "INEFFICIENT_POWER_ALLOCATION": 0.022
+      },
+      "calibrationStatistics": {
+        "eventCount": 40,
+        "subtypes": {
+          "AVOIDABLE_START_STOP": {
+            "eventCount": 20,
+            "inclusiveSampleCount": 3332,
+            "targetKwMinutes": "3998400",
+            "targetEnergyKwh": "66640",
+            "referenceImpactKwh": "1199.52",
+            "aggregateDerivedRate": "0.018",
+            "calibratedRate": "0.018",
+            "perEventDerivedRateMinimum": "0.018",
+            "perEventDerivedRateMaximum": "0.018",
+            "roundedReferenceMatchCount": 20,
+            "maximumAbsoluteRoundedResidualKwh": "0"
+          },
+          "INEFFICIENT_POWER_ALLOCATION": {
+            "eventCount": 20,
+            "inclusiveSampleCount": 3265,
+            "targetKwMinutes": "7719859.143",
+            "targetEnergyKwh": "128664.31905",
+            "referenceImpactKwh": "2830.615",
+            "aggregateDerivedRate": "0.02199999985155169559808119934",
+            "calibratedRate": "0.022",
+            "perEventDerivedRateMinimum": "0.02199989415238423684558018271",
+            "perEventDerivedRateMaximum": "0.02200006894723501933670088134",
+            "roundedReferenceMatchCount": 20,
+            "maximumAbsoluteRoundedResidualKwh": "0"
+          }
+        }
+      },
+      "roundingPolicy": "Retain full precision during calculation; round only at export.",
+      "rationale": "Rates are empirical public-TRAIN calibration coefficients, not physical limits or constraints."
+    }
+  }
+}

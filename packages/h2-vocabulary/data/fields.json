@@ -1,0 +1,1080 @@
+{
+  "schemaVersion": 1,
+  "fields": [
+    {
+      "name": "timestamp",
+      "chineseName": "时间戳",
+      "category": "时间",
+      "dataType": "datetime",
+      "unit": "",
+      "sign": "",
+      "description": "一分钟采样时间",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "pv_forecast_kw",
+      "chineseName": "光伏预测功率",
+      "category": "光伏",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "外部预测系统提供的光伏功率预测",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C04",
+        "C05",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "pv_available_kw",
+      "chineseName": "光伏可用功率",
+      "category": "光伏",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "当前气象条件下可发功率",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C04",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "pv_actual_kw",
+      "chineseName": "光伏实际功率",
+      "category": "光伏",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "光伏实际输出功率",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C04",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "pv_curtailment_kw",
+      "chineseName": "光伏限发功率",
+      "category": "光伏",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "可用功率与实际功率之差",
+      "formula": "max(0,pv_available_kw-pv_actual_kw)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C04",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "aux_load_kw",
+      "chineseName": "制氢辅助负荷功率",
+      "category": "负荷",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "冷却、水处理、仪表和控制等辅助用电",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "soc_target_pct",
+      "chineseName": "储能目标SOC",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "%",
+      "sign": "20~90",
+      "description": "EMS计划的目标SOC轨迹",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bess_soc_pct",
+      "chineseName": "储能实际SOC",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "%",
+      "sign": "20~90",
+      "description": "储能当前荷电状态",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C03",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bess_charge_power_limit_kw",
+      "chineseName": "储能最大可充电功率",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负幅值",
+      "description": "当前状态允许的最大充电功率幅值",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C03",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bess_discharge_power_limit_kw",
+      "chineseName": "储能最大可放电功率",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负幅值",
+      "description": "当前状态允许的最大放电功率幅值",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C03",
+        "C04",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bess_power_cmd_kw",
+      "chineseName": "储能功率指令",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "正值放电，负值充电",
+      "description": "EMS下发给储能EMS的功率指令",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C01",
+        "C03",
+        "C04",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bess_power_actual_kw",
+      "chineseName": "储能实际功率",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "正值放电，负值充电",
+      "description": "储能实际充放电功率",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C01",
+        "C03",
+        "C04",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bess_available_charge_energy_kwh",
+      "chineseName": "储能剩余可充电能量",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "从当前SOC充至SOC上限的可接收能量",
+      "formula": "1000*(90-SOC)/100/充电效率",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bess_available_discharge_energy_kwh",
+      "chineseName": "储能剩余可放电能量",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "从当前SOC放至SOC下限的可输出能量",
+      "formula": "1000*(SOC-20)/100*放电效率",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bess_regulation_reserve_target_kwh",
+      "chineseName": "储能调节备用目标",
+      "category": "储能",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "当前计划要求保留的充电空间或放电备用能量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "pcc_power_cmd_kw",
+      "chineseName": "PCC目标有功功率",
+      "category": "PCC",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "正值上网，负值下网",
+      "description": "EMS对并网点的目标功率",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C03",
+        "C04"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "pcc_power_actual_kw",
+      "chineseName": "PCC实际有功功率",
+      "category": "PCC",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "正值上网，负值下网",
+      "description": "并网点实际交换功率",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C03",
+        "C04",
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_export_power_kw",
+      "chineseName": "实际上网功率",
+      "category": "PCC",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "PCC实际功率的正向分量",
+      "formula": "max(0,pcc_power_actual_kw)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C04",
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_import_power_kw",
+      "chineseName": "实际下网功率",
+      "category": "PCC",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "PCC实际功率负向幅值",
+      "formula": "max(0,-pcc_power_actual_kw)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C04",
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_export_power_limit_kw",
+      "chineseName": "上网功率上限",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负幅值",
+      "description": "当前有效的上网功率边界",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C04"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_import_power_limit_kw",
+      "chineseName": "下网功率上限",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负幅值",
+      "description": "当前有效的下网功率边界",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C04"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_export_energy_quota_kwh_day",
+      "chineseName": "当日上网电量配额",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kWh/day",
+      "sign": "非负",
+      "description": "自然日允许的累计上网电量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_import_energy_quota_kwh_day",
+      "chineseName": "当日下网电量配额",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kWh/day",
+      "sign": "非负",
+      "description": "自然日允许的累计下网电量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_export_energy_used_kwh_day",
+      "chineseName": "当日累计上网电量",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "当日从00:00累计的上网电量",
+      "formula": "Σ上网功率×1/60",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_import_energy_used_kwh_day",
+      "chineseName": "当日累计下网电量",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "当日从00:00累计的下网电量",
+      "formula": "Σ下网功率×1/60",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_export_energy_remaining_kwh",
+      "chineseName": "剩余上网电量配额",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "上网配额减累计上网电量",
+      "formula": "max(0,quota-used)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C05",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_import_energy_remaining_kwh",
+      "chineseName": "剩余下网电量配额",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "下网配额减累计下网电量",
+      "formula": "max(0,quota-used)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C05",
+        "C07"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "pcc_export_power_violation_kw",
+      "chineseName": "PCC上网功率越限量",
+      "category": "PCC",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "实际上网功率超过上网上限的部分",
+      "formula": "max(0,pcc_power_actual_kw-export_limit)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C04"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "pcc_import_power_violation_kw",
+      "chineseName": "PCC下网功率越限量",
+      "category": "PCC",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "实际下网功率超过下网上限的部分",
+      "formula": "max(0,-pcc_power_actual_kw-import_limit)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C04"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_export_energy_quota_excess_kwh",
+      "chineseName": "上网电量配额超出量",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "累计上网电量超过配额的部分",
+      "formula": "max(0,used-quota)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "grid_import_energy_quota_excess_kwh",
+      "chineseName": "下网电量配额超出量",
+      "category": "电网约束",
+      "dataType": "float",
+      "unit": "kWh",
+      "sign": "非负",
+      "description": "累计下网电量超过配额的部分",
+      "formula": "max(0,used-quota)",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C05"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "ems_total_elz_target_kw",
+      "chineseName": "EMS电解槽总目标功率",
+      "category": "EMS",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "三台电解槽目标功率合计",
+      "formula": "Σelz*_power_cmd_kw",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C01",
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "ems_power_balance_error_kw",
+      "chineseName": "EMS功率平衡误差",
+      "category": "EMS",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "可正可负",
+      "description": "光伏+储能-PCC-电解槽-辅机",
+      "formula": "PV+BESS-PCC-ELZ-AUX",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C03",
+        "C04"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "bus_frequency_hz",
+      "chineseName": "系统频率",
+      "category": "电气量",
+      "dataType": "float",
+      "unit": "Hz",
+      "sign": "约50",
+      "description": "分钟级频率参考量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_available_flag",
+      "chineseName": "1号电解槽可用标志",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0不可用，1可用",
+      "description": "设备是否允许参与功率分配",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_run_state",
+      "chineseName": "1号电解槽运行状态",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0停机，1待机，2运行，3降额",
+      "description": "设备当前运行状态",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_reported_available_capacity_kw",
+      "chineseName": "1号EMS报告可用容量",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "EMS当前认知的设备可用容量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_actual_available_capacity_kw",
+      "chineseName": "1号设备实际可用容量",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "设备PLC实际提供的可用容量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_power_cmd_kw",
+      "chineseName": "1号电解槽功率指令",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "EMS下发的单台功率指令",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C01",
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_power_actual_kw",
+      "chineseName": "1号电解槽实际功率",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "单台电解槽实际消耗功率",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C01",
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_specific_energy_kwh_per_kg",
+      "chineseName": "1号单位制氢电耗",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kWh/kg",
+      "sign": "非负",
+      "description": "当前负荷下每千克氢气所需电能",
+      "formula": "效率曲线插值",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_start_stop_count",
+      "chineseName": "1号累计启动次数",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "次",
+      "sign": "非负整数",
+      "description": "模拟期内累计启动次数",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_plc_heartbeat",
+      "chineseName": "1号PLC心跳状态",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0异常，1正常",
+      "description": "电解槽PLC通信心跳",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_current_run_duration_min",
+      "chineseName": "1号当前连续运行时长",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "min",
+      "sign": "非负整数",
+      "description": "本次连续运行已经持续的分钟数",
+      "formula": "",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz1_current_stop_duration_min",
+      "chineseName": "1号当前连续停机时长",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "min",
+      "sign": "非负整数",
+      "description": "本次连续停机已经持续的分钟数",
+      "formula": "",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_available_flag",
+      "chineseName": "2号电解槽可用标志",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0不可用，1可用",
+      "description": "设备是否允许参与功率分配",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_run_state",
+      "chineseName": "2号电解槽运行状态",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0停机，1待机，2运行，3降额",
+      "description": "设备当前运行状态",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_reported_available_capacity_kw",
+      "chineseName": "2号EMS报告可用容量",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "EMS当前认知的设备可用容量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_actual_available_capacity_kw",
+      "chineseName": "2号设备实际可用容量",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "设备PLC实际提供的可用容量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_power_cmd_kw",
+      "chineseName": "2号电解槽功率指令",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "EMS下发的单台功率指令",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C01",
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_power_actual_kw",
+      "chineseName": "2号电解槽实际功率",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "单台电解槽实际消耗功率",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C01",
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_specific_energy_kwh_per_kg",
+      "chineseName": "2号单位制氢电耗",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kWh/kg",
+      "sign": "非负",
+      "description": "当前负荷下每千克氢气所需电能",
+      "formula": "效率曲线插值",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_start_stop_count",
+      "chineseName": "2号累计启动次数",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "次",
+      "sign": "非负整数",
+      "description": "模拟期内累计启动次数",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_plc_heartbeat",
+      "chineseName": "2号PLC心跳状态",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0异常，1正常",
+      "description": "电解槽PLC通信心跳",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_current_run_duration_min",
+      "chineseName": "2号当前连续运行时长",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "min",
+      "sign": "非负整数",
+      "description": "本次连续运行已经持续的分钟数",
+      "formula": "",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz2_current_stop_duration_min",
+      "chineseName": "2号当前连续停机时长",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "min",
+      "sign": "非负整数",
+      "description": "本次连续停机已经持续的分钟数",
+      "formula": "",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_available_flag",
+      "chineseName": "3号电解槽可用标志",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0不可用，1可用",
+      "description": "设备是否允许参与功率分配",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_run_state",
+      "chineseName": "3号电解槽运行状态",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0停机，1待机，2运行，3降额",
+      "description": "设备当前运行状态",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_reported_available_capacity_kw",
+      "chineseName": "3号EMS报告可用容量",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "EMS当前认知的设备可用容量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_actual_available_capacity_kw",
+      "chineseName": "3号设备实际可用容量",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "设备PLC实际提供的可用容量",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_power_cmd_kw",
+      "chineseName": "3号电解槽功率指令",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "EMS下发的单台功率指令",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C01",
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_power_actual_kw",
+      "chineseName": "3号电解槽实际功率",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kW",
+      "sign": "非负",
+      "description": "单台电解槽实际消耗功率",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C01",
+        "C02",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_specific_energy_kwh_per_kg",
+      "chineseName": "3号单位制氢电耗",
+      "category": "电解槽",
+      "dataType": "float",
+      "unit": "kWh/kg",
+      "sign": "非负",
+      "description": "当前负荷下每千克氢气所需电能",
+      "formula": "效率曲线插值",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_start_stop_count",
+      "chineseName": "3号累计启动次数",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "次",
+      "sign": "非负整数",
+      "description": "模拟期内累计启动次数",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_plc_heartbeat",
+      "chineseName": "3号PLC心跳状态",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "",
+      "sign": "0异常，1正常",
+      "description": "电解槽PLC通信心跳",
+      "formula": "",
+      "isDerived": false,
+      "relatedAnomaly": [
+        "C02"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_current_run_duration_min",
+      "chineseName": "3号当前连续运行时长",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "min",
+      "sign": "非负整数",
+      "description": "本次连续运行已经持续的分钟数",
+      "formula": "",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "elz3_current_stop_duration_min",
+      "chineseName": "3号当前连续停机时长",
+      "category": "电解槽",
+      "dataType": "integer",
+      "unit": "min",
+      "sign": "非负整数",
+      "description": "本次连续停机已经持续的分钟数",
+      "formula": "",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "total_h2_production_kgph",
+      "chineseName": "总产氢速率",
+      "category": "制氢",
+      "dataType": "float",
+      "unit": "kg/h",
+      "sign": "非负",
+      "description": "根据各电解槽功率和单位电耗估算",
+      "formula": "Σ功率/单位电耗",
+      "isDerived": true,
+      "relatedAnomaly": [
+        "C02",
+        "C05",
+        "C06"
+      ],
+      "sourceFile": "01/02/03_timeseries.csv"
+    },
+    {
+      "name": "system_alarm_count",
+      "chineseName": "当分钟报警数量",
+      "category": "报警",
+      "dataType": "integer",
+      "unit": "条",
+      "sign": "非负整数",
+      "description": "该分钟产生的报警条数，不是异常标签",
+      "formula": "",
+      "isDerived": true,
+      "relatedAnomaly": [],
+      "sourceFile": "01/02/03_timeseries.csv"
+    }
+  ]
+}

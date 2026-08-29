@@ -4,6 +4,16 @@
   "title": "H2AssistantAnswer",
   "type": "object",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "required": ["questionId"],
+        "properties": { "questionId": { "const": "Q09" } }
+      },
+      "then": { "required": ["eventId", "generatedReport"] },
+      "else": { "not": { "required": ["generatedReport"] } }
+    }
+  ],
   "required": [
     "schemaVersion",
     "answerId",
@@ -22,19 +32,19 @@
     "runId": { "type": "string", "minLength": 1 },
     "questionId": {
       "enum": [
-        "H2Q01",
-        "H2Q02",
-        "H2Q03",
-        "H2Q04",
-        "H2Q05",
-        "H2Q06",
-        "H2Q07",
-        "H2Q08",
-        "H2Q09",
-        "H2Q10"
+        "Q01",
+        "Q02",
+        "Q03",
+        "Q04",
+        "Q05",
+        "Q06",
+        "Q07",
+        "Q08",
+        "Q09",
+        "Q10"
       ]
     },
-    "mode": { "enum": ["DETERMINISTIC_TEMPLATE", "LLM_RENDERED"] },
+    "mode": { "const": "DETERMINISTIC_TEMPLATE" },
     "generatedAt": { "type": "string", "minLength": 1 },
     "eventId": { "type": "string" },
     "sections": {
@@ -52,6 +62,8 @@
           "text": { "type": "string", "minLength": 1 },
           "citationIds": {
             "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
             "items": { "type": "string" }
           }
         }
@@ -59,6 +71,7 @@
     },
     "citations": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -88,7 +101,53 @@
         }
       }
     },
-    "refusedControlClaim": { "type": "boolean" },
+    "generatedReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["descriptor", "mediaType", "content"],
+      "properties": {
+        "descriptor": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "reportId",
+            "runId",
+            "kind",
+            "format",
+            "status",
+            "generatedAt",
+            "filename",
+            "contentHash",
+            "eventId",
+            "warnings",
+            "safetyDisclaimer",
+            "provenance"
+          ],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "reportId": { "type": "string", "minLength": 1 },
+            "runId": { "type": "string", "minLength": 1 },
+            "kind": { "const": "single_event_diagnosis" },
+            "format": { "const": "html" },
+            "status": { "const": "ready" },
+            "generatedAt": { "type": "string", "minLength": 1 },
+            "filename": { "type": "string", "minLength": 1 },
+            "contentHash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "eventId": { "type": "string", "minLength": 1 },
+            "warnings": { "type": "array", "items": { "type": "string" } },
+            "safetyDisclaimer": { "type": "string", "minLength": 1 },
+            "provenance": { "type": "object" }
+          }
+        },
+        "mediaType": { "const": "text/html" },
+        "content": { "type": "string", "minLength": 1 }
+      }
+    },
+    "refusedControlClaim": { "const": true },
     "provenance": { "type": "object" }
   }
 }

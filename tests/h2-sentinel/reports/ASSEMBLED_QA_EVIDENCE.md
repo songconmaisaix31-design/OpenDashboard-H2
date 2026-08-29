@@ -1,67 +1,71 @@
-# H2 Sentinel Assembled QA Evidence
+# H2 Sentinel Remediation QA Evidence
 
-## Execution contract
+## Evidence boundary
 
-Run `npm run h2:qa` from the repository root. The command runs C01-C04 and
-then starts Fixture and Local sessions only through the public H6 launcher. The
-final stdout line is a JSON object with test IDs, statuses, safe assertion
-details, aggregate counts, and the explicit manual-visual boundary.
+This ledger separates three evidence classes:
 
-The runner never writes a report artifact, raw startup output, absolute path,
-secret, listener PID, or process tree into this repository. It validates report
-content in memory and recomputes its SHA-256 descriptor hash.
+1. historical worker observations from pre-integration checkouts;
+2. current integrated P1 contract/runtime facts covered by repeatable QA; and
+3. final-candidate official-data evidence that only the coordinator can create.
 
-## Baseline result — 2026-08-19
+No historical test count, screenshot, report number, or candidate SHA is
+carried forward as proof for the final candidate.
 
-At QA baseline `6d04ee38f39d81801c87190f31eff0a1915862c6`:
+## Current integrated P1 facts
 
-| Gate | Result | Evidence |
-| --- | --- | --- |
-| C01-C04 | PASS | Frozen contract harness passed all five assertions. |
-| A01/A03/A04/A05/A07 Local API | PASS | Import, C03/C04 analysis/events, `29.333333333333332`, no-LLM answer, C03 HTML/hash, exact CSV, loopback Host/Origin policy, and redacted failure passed. |
-| A02 Fixture process isolation | PASS | Fixture `READY` has no analytics URL/PID; Web PID exited and port rebound after shutdown. |
-| A04/A07 launcher failures | PASS | Occupied Web/analytics ports and redirecting health endpoint were rejected with actionable errors. |
-| A05 Fixture C03 report | FAIL | Public Fixture report was JSON rather than the required HTML; recorded as H2-QA-002. |
-| A06/A08 entry/navigation | PASS (source/HTTP) | Generic/H2 entry and six navigation declarations were found; invalid mode routes to the visible alert path. |
-| Visual desktop/390 px | MANUAL REQUIRED | No browser automation dependency is installed or implied. |
+The repeatable P1 QA contract requires:
 
-## Correction rerun — 2026-08-19
+- exact official Q01-Q10 prompts and rejection of legacy question aliases;
+- deterministic Chinese Q09 diagnosis with matching citations and report;
+- append-only review transitions, replay idempotency, stale-revision conflict,
+  and detector/submission immutability;
+- complete review-audit export and exact review-free 16-column submission;
+- prepared-slice, generic Local, and Fixture provenance separation;
+- loopback-only launcher ownership, failure cleanup, and port rebind; and
+- Chinese report structure, escaping, safety wording, and content hashes.
 
-After the H2 Plugin correction
-`92f7b78027b9492a5a5fe8ced2e851ed4199aeaa`, `npm run h2:qa` passed all C01-C04
-and assembled A01-A08 automated assertions: four assembled groups passed and
-none failed. The correction changed the Fixture C03 report to `text/html` with
-a safe `.html` filename and a matching SHA-256 descriptor. The occupied-port,
-redirect-timeout, direct external-Host `400`, external-Origin `403`, redacted
-error, PID-exit, and rebind assertions also passed.
+`npm run h2:qa` is the mandatory integrated regression gate for these facts.
+Its assembled runner validates response and artifact bytes without persisting
+process identifiers, absolute paths, credentials, or raw startup output.
 
-The visual desktop/390 px line remains `MANUAL REQUIRED`. This file does not
-turn it into screenshot automation or assert a new manual review that was not
-performed by this QA runner.
+## Lane C remediation evidence
 
-## Post-audit correction rerun — 2026-08-19
+Lane C adds deterministic tools and fixtures for:
 
-The QA branch consumed the coordinator-approved verification dependencies only:
-analytics `53733ae`, H6 `df8fbec`, plugin `0e6847e`, and the plugin series/
-citation follow-up `1192b6a`. They are not part of the QA deliverable write
-set.
+- the exact official 69-field detector vocabulary;
+- earliest-C04 slice preparation with exact source hashes, inclusive
+  30-minute padding, public-label exclusion, and relative paths;
+- C01-C07 event-level evaluation and per-class metrics;
+- an independent train-window overfit sentinel;
+- exact affected-equipment tokens in the official 16-column submission;
+- a full public test-set offline smoke; and
+- two scripted executions covering import, analysis, evidence read, review,
+  Q09 diagnosis, review audit, and submission export.
 
-| Gate | Result | Independent runner evidence |
-| --- | --- | --- |
-| Six Local report kinds | PASS | `single_event_diagnosis`, `period_summary`, `analysis_result_json`, `submission_csv`, `validation_metrics`, and `quality_report` all passed kind/format/media/filename/hash checks through the public API. |
-| Quality and validation semantics | PASS | Quality HTML contained report identity, status, check table, and emitted quality codes. Validation parsed as JSON bound to the run, quality object, and provenance. |
-| External health lookalikes | PASS | Minimal, wrong-namespace, wrong-host, and extra-top-level envelopes all exited non-zero and emitted no `READY`. |
-| Canonical external sidecar | PASS | Exact health emitted `READY`; analytics PID was null, owned Web exited, Web port rebound, and the external sidecar stayed reachable until the test closed it. |
-| Existing Local and Fixture gates | PASS | Import/analyze/events, C03/C04, no-LLM assistant, redaction, Host/Origin, occupied ports, redirect timeout, Fixture-no-Python, report hash, PID exit, and rebind all remained green. |
-| Visual desktop/390 px | COORDINATOR MANUAL | Not claimed as QA screenshot automation. |
+Synthetic fixtures prove the tools' fail-closed behavior. They are not
+official metrics, a measured demonstration, or an organizer result.
 
-The last `npm run h2:qa` emitted five automated assembled groups with
-`PASS=5`, `FAIL=0`. No generated report, PID, raw process output, absolute path,
-or secret is retained in this evidence ledger.
+## Official-package integrity boundary
 
-`npm run h2:check` subsequently passed with 42 focused H2 tests, the same QA
-runner, seven launcher tests, strict type checking, and a production build.
-`npm run h2:smoke` passed its eight H6 smoke scenarios. Those are supplementary
-integration evidence; the Local API and external-sidecar assertions above come
-from the independent QA runner.
-`npm test` also passed 74 repository tests on this assembled snapshot.
+A bounded read-only integrity check found that all data/material entries plus
+the workbook match: 21 of 24 total manifest entries. The three top-level
+requirement/README Markdown or DOCX files differ from their manifest records.
+The package remains read-only, and the differing documents cannot support
+runtime or source-integrity claims.
+
+## Historical worker findings
+
+Pre-W2 worker checkouts reported legacy H2Qxx presentation, an English Fixture
+diagnosis, and generic provenance for a prepared slice. Those were true
+failures in the named historical checkout; later integration superseded them.
+They are retained for traceability and must not be restated as current product
+defects or converted into current passes.
+
+## Final coordinator gates
+
+After all lanes are integrated, the coordinator must use one clean exact SHA
+to rerun repository/H2/Python/build/launcher checks, official validation
+evaluation, the overfit sentinel, the full test-set offline smoke, the two-run
+demo and receipt validator, and desktop plus 390x844 visual inspection. The
+official metrics, retained screenshots, measured receipt, checker verdict,
+and final candidate SHA remain unclaimed until those reruns complete.

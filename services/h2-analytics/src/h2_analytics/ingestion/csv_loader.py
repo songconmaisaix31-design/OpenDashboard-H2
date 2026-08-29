@@ -3,22 +3,93 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import re
 import statistics
+import unicodedata
 from collections import Counter
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
+from h2_analytics import vocabulary
 from h2_analytics.contracts import (
-    FIELD_DEFINITIONS,
     FIXTURE_FINGERPRINT,
     FIXTURE_GENERATED_AT,
     NUMERIC_FIELDS,
     REQUIRED_FIELDS,
     build_provenance,
 )
-from h2_analytics.models import DataRow, ImportedDataset, ParseDiagnostics
+from h2_analytics.models import (
+    CompactValues,
+    DataRow,
+    ImportedDataset,
+    ParseDiagnostics,
+)
 from h2_analytics.quality.checker import QualityChecker
-from h2_analytics.settings import MAX_CSV_BYTES, MAX_CSV_ROWS
+from h2_analytics.settings import (
+    MAX_CSV_BYTES,
+    MAX_CSV_ROWS,
+    MAX_STREAMING_CSV_BYTES,
+    MAX_STREAMING_CSV_ROWS,
+)
+
+_ELZ_POWER_FIELDS = (
+    "elz1_power_actual_kw",
+    "elz2_power_actual_kw",
+    "elz3_power_actual_kw",
+)
+
+# Public label files are evaluation artifacts, never detector inputs. Reject
+# their identifying columns before any row is parsed into the runtime model.
+FORBIDDEN_LABEL_FIELDS = frozenset(
+    {
+        "is_anomaly",
+        "event_id",
+        "pred_event_id",
+        "eventid",
+        "label_event_id",
+        "anomaly_code",
+        "event_code",
+        "code",
+        "anomaly_subtype",
+        "anomaly_name",
+        "severity",
+        "confidence",
+        "start_time",
+        "starttime",
+        "event_start_time",
+        "end_time",
+        "endtime",
+        "event_end_time",
+        "ground_truth",
+        "ground_truth_label",
+        "event_label",
+        "primary_control_object",
+        "affected_equipment",
+        "root_cause",
+        "recommended_action",
+        "evidence_json",
+        "primary_impact_metric",
+        "primary_impact_metric_cn",
+        "estimated_impact_value",
+        "first_detection_time",
+        "requires_human_confirmation",
+        "detection_expectation",
+        "事件id",
+        "事件编号",
+        "异常事件id",
+        "异常编码",
+        "异常类别",
+        "异常类型",
+        "开始时间",
+        "事件开始时间",
+        "结束时间",
+        "事件结束时间",
+    }
+)
+_CAMEL_CASE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_HEADER_SEPARATORS = re.compile(r"[\s./-]+")
 
 
 class CsvImportError(ValueError):
@@ -35,26 +106,65 @@ class DatasetLoader:
 
     def import_csv(self, *, filename: str, text: str) -> ImportedDataset:
         safe_filename = _validate_filename(filename)
-        encoded = text.encode("utf-8")
-        if len(encoded) > MAX_CSV_BYTES:
-            raise CsvImportError(
-                "import.too_large",
-                f"CSV exceeds the {MAX_CSV_BYTES}-byte in-memory import limit.",
-            )
         if "\x00" in text:
             raise CsvImportError("import.invalid_text", "CSV contains a NUL byte.")
-
+        encoded = text.encode("utf-8")
+        _enforce_csv_byte_limit(len(encoded))
         fingerprint = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
-        mode = "FIXTURE" if fingerprint == FIXTURE_FINGERPRINT else "LIVE_ANALYSIS"
+        # The parser consumes the caller-owned text. Do not retain a second
+        # full-size byte buffer while materializing the bounded row model.
+        del encoded
         reader = csv.reader(io.StringIO(text, newline=""), strict=True)
+        return self._parse_csv(
+            filename=safe_filename,
+            reader=reader,
+            fingerprint=fingerprint,
+            row_limit=MAX_CSV_ROWS,
+        )
+
+    def import_csv_file(self, *, filename: str, path: Path) -> ImportedDataset:
+        """Parse a bounded upload from disk without materializing its bytes as text."""
+        safe_filename = _validate_filename(filename)
+        byte_count, fingerprint = _fingerprint_file(path)
+        if byte_count > MAX_STREAMING_CSV_BYTES:
+            raise CsvImportError(
+                "import.too_large",
+                f"CSV exceeds the {MAX_STREAMING_CSV_BYTES}-byte streaming import limit.",
+            )
         try:
-            rows = list(reader)
+            with path.open("r", encoding="utf-8", newline="") as stream:
+                reader = csv.reader(stream, strict=True)
+                return self._parse_csv(
+                    filename=safe_filename,
+                    reader=reader,
+                    fingerprint=fingerprint,
+                    row_limit=MAX_STREAMING_CSV_ROWS,
+                )
+        except UnicodeDecodeError as error:
+            raise CsvImportError(
+                "import.invalid_text", "CSV must be valid UTF-8 text."
+            ) from error
+
+    def _parse_csv(
+        self,
+        *,
+        filename: str,
+        reader: Iterator[list[str]],
+        fingerprint: str,
+        row_limit: int,
+    ) -> ImportedDataset:
+        mode = "FIXTURE" if fingerprint == FIXTURE_FINGERPRINT else "LIVE_ANALYSIS"
+        try:
+            header_cells = next(reader)
+        except StopIteration:
+            raise CsvImportError("import.empty", "CSV must include a header row.")
         except csv.Error as error:
             raise CsvImportError("import.malformed_csv", "CSV syntax is malformed.") from error
-        if not rows:
-            raise CsvImportError("import.empty", "CSV must include a header row.")
 
-        headers = tuple(cell.strip() for cell in rows[0])
+        headers = tuple(cell.strip() for cell in header_cells)
+        # Keep submitted-byte provenance intact by handling the BOM only after hashing.
+        if header_cells and header_cells[0].startswith("\ufeff"):
+            headers = (headers[0].removeprefix("\ufeff"), *headers[1:])
         if not headers or any(not header for header in headers):
             raise CsvImportError("import.invalid_header", "CSV header names must be non-empty.")
         duplicates = sorted(name for name, count in Counter(headers).items() if count > 1)
@@ -65,15 +175,23 @@ class DatasetLoader:
                 tuple(duplicates),
             )
 
-        body = [row for row in rows[1:] if any(cell.strip() for cell in row)]
-        if len(body) > MAX_CSV_ROWS:
+        forbidden_fields = tuple(
+            sorted(header for header in headers if _is_forbidden_label_header(header))
+        )
+        if forbidden_fields:
             raise CsvImportError(
-                "import.too_many_rows",
-                f"CSV exceeds the {MAX_CSV_ROWS}-row in-memory import limit.",
+                "import.label_columns_forbidden",
+                "Public label columns cannot be imported into the detector.",
+                forbidden_fields,
             )
 
         missing_fields = tuple(name for name in REQUIRED_FIELDS if name not in headers)
-        parsed_rows, parse_counts = _parse_rows(headers, body)
+        try:
+            parsed_rows, parse_counts = _parse_rows(
+                headers, reader, row_limit=row_limit
+            )
+        except csv.Error as error:
+            raise CsvImportError("import.malformed_csv", "CSV syntax is malformed.") from error
         timestamps = [row.timestamp for row in parsed_rows if row.timestamp is not None]
         interval_minutes = _sampling_interval_minutes(timestamps)
         start_time, end_time = _time_range(timestamps)
@@ -94,15 +212,15 @@ class DatasetLoader:
             "name": (
                 "H2 Sentinel sanitized golden fixture"
                 if mode == "FIXTURE"
-                else f"H2 Sentinel import: {safe_filename}"
+                else f"H2 Sentinel import: {filename}"
             ),
             "mode": mode,
-            "sourceFilename": safe_filename,
+            "sourceFilename": filename,
             "fingerprint": fingerprint,
             "rowCount": len(parsed_rows),
             "timeRange": {"startTime": start_time, "endTime": end_time},
             "samplingIntervalMinutes": interval_minutes,
-            "fields": [_field_descriptor(name) for name in headers],
+            "fields": [vocabulary.field_descriptor(name) for name in headers],
             "provenance": provenance,
         }
         diagnostics = _build_diagnostics(
@@ -119,11 +237,36 @@ class DatasetLoader:
         return ImportedDataset(manifest, quality, tuple(parsed_rows))
 
 
+def _enforce_csv_byte_limit(byte_count: int) -> None:
+    if byte_count > MAX_CSV_BYTES:
+        raise CsvImportError(
+            "import.too_large",
+            f"CSV exceeds the {MAX_CSV_BYTES}-byte in-memory import limit.",
+        )
+
+
+def _fingerprint_file(path: Path) -> tuple[int, str]:
+    digest = hashlib.sha256()
+    byte_count = 0
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            if b"\x00" in block:
+                raise CsvImportError("import.invalid_text", "CSV contains a NUL byte.")
+            byte_count += len(block)
+            if byte_count > MAX_STREAMING_CSV_BYTES:
+                raise CsvImportError(
+                    "import.too_large",
+                    f"CSV exceeds the {MAX_STREAMING_CSV_BYTES}-byte streaming import limit.",
+                )
+            digest.update(block)
+    return byte_count, f"sha256:{digest.hexdigest()}"
+
+
 def _validate_filename(filename: str) -> str:
     candidate = filename.strip()
     if (
         not candidate
-        or len(candidate) > 128
+        or len(candidate) > 255
         or candidate in {".", ".."}
         or "/" in candidate
         or "\\" in candidate
@@ -138,16 +281,43 @@ def _validate_filename(filename: str) -> str:
     return candidate
 
 
+def _normalize_header(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", value.strip())
+    normalized = _CAMEL_CASE_BOUNDARY.sub("_", normalized)
+    return _HEADER_SEPARATORS.sub("_", normalized.casefold())
+
+
+def _is_forbidden_label_header(header: str) -> bool:
+    normalized = _normalize_header(header)
+    return (
+        normalized in FORBIDDEN_LABEL_FIELDS
+        or normalized == "label"
+        or normalized.startswith("label_")
+        or normalized.endswith("_label")
+        or normalized.startswith("ground_truth_")
+    )
+
+
 def _parse_rows(
     headers: tuple[str, ...],
-    body: list[list[str]],
+    body: Any,
+    *,
+    row_limit: int = MAX_CSV_ROWS,
 ) -> tuple[list[DataRow], dict[str, Any]]:
     parsed: list[DataRow] = []
     missing_values: Counter[str] = Counter()
     invalid_numeric_values: Counter[str] = Counter()
     invalid_timestamps = 0
     malformed_rows = 0
+    value_fields = tuple(field for field in headers if field != "timestamp")
     for index, cells in enumerate(body, start=1):
+        if not any(cell.strip() for cell in cells):
+            continue
+        if len(parsed) >= row_limit:
+            raise CsvImportError(
+                "import.too_many_rows",
+                f"CSV exceeds the {row_limit}-row import limit.",
+            )
         if len(cells) != len(headers):
             malformed_rows += 1
         record = {
@@ -161,24 +331,29 @@ def _parse_rows(
         elif "timestamp" in headers and timestamp is None:
             invalid_timestamps += 1
 
-        values: dict[str, float | None] = {}
-        for field in headers:
-            if field == "timestamp":
-                continue
+        values: list[float | None] = []
+        for field in value_fields:
             raw = record[field]
             if not raw:
                 if field in REQUIRED_FIELDS:
                     missing_values[field] += 1
-                values[field] = None
+                values.append(None)
                 continue
             try:
-                values[field] = float(raw)
+                values.append(float(raw))
             except ValueError:
                 if field in NUMERIC_FIELDS:
                     invalid_numeric_values[field] += 1
-                values[field] = None
+                values.append(None)
         normalized_timestamp = _format_timestamp(timestamp) if timestamp is not None else timestamp_text
-        parsed.append(DataRow(index, timestamp, normalized_timestamp, values))
+        parsed.append(
+            DataRow(
+                index,
+                timestamp,
+                normalized_timestamp,
+                CompactValues(value_fields, values),
+            )
+        )
     return parsed, {
         "missing_values": dict(missing_values),
         "invalid_numeric_values": dict(invalid_numeric_values),
@@ -195,7 +370,7 @@ def _parse_timestamp(value: str) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        return None
+        parsed = parsed.replace(tzinfo=UTC)
     return parsed.astimezone(UTC)
 
 
@@ -217,18 +392,6 @@ def _sampling_interval_minutes(timestamps: list[datetime]) -> float:
         if current > previous
     ]
     return float(statistics.median(intervals)) if intervals else 1.0
-
-
-def _field_descriptor(name: str) -> dict[str, Any]:
-    definition = FIELD_DEFINITIONS.get(name)
-    if definition is None:
-        return {
-            "name": name,
-            "displayNameZh": name,
-            "role": "metadata",
-            "required": False,
-        }
-    return {"name": name, **definition}
 
 
 def _build_diagnostics(
@@ -253,28 +416,16 @@ def _build_diagnostics(
     invalid_ranges: Counter[str] = Counter()
     residuals: list[float] = []
     for row in rows:
-        soc = row.value("bess_soc_percent")
+        soc = row.value("bess_soc_pct")
         if soc is not None and not 0 <= soc <= 100:
-            invalid_ranges["bess_soc_percent"] += 1
-        for field in ("pcc_export_limit_kw", "pcc_import_limit_kw"):
+            invalid_ranges["bess_soc_pct"] += 1
+        for field in ("grid_export_power_limit_kw", "grid_import_power_limit_kw"):
             value = row.value(field)
             if value is not None and value < 0:
                 invalid_ranges[field] += 1
-        balance_values = [
-            row.value("pv_actual_kw"),
-            row.value("bess_power_kw"),
-            row.value("pcc_power_kw"),
-            row.value("total_electrolyzer_power_kw"),
-            row.value("auxiliary_load_kw"),
-        ]
-        if all(value is not None for value in balance_values):
-            pv, bess, pcc, electrolyzer, auxiliary = balance_values
-            assert pv is not None
-            assert bess is not None
-            assert pcc is not None
-            assert electrolyzer is not None
-            assert auxiliary is not None
-            residuals.append(abs(pv + bess - pcc - electrolyzer - auxiliary))
+        residual = _power_balance_residual_kw(row)
+        if residual is not None:
+            residuals.append(residual)
     invalid_timestamps = int(parse_counts["invalid_timestamps"])
     if parse_counts["malformed_rows"]:
         invalid_timestamps += int(parse_counts["malformed_rows"])
@@ -289,3 +440,19 @@ def _build_diagnostics(
         invalid_ranges=dict(invalid_ranges),
         maximum_power_balance_residual_kw=max(residuals) if residuals else None,
     )
+
+
+def _power_balance_residual_kw(row: DataRow) -> float | None:
+    pv = row.value("pv_actual_kw")
+    bess = row.value("bess_power_actual_kw")
+    pcc = row.value("pcc_power_actual_kw")
+    aux = row.value("aux_load_kw")
+    elz_values = [row.value(field) for field in _ELZ_POWER_FIELDS]
+    if any(value is None for value in (pv, bess, pcc, aux, *elz_values)):
+        return None
+    elz_total = sum(value for value in elz_values if value is not None)
+    assert pv is not None
+    assert bess is not None
+    assert pcc is not None
+    assert aux is not None
+    return abs(pv + bess - pcc - elz_total - aux)
