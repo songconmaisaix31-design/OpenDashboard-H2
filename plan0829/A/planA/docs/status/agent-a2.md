@@ -8,39 +8,50 @@ internal-a.md v1.0 / api.md v1.0
 
 ## 当前任务
 
-T02（P0-4 误报尺子）**进行中——代码已完成提交，基线冻结运行被阻塞**
-
-- 已提交：`feat/a2-evalml` @ 69d78cd（[A2] feat: T02 尺子三模式），基座 41aedd8（plan0829 文档入库，#T01）
-- 已验证：契约测试 75/75 绿；纯函数冒烟（闭区间相交/跨入事件/篡改基线必红）；utcDays 流式分支冒烟（选择精确/互斥拒绝/空集拒绝）
-- **阻塞**：共享工作树存在他人领土未提交改动（A3 的 impact/×5 + diagnosis/root_cause.py 在途、A1 的 plan.md T03a 勾选），
-  `trackedTreeClean=false`，冻结/门禁运行（要求 clean tree 证据纪律）无法启动。已报告指挥官，等待协调。
+**T02（P0-4 误报尺子）已完成，待 M-Gate 合并**（feat/a2-evalml @ 21a5029，2 个 T02 提交）
 
 ## 已完成任务
 
-（T02 完成后移入此处）
+### T02 ｜ P0-4 N01-N07 合理工况误报回归资产（2026-08-29 完成）
+
+- **工具**：`validation/normal-context-regression.mjs`（report/freeze/check 三模式；全模式 clean-tree 证据纪律）
+- **管线**：与 evaluate.mjs 完全相同的进程内检测（Local launcher 逐 UTC 日 chunk，train 125 日 + validation 51 日，
+  窗口日 ±1 缓冲）；同码 2 分钟合并；合并事件与窗口闭区间相交计 FP；N01-N07 分列 + 总览
+- **冻结基线**（@21a5029，运行时 = deterministic-c01-c07-v4 / **h2-rules-v2** / official-constraints-v1，与 D1 的
+  F1=0.9718 证据同源检测器）：
+  **N01-N07 每列 11 窗口 0 FP，总览 77 窗口 0 FP（fpRate=0）**；管线同批真实产出 124 原始/121 合并预测，
+  证明 0 FP 是尺子实测而非空跑。基线：`validation/baseline/normal-context-baseline.json`（gitignored）。
+- **门禁验证**：check 正向 passed/exit 0；篡改基线（N03→-1）failed/exit 1 且违规列精确命中；基线已还原。
+  证据报告：`tests/h2-sentinel/reports/generated/normal-context-regression-21a50293c316-{275ee495,fb01b0e8,d9541c40}*/`
+- **lib 增量**：NORMAL_CONTEXTS 契约 + utcDays 日集合选择 + candidate.mjs 白名单补 validation/baseline/（T01 缺口）
+- **离线验证**：契约测试 75/75；纯函数与流式分支冒烟全绿
+- **A-1 卡验收对照**：一条命令复现分列误报率 ✓；基线冻结 ✓；"误报不得上升"门禁 ✓（check 模式）；
+  check-all 接入 ✗→已登记 change-requests 待裁决（B 领土）
+- **执行注记**：冻结在临时 worktree（21a5029 干净检出）完成——共享树含他人在途文件无法过 clean 门禁；
+  两个坑备记：① worktree 树内任何杂文件（如 tee 日志）会弄脏判定；② 首跑 uv sync 超 launcher 60s 就绪窗，需先 `uv sync --locked --extra dev`
 
 ## 断点（下一会话从这里继续）
 
-1. 前置：确认工作树洁净（他人文件已各自提交/协调完毕），分支 `feat/a2-evalml` @ 69d78cd
-2. 冻结（首次，约 176 个日 chunk 管线运行，数分钟）：
-   `node validation/normal-context-regression.mjs --official-data D:/allcode/h2-t01-official/dataandfiles --mode freeze`
-3. 门禁正向：同命令 `--mode check` → 期望 `status: passed`、exit 0
-4. 门禁负向：备份 `validation/baseline/normal-context-baseline.json` → 篡改任一列数值调低 → `--mode check` 期望 exit 1 → 还原备份
-5. 冻结后验证 `currentCandidate().trackedTreeClean` 仍为 true（白名单修复生效）
-6. 把冻结数字写入本文件"已完成任务"、plan.md T02 勾 ✓、提交 docs commit、汇报待合并
+1. 下一任务 **T03b**（P0-5 指标侧）：`evaluate.mjs` 新增 `lead_time_minutes`（C05/C07，first_detection − start，
+   目标 >0）与 10 分钟检出率（C01/C02/C03/C04/C06，目标 100%）；口径 = ADR-004 + api.md IF-4，禁擅改；
+   实现挂 evaluate.mjs 报告 metrics 段；与 A1 的 T04-T07 并行互不等待
+2. 之后 T08（features.py，依赖 T04 已完成 ✓）→ T09（train_lightgbm.py + 3 seed + MODELS_REGISTRY；
+   只用 train+validation，禁测试集；N01-N07 不作训练增强 ADR-002）
+3. 工作树若再被他人在途文件占满 → 复用本次 worktree 方案（预 uv sync、日志放树外）
 
-## 待确认决策（等指挥官）
+## 待确认决策（等指挥官，均已报备）
 
-1. **check-all 接入**（change-requests [A2] #1）：B 线落地 `scripts/h2-sentinel/check-all.mjs` 后追加调用，还是授权 A2 先建？
-2. **p2-base tag 指向**：现指向 a4c6168（P2 B-line foundation contracts），非 7007e3d（D1 基线证据绑定点）。T01 验收语义需指挥官确认是否有意为之；A2 未动。
-3. **共享工作树协调**：三 Agent 同副本并行会互相切换 HEAD/污染 clean-tree 判定（本会话已发生两次：A1 的 T03a 被卷入我的提交祖先、A1 分支一度被摘）。建议一人一 worktree，由指挥官统一安排。
+1. **check-all 接入**（change-requests [A2] #1）：B 线落地后接入 vs 授权 A2 先建（A2 倾向前者）
+2. **p2-base tag 指向**：现指 a4c6168（B 线契约），非 7007e3d（D1 证据绑定点）——是否移动由你定
+3. ~~共享工作树协调~~：A1 已自建 worktree（Temp/a1-work），建议 A3/后续会话沿用
 
 ## 已提交的变更请求指针
 
 - change-requests.md 两条 [A2]（2026-08-29）：check-all.mjs 属 B 领土无法接入；T01 白名单缺口已在 A2 领土内修复备案
 
-## 附注（本会话的 git 手术记录）
+## 附注（git 操作记录，供 M-Gate 审阅）
 
-- 误提交修复：plan0829 提交曾落 feat/a1-rules（父=bf4277e 含 A1-T03a），已用临时索引重嫁接为 41aedd8（父=7007e3d），
-  codex/p2-algo 与 feat/a2-evalml 指向 41aedd8，feat/a1-rules 恢复 bf4277e；f69e0f6 弃用（reflog 可找回）。
-  动机：T02 基线必须冻结在 7007e3d 检测器（h2-rules-v2，D1 证据同源），A1-T03a 判据改动应作为被尺子检验的对象而非基线的一部分。
+- plan0829 提交曾误落 feat/a1-rules（父含 A1-T03a）→ 重嫁接为 41aedd8（父=7007e3d），A1 分支恢复 bf4277e；
+  后 A1-T04 stranded 副本 f61802d 落本分支 → 已剔除，feat/a2-evalml = 41aedd8→69d78cd→21a5029 纯 A2 链
+- 基线冻结语义：T02 基线绑定 **7007e3d 检测器**（D1 同源）；A1-T03a/T04 判据改动此后一律以 `--mode check`
+  过尺子（N01-N07 不得高于全零基线，即任何误报即红）
