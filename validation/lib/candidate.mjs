@@ -82,6 +82,11 @@ const EXPECTED_IGNORED_ARTIFACTS = [
   // [A2/T02] 基线冻结目录（api.md 通用约定：validation/baseline/*.json gitignored）。
   // T01 只补了 .gitignore 条目而漏了本白名单，基线落盘会误判 trackedTreeClean=false 并锁死全链评估工具。
   /^validation\/baseline(?:\/|$)/,
+  // [I/gate-i1] 同类缺口补齐（交 A2 追认）：models/ 为契约声明的 gitignored 产物目录（internal-a/A2 领土）；
+  // .ruff_cache/.mypy_cache 为 B 线 check-all 新增 lint/mypy 门禁在本机生成的工具缓存。
+  /^models\//,
+  /(?:^|\/)\.ruff_cache\//,
+  /(?:^|\/)\.mypy_cache\//,
   /(?:^|\/)__pycache__\//,
   /(?:^|\/)\.pytest_cache\//,
   /(?:^|\/)[^/]+\.egg-info\//,
