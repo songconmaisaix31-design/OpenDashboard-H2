@@ -41,6 +41,26 @@ function parseArguments(argv) {
 
 export function createCheckPlan(platform = process.platform, options = parseArguments([])) {
   const uv = platform === 'win32' ? 'uv.exe' : 'uv'
+  // [I/gate-i1 后接入，CR[A2]#1 裁决①落地（跨领土代笔，交 B 追认）]：
+  // 官方数据目录就绪时（H2_OFFICIAL_DATA_DIR），追加 A2 尺子的误报回归门禁；
+  // 未设置时计划与原版完全一致（CI/契约测试不受影响）。
+  const officialDataDirectory = process.env.H2_OFFICIAL_DATA_DIR ?? ''
+  const normalContextSteps = officialDataDirectory
+    ? [
+        {
+          label: 'N01-N07 normal-context regression',
+          command: process.execPath,
+          args: [
+            'validation/normal-context-regression.mjs',
+            '--official-data',
+            officialDataDirectory,
+            '--mode',
+            'check',
+          ],
+          cwd: repositoryRoot,
+        },
+      ]
+    : []
   return Object.freeze([
     {
       label: 'read-only doctor',
@@ -60,6 +80,7 @@ export function createCheckPlan(platform = process.platform, options = parseArgu
     commandStep('delivery and contract QA', 'npm', ['run', 'h2:qa'], repositoryRoot, platform),
     commandStep('launcher tests', 'npm', ['run', 'h2:launcher:test'], repositoryRoot, platform),
     { label: 'Python tests', command: uv, args: ['run', '--locked', '--extra', 'dev', 'python', '-m', 'pytest', '-q'], cwd: analyticsDirectory },
+    ...normalContextSteps,
     commandStep('repository tests', 'npm', ['test'], repositoryRoot, platform),
     commandStep('production build', 'npm', ['run', 'h2:build'], repositoryRoot, platform),
     { label: 'loopback offline smoke', command: process.execPath, args: ['scripts/h2-sentinel/smoke.mjs'], cwd: repositoryRoot },

@@ -1,7 +1,8 @@
 # 接口契约（A→B 跨机数据/口径接口）
 
-> 契约版本：v1.0 ｜ 日期：2026-08-29
+> 契约版本：v1.1 ｜ 日期：2026-08-29
 > 变更记录：
+> - v1.1（2026-08-29）：① IF-2 `ref_id` 语义放宽（CR[A3] 裁决接受：官方无 id 列的源用确定性合成键）；② IF-3 ML 演示口径正式化（A1 T11 交付，gate-6 🟢 + D12 建议 go，默认 off）
 > - v1.0（2026-08-29）：初始版本
 >
 > ★ 本文件是 A/B 两机的共同法律：A 线产出口径/数据形状，B 线消费。变更走 `../status/change-requests.md` + `../COORDINATION.md` §6 流程；实现与本文冲突时以本文为准。
@@ -35,13 +36,14 @@
 ### IF-2 根因条目引用结构（P1-8 产出，B 线 Q05 联动答案消费）
 
 - 用途：根因文本引用操作日志/报警/维修记录的具体条目
-- 交付方：A ｜ 消费方：B ｜ 约定时间：D12
+- 交付方：A ｜ 消费方：B ｜ 约定时间：D12 ｜ **v1.1 修订**：CR[A3] 裁决接受
+- **`ref_id` 语义（v1.1）**：官方含 id 列的源（`maintenance_history.record_id`、`alarm_log.alarm_id`）用官方 id；**`operation_log` 无 id 列，用确定性合成键 `OP-{YYYYMMDDHHMMSS}-{parameter}`**（已在官方 77 行验证 (split, timestamp, parameter) 三元组唯一，ref_id+timestamp+parameter 可回溯唯一条目；见 `diagnosis/ROOT_CAUSE.md`）
 - 形状（每条引用）：
 
 ```json
 {
   "source": "operation_log | alarm_log | maintenance_history",
-  "ref_id": "record_id 或 alarm_id 字符串",
+  "ref_id": "官方 id，或无 id 列时的 OP- 合成键",
   "timestamp": "YYYY-MM-DD HH:MM:SS",
   "parameter": "如 bess_power_sign / setpoint_deadband_kw",
   "change": "如 positive_discharge->positive_charge",
@@ -49,7 +51,7 @@
 }
 ```
 
-### IF-3 ML 演示口径（P1-9 go/no-go 后交付 B 线 DEMO_SCRIPT/CLAIMS_LEDGER）
+### IF-3 ML 演示口径（P1-9 T11 交付，B 线 DEMO_SCRIPT/CLAIMS_LEDGER 消费；gate-6 🟢 + D12 建议 go，默认 off）
 
 - 形状：
 
