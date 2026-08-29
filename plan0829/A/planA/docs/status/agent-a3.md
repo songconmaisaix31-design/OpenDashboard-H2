@@ -23,11 +23,12 @@ internal-a.md v1.0 / api.md v1.0（未变；[A3] 澄清请求 1 条待裁决）
 
 ## 断点
 
-- **等指挥官**：按 gate-3 §0（承 gate-1/2）执行三分支合并（A1→A2→A3）→ 合并后补跑官方门禁（A1 evaluate 含 T03b 指标+T04-T06 判据 / A3 对账复验 + 尺子交叉验证）
-- **gate-3 增量评审已出具** `feat/a3-diag`（gate-3.md）：追平 A1 T06（6960ff3，T04-T06 三连全完成），🟢 维持放行；纯树合并预演 pytest **201** + 契约 83/83 绿；T06 校准块双段 signatureBandChange 四要素 ✅
-- 评审覆盖现状：gate-1（T02/T03a/T04/T10/T12）+ gate-2（T05/T03b）+ gate-3（T06）+ **gate-4（A2 T08 特征工程 652696a/55a7c34：领土字面内 ✅、泄漏红线核查过——全因果窗/日志 split 过滤/守 ADR-002，纯树预演 201+23+83/83 绿）**= 当前全部待合并提交已过审
-- 待裁决累计：CR 3 条 + schemaVersion 2→3 通报 + p2-base tag 指向 + A1 detector_version 3 文件 + gate-2 标注 b 领土表备案；gate-2 标注 a（C05 toleranceRationale 漂移）维持待修
-- gate-5 预置关注：T09 训练仅 TRAIN split + MODELS_REGISTRY 四要素；T07 判定矩阵验收口径
+- **M-Gate 1 合并已完成**（整合人 [I]：0dea5c1 a1 → 3c2c22a a2 → 6cabaa3 a3 → dc8e7b1 a2-T09）；**gate-5 追认已出具** `feat/a3-diag @ d65ff66`：🟢 放行——T09 红线过 + **四件套门禁全绿**（F1=0.9718 恰回基线 / N01-N07 尺子 77 窗口 0 FP 0→0 / lead_time C05+C07 20 事件 allPositive——C07=2min 标志 T03a 前瞻判据在 VALIDATION 生效 / 5 类检出率 0.76 持平）
+- **A3 合并后必办已执行** ✅：对账复验 TRAIN 280 true/0 false + VAL 70/0（与 T10 一致）；尺子交叉验证 passed；evaluate 已代跑留档（建议 A2 择机重冻结基线至新检测器版本，0→0 下语义等价、其裁量）
+- **gate-6 T11 评审已出具** `feat/a3-diag`（gate-6.md）：🟢 放行合并 feat/a1-t11-ml + **D12 go/no-go 建议 go**（默认 off + 开关就绪）——三态复跑（无 lgbm 207+3skip 反证零依赖 / 有 lgbm 无模型 208+2fail / 补模型 **210 绿**）；cherry-pick d542c4c 门审**接受**（=指挥官 87df5c3 原文，条件：A2 追认 + 合并去重注意）；灰度五条采信（消歧证据 rawCount 75→91 / merged 72=72）；非阻塞建议：2 个模型依赖测试加 skipif
+- **下一评审对象**：M-Gate 3 合并 feat/a1-t11-ml（指挥官执行）后的增量追认；此后 A 线仅剩 T14（D14 联合冻结，[ALL]）
+- 待裁决累计：CR 3 条 + schemaVersion 2→3 通报 + p2-base tag 指向 + detector_version 3 文件 + 标注 a/b（清单见 gate-5 §4）
+- 主树检出 codex/p2-integration（整合线使用），A3 产出全部经 a3-work worktree 入 feat/a3-diag（HEAD d65ff66）
 - A3 专属 worktree = `C:/Users/86156/AppData/Local/Temp/a3-work`；主树检出 feat/a2-evalml @ 52b6dd1，残留 docs 状态文件 modified 按 gate-1 §4.4 保留待指挥官随合并提交
 
 ## 待确认决策

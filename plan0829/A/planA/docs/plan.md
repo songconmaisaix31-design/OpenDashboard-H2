@@ -36,7 +36,7 @@
 
 | 集成点 | 日期 | 机内流程（M-Gate，先做） | 跨机整合门 |
 |---|---|---|---|
-| I1 | D3 | A3 评审 → 用户合并三分支入 `codex/p2-algo` → check-all 绿 | 轮值整合人 B 合入 integration |
+| I1 | D3 | ✅ **完成（2026-08-29）**：三分支并入 `codex/p2-algo`(dc8e7b1) → integration(87df5c3) 并入 B 线 `dfeee9a8` 零冲突 → 全套门禁绿（check-all / 尺子 77 窗 0 误报 / F1=0.9718 零回退 / 哨兵 0.012 / smoke / submission 98 行）→ tag `gate-i1` 已推送 | 已闭环 |
 | I2 | D6 | 同上（A: T03-T04） | 轮值整合人 A |
 | I3 | D9 | 同上（A: T05-T07、T08-T09 中间态） | 轮值整合人 B |
 | I4 | D12 | 同上（A: T10-T12 + go/no-go） | 轮值整合人 A |

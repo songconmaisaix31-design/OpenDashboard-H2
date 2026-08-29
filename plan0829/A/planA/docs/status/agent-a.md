@@ -20,11 +20,11 @@ api.md v1.0 / internal-a.md v1.0（2026-08-29）
 
 ## 断点
 
-- **M-Gate 1 已评审放行**：`docs/reviews/gate-1.md`（🟢 A1→A2→A3，独立复跑+三方合并预演全绿）——等指挥官执行合并与合并后官方门禁补跑
-- f61802d 误提交事故已由 A1/A2 自行闭环（重建+Reset，reflog 可溯）；共享单工作区是根因，建议后续会话 worktree 隔离
-- change-requests.md 待裁决 3 条（[A2]×2、[A3]×1）+ p2-base tag 指向 + detector_version 3 文件（A1）
-- A2 正在 qingneng-a2freeze worktree 冻结 T02 基线
-- B 线公告累计两条（impact-formulas.json C01/C02 块；h2-contracts rootCauseCitations）——均为加法式
+- **I1 跨机整合完成 ✅（2026-08-29，指挥官执行）**：`codex/p2-integration @ 87df5c3` = A 线（T02-T08/T10/T12 + T09）+ B 线 `dfeee9a8` 零冲突合并；全套门禁绿：check-all（doctor/双 typecheck/测试/构建/9 冒烟）+ 尺子 77 窗 0 误报 + evaluate **F1=0.9718 零回退**（TP69/FP3/FN1）+ 哨兵 0.012 + offline-deploy-smoke + submission checker 98 行全有效；已 push 并打 tag `gate-i1`
+- **B 机下一步**：`git fetch` 后从 `origin/codex/p2-integration` rebase/继续；B 的 GitHub PR 保持不动，由团队后续决定
+- **合并中指挥官代笔两处（待域主追认）**：`[I] fixup` reconcile.py float(str()) 过 mypy 门禁面（交 A3）；candidate.mjs 白名单补 models/.ruff_cache/.mypy_cache（同类 A2 CR#2 先例，交 A2）
+- **待裁决累计**：CR 3 条 + schemaVersion 2→3 + p2-base tag 指向 + detector_version v4→v5（A1 三文件）+ T09 增量评审 gate-5（A3，T09 已并入但属事后追认）
+- 剩余任务：T09 已完成（A2 自提交 4b3ea51/c8e8b12）；**T11（A1，ML 接线+灰度+IF-3）为任务池最后一个未完成项**，其依赖（T09 交付）已就绪
 
 ## 待确认决策
 
