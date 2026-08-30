@@ -167,3 +167,65 @@ plan0829 看板 P0-3 终态为「未开始」；本清单 R16 亦自证 clean-ma
 - 局限（证据边界）：以上为本地演练证据，不证明组织方环境、隐藏测试、
   生产或官方评分；Ctrl+C 交互式正常退出路径未在本演练覆盖（RUNBOOK
   主路径，D-P1-1 十连启停测试将验证）。
+
+## plan0830 D-P0-2 submission 16 字段导出收口（2026-08-30 追加节，D 线持笔）
+
+### 1. 校验器现状声明（本卡为验证收口，非新开发）
+
+`validation/check-submission.mjs` 复核结论：plan0829 遗产校验器**已满足
+本卡全部硬门禁要求**——16 列名与顺序逐字断言（`SUBMISSION_COLUMNS` 与
+官方 `17_submission_template.csv` 表头 16/16 逐字一致，2026-08-30 人工
+比对）；易漏四字段全部为硬 FAIL（`issues.push`，非 WARN）：
+
+| 字段 | 门禁 | 位置 |
+| --- | --- | --- |
+| confidence | 有限十进制数且 ∈ [0,1] | check-submission.mjs L108-111 |
+| evidence_json | 可解析 JSON + 非空数组 + 每项含非空 `evidence_id` 结构化键 | L112-125 |
+| first_detection_time | canonical UTC + ≤end + 仅预测类 C05/C07 可早于 start | L138-153 |
+| requires_human_confirmation | 强制字面 `true`（严于 ∈{0,1}，对齐红线「人工确认不松动」） | L154-156 |
+
+空值：16 列任一空值即 FAIL（L80-83）。severity/subtype **只消费不重算**：
+经 `validation/lib/official-contract.mjs`（A 线独占）import
+`SEVERITY_BY_CODE`/`SUBTYPES_BY_CODE`，A-P0-3 映射演进时 D 侧自动跟进。
+
+### 2. 负样本自测（2026-08-30，临时样例即用即删，合成 fixture 值）
+
+命令：`node validation/check-submission.mjs <样例>`（样例构造自
+check-submission.test.mjs 的 C03 合法 fixture 行，非官方数据）：
+
+| 样例 | 类别 | valid | 首条判定 |
+| --- | --- | --- | --- |
+| base.csv | 正常样例 | true | 零 issue 零 warning（零误报） |
+| missing-col.csv | 缺列（15 列） | false | `header must preserve the exact official 16-column order` |
+| empty-val.csv | 空值（confidence 空） | false | `row 2 has empty values for: confidence` |
+| bad-type.csv | 类型错（confidence=abc） | false | `row 2 has invalid confidence "abc"` |
+| bad-evidence.csv | 类型错（evidence_json 非法 JSON） | false | `row 2 evidence_json is not valid JSON` |
+| bad-confirm.csv | 类型错（确认位=false） | false | `row 2 requires_human_confirmation must be true for every recommendation` |
+
+（first_detection_time 格式/时序类 FAIL 另有入库测试覆盖：
+tests/h2-sentinel/contract/check-submission.test.mjs L111-136。）
+入库测试既有覆盖盘点：缺列 ✅（L187-199）、类型错 ✅（多字段）、
+**空值显式断言缺**（校验器行为已由上表 CLI 取证，tests/ 归属不在 D 线
+写白名单，补断言事宜登记整合窗）。
+
+### 3. test 分区导出复跑（@c9c2bfe，2026-08-30）
+
+命令：`node validation/offline-deploy-smoke.mjs --official-data
+D:\allcode\h2-t01-official\dataandfiles`（后台，报告入 ignored 目录）
+
+- `verdict=passed`；candidateCommit=`c9c2bfe`；import 172800 行 passed
+- `submission_export`：98 行、`checkerValid=true`、924ms、
+  sha256 `ed944f61bde6df4ab7de241054e295efc5bf21a559592b2076279600a5bc30e7`
+- **跨 commit 确定性**：该哈希与 D-P0-1 RUN1@`e4b3076`、RUN2@`ba4eb75`
+  两次演练导出**字节级一致**（三个 commit 同产物）；报告原文见
+  `tests/h2-sentinel/reports/generated/offline-deploy-smoke-c9c2bfe7b61e-*/`
+  （ignored，G2 冻结时按 §2 收卡纪律全量重生成）
+
+### 4. D-P0-2 验收结论（2026-08-30）
+
+- check-submission 对 test 分区导出产物全字段绿（含四字段硬门禁）✔
+- 负样本三类（缺列/空值/类型错）逐项 FAIL 清单见 §2；正常样例零误报 ✔
+- 导出样例与校验输出留痕本节 ✔
+- A-P0-3 软依赖：映射合入前现行导出值已收口（本节 §3）；映射若演进，
+  校验器经 import 自动消费，回归仅需重跑本节 §3 命令 ✔
+
