@@ -781,6 +781,18 @@
 .h2-table td strong { display: block; color: var(--h2-text); font-size: 0.88rem; }
 .h2-table td small { display: block; margin-top: 0.2rem; color: var(--h2-muted); font-size: 0.74rem; line-height: 1.5; }
 .h2-table tbody tr:hover { background: rgb(26 122 212 / 4%); }
+/* C-P0-3：事件行可选中驱动联动曲线（键盘可达：Tab 聚焦 + Enter 选中） */
+.h2-table--selectable tbody tr { cursor: pointer; }
+.h2-table--selectable tbody tr:focus-visible { outline: 2px solid var(--h2-cyan); outline-offset: -2px; }
+.h2-table--selectable tbody tr.is-selected td { background: rgb(26 122 212 / 9%); }
+.h2-table--selectable tbody tr.is-selected .h2-code { border-color: var(--h2-cyan); background: rgb(26 122 212 / 16%); }
+
+/* C-P0-3：事件页内嵌联动曲线面板（与诊断页同源事件窗口与底纹） */
+.h2-linkage-panel { margin-top: 1rem; }
+.h2-linkage-panel__meta { display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-end; text-align: right; }
+.h2-linkage-panel__meta > span { color: var(--h2-muted); font-size: 0.8rem; }
+.h2-linkage-panel__hint { color: #8a6d1f; font-size: 0.76rem; }
+.h2-linkage-panel__actions { display: flex; justify-content: flex-end; margin-top: 0.75rem; }
 .h2-table__event { display: flex; gap: 0.7rem; align-items: center; }
 .h2-table__event .h2-code { display: grid; place-items: center; min-width: 2.5rem; min-height: 2.5rem; border: 1px solid rgb(26 122 212 / 24%); border-radius: 0.55rem; background: rgb(26 122 212 / 7%); }
 .h2-icon-button { display: grid; place-items: center; width: 2rem; height: 2rem; color: var(--h2-mint); border: 1px solid var(--h2-line-strong); border-radius: 50%; background: transparent; }

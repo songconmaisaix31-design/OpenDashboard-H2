@@ -355,9 +355,11 @@ function renderView(
     <H2SentinelView
       commandState={commandState}
       dataSource={fixtureDataSource}
+      eventFilters={INITIAL_EVENT_FILTERS}
       navigation={navigation}
       onAsk={noop}
       onCancelImport={noop}
+      onEventFiltersChange={noop}
       onDownload={noop}
       onExport={noop}
       onImport={noop}

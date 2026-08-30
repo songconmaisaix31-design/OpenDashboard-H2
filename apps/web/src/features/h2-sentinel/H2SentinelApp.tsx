@@ -14,6 +14,7 @@ import {
   type H2AssistantSubmissionResult,
 } from './model/assistant.ts'
 import { createH2ReportRequest } from './model/reporting.ts'
+import { INITIAL_EVENT_FILTERS, type H2EventFilterState } from './model/presentation.ts'
 import {
   createH2ReviewRequestId,
   h2ReviewFailureMessage,
@@ -80,6 +81,8 @@ export function H2SentinelApp({
   const [commandState, setCommandState] = useState<H2CommandState>(INITIAL_H2_COMMAND_STATE)
   const [reviewState, setReviewState] = useState<H2ReviewCommandState>(INITIAL_H2_REVIEW_COMMAND_STATE)
   const [navigation, setNavigation] = useState<H2NavigationTarget>(initialNavigation)
+  // C-P0-3：事件筛选态提升到 App 层——事件页与诊断页互跳返回后筛选不丢失。
+  const [eventFilters, setEventFilters] = useState<H2EventFilterState>(INITIAL_EVENT_FILTERS)
   const [selectedEventId, setSelectedEventId] = useState<string | null>(
     initialEventId ?? initialNavigation.eventId ?? null,
   )
@@ -461,7 +464,9 @@ export function H2SentinelApp({
     <H2SentinelView
       commandState={commandState}
       dataSource={dataSource}
+      eventFilters={eventFilters}
       navigation={navigation}
+      onEventFiltersChange={setEventFilters}
       onAsk={(questionId, allowLlmRendering) => void ask(questionId, allowLlmRendering)}
       onSubmitFollowUp={submitFollowUp}
       onDownload={downloadArtifact}

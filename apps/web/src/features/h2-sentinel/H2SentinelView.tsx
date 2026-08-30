@@ -6,7 +6,7 @@ import type {
 import { H2Shell } from './components/common/H2Shell.tsx'
 import { EmptyDatasetState } from './components/common/EmptyDatasetState.tsx'
 import { ViewState } from './components/common/ViewState.tsx'
-import { findH2Event } from './model/presentation.ts'
+import { findH2Event, type H2EventFilterState } from './model/presentation.ts'
 import type { H2ReviewDraft } from './model/review.ts'
 import type { H2AssistantSubmissionResult } from './model/assistant.ts'
 import type {
@@ -25,7 +25,9 @@ import { ReportsPage, type ReportDefinition } from './pages/reports/ReportsPage.
 export interface H2SentinelViewProps {
   readonly commandState: H2CommandState
   readonly dataSource: H2SentinelDataSource
+  readonly eventFilters: H2EventFilterState
   readonly navigation: H2NavigationTarget
+  readonly onEventFiltersChange: (filters: H2EventFilterState) => void
   readonly onAsk: (questionId: H2AssistantQuestionId, allowLlmRendering: boolean) => void
   readonly onSubmitFollowUp: (input: string, allowLlmRendering: boolean) => Promise<H2AssistantSubmissionResult>
   readonly onDownload: (artifact: H2ReportArtifact) => void
@@ -45,8 +47,10 @@ export interface H2SentinelViewProps {
 export function H2SentinelView({
   commandState,
   dataSource,
+  eventFilters,
   navigation,
   onAsk,
+  onEventFiltersChange,
   onSubmitFollowUp,
   onDownload,
   onExport,
@@ -116,7 +120,15 @@ export function H2SentinelView({
         <OverviewPage dataSource={dataSource} onNavigate={onNavigate} workspace={workspace} />
       ) : null}
       {navigation.route === 'events' ? (
-        <EventsPage onNavigate={onNavigate} workspace={workspace} />
+        <EventsPage
+          dataSource={dataSource}
+          eventFilters={eventFilters}
+          onEventFiltersChange={onEventFiltersChange}
+          onNavigate={onNavigate}
+          onSelectEvent={onSelectEvent}
+          selectedEventId={selectedEventId}
+          workspace={workspace}
+        />
       ) : null}
       {navigation.route === 'diagnosis' ? (
         <DiagnosisPage
