@@ -121,7 +121,49 @@ plan0829 看板 P0-3 终态为「未开始」；本清单 R16 亦自证 clean-ma
 | F2 | local 首次启动失败：`Web port 5193 is already in use` | 演练工具非正常终止 fixture 后 vite 子进程残留监听端口；launcher 行为正确（快速失败+明确提示），但提示未含占用 PID 与清理命令 | 复验：`netstat -ano` 定位 + `taskkill /PID <pid> /T /F` 树杀后二次启动 7s READY；RUNBOOK 故障表新增「残留进程定位与清理」条目；启动前置检查给出 PID 归入 D-P1-1 加固项 | 已闭环（文档+任务登记） |
 | F3 | fixture 页面 console error：`favicon.ico 404` | web 静态资源缺 favicon（`apps/web`，C 线域） | 不阻断验收；按 CONTRACTS §7 向 C 线登记 change-request（登记处见 plan0830/D/TASKS 看板）；D 线不改 C 线文件 | 已登记待 C 线处置 |
 
-### 4. 演练 2（RUN2）
+### 4. 演练 2（RUN2，2026-08-30）
 
-（待演练 2 执行后填写：计划在 F1/F2 文档闭环所在新 commit 上，以第二个
-全新隔离目录复跑六步，预期一次通过。）
+- 机器标识：同 RUN1（LAPTOP-0PKLP0AG / 86156 / Windows 11）
+- 基线：commit `ba4eb75`（= RUN1 留痕与 F1/F2 闭环文档提交后的新 commit）
+- 隔离：`D:\allcode\qingneng-wt\_drills\run2`（全新 `--no-local` 克隆 +
+  独立 npm/uv 缓存）
+- 结果：**六步一次通过**（F1 修正生效：uv sync 首跑即绿；F2 未复发：
+  全程规范启停）
+- 原始日志：`_drills\run2\logs\`
+
+| # | 步 | 结果 | 耗时 |
+| --- | --- | --- | --- |
+| 1 | 克隆 | exit 0；HEAD=ba4eb75 | 5s |
+| 2 | npm ci（隔离缓存） | exit 0 | 13s |
+| 3 | uv sync（含 cd，F1 修正） | exit 0 **首跑即过** | 7s |
+| 4 | doctor（--web-port 5293 --analytics-port 5295） | 全项「通过」exit 0 | 4s |
+| 5a | fixture 冒烟 | READY；HTTP 200；截图 `run2-01` | <10s |
+| 5b | local 启动 | READY（web `/h2-sentinel/`=200 + analytics `/health`=200） | ~5s |
+| 6 | UI 导入 `03_test_timeseries.csv` | 172,800 行；98 事件（C01–C07=10/14/14/17/14/15/14） | ~70s |
+| 7 | 事件中心 | 「显示 98 / 98 个事件」；截图 `run2-03` | — |
+| 8 | UI 导出 submission.csv | 内容哈希 `ed944f61…30e7` **与 RUN1 字节级一致**（sha256 复核 + `cmp` 零差异）；`check-submission` → `valid=true`、98 行、零 issue | <10s |
+| 9 | offline-deploy-smoke | `verdict=passed`，candidateCommit=ba4eb75 | 154s |
+
+- 截图：`run2-01-fixture-overview.png`、`run2-03-local-events.png`。「导入
+  后总览」与「导出卡」两张因 F5 工具超时未取得，以字节级哈希一致 +
+  check-submission 绿 + offline-smoke passed 作补偿取证（如实记录）。
+- **确定性实证**：两次独立 clean 安装（不同 commit、不同隔离目录）对同一
+  官方测试集导出**完全相同**的 submission.csv（sha256 `ed944f61…30e7`）。
+
+### 5. RUN2 新增观察项与闭环（F4-F6）
+
+| # | 观察 | 根因 | 处置 | 状态 |
+| --- | --- | --- | --- | --- |
+| F4 | 停止 fixture 时按命令行宽匹配杀进程，命中两个 launcher 树，其一可能是兄弟线（C 线）的 5173 fixture 服务（亦可能为 RUN1 残留 launcher，无法回溯区分） | 共享机上多线并行，进程过滤未按路径限定 | 演练工具改为**路径限定**进程匹配（RUN2 local 停止仅命中自身进程树，已复验）；向 C 线与整合人披露：若 fixture 服务被误杀，`npm run h2:fixture` 重启即可，无数据损失 | 已闭环（工具修正+披露） |
+| F5 | 导入完成后约 1-3 分钟内页面高负载：UI 点击/截图多次 5 秒超时，等待后恢复 | 98 事件证据链+图表首渲染计算重 | 属已知重负载窗口，不阻断流程；建议评委演示等待加载完成；已登记 D-P1-1 观察项（首跑阶段提示的运行时对应物） | 已登记 |
+| F6 | 第二浏览器客户端并发访问已导入运行时，卡在「正在加载可核验运行…」30 秒以上 | 分析服务重负载下串行响应（单 worker） | 单评委单页路径不受影响（RUN1/RUN2 主路径均正常）；登记 D-P1-1 观察项，G2 前评估是否需要并发提示 | 已登记 |
+
+### 6. D-P0-1 验收结论（2026-08-30）
+
+- ≥2 次演练记录入库：RUN1@`e4b3076` 六步全过（含失败项复验）、
+  RUN2@`ba4eb75` 六步一次通过 ✔
+- 失败项/观察项 F1-F6 全部闭环或登记处置，RUNBOOK 闭环表无未闭环行 ✔
+- 演练环境口径降级（同机隔离目录模拟）已在 §1 明示，G1 前可升级真异机 ✔
+- 局限（证据边界）：以上为本地演练证据，不证明组织方环境、隐藏测试、
+  生产或官方评分；Ctrl+C 交互式正常退出路径未在本演练覆盖（RUNBOOK
+  主路径，D-P1-1 十连启停测试将验证）。
