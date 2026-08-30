@@ -9,6 +9,8 @@ coverage/
 npm-debug.log*
 playwright-report/
 test-results/
+# 浏览器自动化残留（主仓库工作区存在，防误提交；D-P1-4 归置）
+/.playwright-mcp/
 data/h2-sentinel/official/
 services/h2-analytics/.venv/
 services/h2-analytics/artifacts/

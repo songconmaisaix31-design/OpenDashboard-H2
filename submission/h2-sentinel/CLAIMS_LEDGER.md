@@ -1,8 +1,12 @@
-# H2 Sentinel P2 B-Line Claims Ledger
+# H2 Sentinel Claims Ledger
 
 Use the narrowest wording supported by fresh evidence from the named SHA.
 Historical worker failures and old integration results remain historical; they
 cannot be promoted into final-candidate proof.
+
+> Ownership note (plan0830): this ledger is D-authored; lanes A/B/C contribute
+> their claim entries as text blocks for D to merge (COORDINATION §2), never by
+> direct edit.
 
 | ID | Wording | Current classification | Required evidence or boundary |
 | --- | --- | --- | --- |
@@ -49,3 +53,31 @@ differ.” Do not shorten this to “the package matches.”
   disabled-by-default streaming capability.
 - Optional provider configuration does not prove network access, account/model
   entitlement, authorization, or provider correctness.
+
+## plan0830 ratification registry (D-P1-4, 2026-08-30)
+
+### R-0830-1 · plan0829 gate-7 final acknowledgment ratified under plan0830 clause numbering
+
+- **Clause mapping.** Plan0830 §5 retires plan0829 internal task numbering
+  T01–T14. The plan0829 internal "T14" final-acknowledgment-and-freeze task is
+  registered here under acceptance clause **验收-T14 (safety boundary &
+  compliance)**. The historical record itself is preserved unchanged at
+  `plan0829/A/planA/docs/reviews/final-ack-freeze.md` (commit 738344f); this
+  entry is the plan0830-numbering terminal file, not a rewrite.
+- **Ratified items carried forward from 738344f:**
+  1. Five cross-lane fixups (float narrowing 158dbb2; candidate whitelist
+     87df5c3 series; import reconciliation ad687d9; lightgbm type-ignore
+     83fafdf; conditional check-all ruler + H2_OFFICIAL_DATA_DIR isolation
+     241569b/f94bdf1) — all under user-granted integration authority.
+  2. CR settlements: CR[A3] IF-2 `ref_id` relaxation (api.md v1.1),
+     CR[A2]#1 conditional ruler assembly, CR[A2]#2 whitelist.
+  3. detector_version v4→v5 clearance (28a175f): 4 files + ruler baseline
+     refreeze, 77-window 0 FP @ v5, evaluate F1=0.9718 no-regression recheck.
+  4. Delivery verdict at plan0830 handover point: lanes A/B merged,
+     declared deliverable **under user unilateral-delivery authorization**.
+- **Evidence boundary preserved (unchanged by this ratification):** organizer
+  acceptance, official scoring, production deployment, and true third-party
+  machine-swap reproduction remain unevidenced and must not be claimed.
+  Plan0830 D-P0-1 drills (RUN1 @ e4b3076, RUN2 @ ba4eb75; same-machine
+  isolated directories, downgrade declared in RUNTIME_EVIDENCE_CHECKLIST)
+  raise reproduction confidence but do not close that boundary.

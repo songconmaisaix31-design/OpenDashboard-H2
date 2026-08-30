@@ -19,7 +19,7 @@
 | D-P1-1 | 一键启动加固 | P1 | ☐ | — | 10 连启动+故障注入 |
 | D-P1-2 | 验收-T02 质量扩展 | P1 | ☐ | — | 与 C 线经 CONTRACTS 对接 |
 | D-P1-3 | 离线依赖清单与包 | P1 | ☐ | — | 裁剪序位 1 |
-| D-P1-4 | gate-7 追认+仓库卫生 | P1 | ☐ | — | D1 首位 |
+| D-P1-4 | gate-7 追认+仓库卫生 | P1 | ✓ | 2026-08-30 | gate-7 按 plan0830 验收-T14 口径补终档（R-0830-1）；plan0829/test.md 用户确认删除；.playwright-mcp 入 .gitignore；worktree 天然干净（三件待置物均未入库仅存主仓库工作区） |
 | D-P2-1 | 三开关最终默认值冻结 | P2 | ☐ | — | G2 前完成 |
 
 ### 0.3 领卡顺序与并行性
@@ -293,6 +293,15 @@ D12-13:  D-P2-1（等 A-P2-1 与 B-P0-2 决策）
 **裁剪位**：不裁（量小且是其他卡的干净基线前提）；最低保底=gate-7 追认+git status 清零，归置可顺延
 
 **风险回退**：误删有用文件→git 还原；test.md 用户未及确认→保留原状并在看板挂「待用户确认」不阻塞后续卡
+
+### 留痕：D-P1-4 2026-08-30
+
+- 命令：`git status`（收尾复核）｜`node --test tests/h2-sentinel/contract/evidence-boundaries.test.mjs`｜`git rm plan0829/test.md`｜`git check-ignore -v claudedocs .playwright-mcp test.md`
+- commit：本提交（D-P1-4 收卡 commit，SHA 见 git log）
+- 输出：`git status` 干净（ignored 仅 node_modules / .venv / egg-info，均可解释）；契约测试 12 pass / 0 fail；CLAIMS_LEDGER 追加 R-0830-1 追认终档（含 738344f 五项 fixup + 28a175f v5 清账 + 证据边界保留声明），ps1 四子串断言内容未触动
+- 截图：不适用（非 UI/流程卡）
+- 结论：① 追认落档（CLAIMS_LEDGER R-0830-1 可查，plan0829 内部 T14 → plan0830 验收-T14 口径映射完成）；② plan0829/test.md 删除（用户 2026-08-30 确认「删除（推荐）」）；根目录 test.md 未入库仅存主仓库工作区，本线无动作；③ .playwright-mcp/ 入 .gitignore 防御规则（worktree 无此目录）；④ claudedocs/ 仅存主仓库未跟踪目录，登记为 C 线素材源——**C-P1-4 开卡前需用户将该素材拷入或提交，否则 C worktree 不可见**（已在看板挂备注）
+
 
 ---
 
