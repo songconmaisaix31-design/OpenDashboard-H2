@@ -264,3 +264,148 @@ def test_window_constants_match_train_derivation() -> None:
     """窗口常量即 TRAIN 推导结论（5-60 分钟先验），防止无意漂移。"""
     assert ATTRIBUTION_LOOKBACK_MINUTES == 60.0
     assert ATTRIBUTION_EXCLUSION_MINUTES == 5.0
+
+
+# --- A-P0-1 会话2：H2_OPERATION_LOG_PATH 副本回退链（门禁/evaluate 环境） ---
+
+_PRIOR_ROWS = [
+    # C03 先验：事件 11:00 前 30 分钟，operator_role/remark 全字段合成常量。
+    ["validation", "2026-01-05 10:30:00", "engineer", "接口映射变更",
+     "bess_power_sign", "positive_discharge->positive_charge", "联调窗口"],
+    # 无关码（C04）操作：同窗但不影响 C03 归因。
+    ["validation", "2026-01-05 10:40:00", "dispatcher", "调度约束更新",
+     "PCC功率限值", "900->700", "日内"],
+]
+
+
+def _prior_copy_fixture(tmp_path: Path, monkeypatch, rows=None):
+    """写合成 12 号文件副本并注入 H2_OPERATION_LOG_PATH；重置 oplog 单例。"""
+    import h2_analytics.detection.oplog_prior as oplog_prior
+
+    log_path = tmp_path / "12_operation_log.csv"
+    with log_path.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(_LOG_HEADER)
+        writer.writerows(rows if rows is not None else _PRIOR_ROWS)
+    monkeypatch.setenv("H2_OPERATION_LOG_PATH", str(log_path))
+    monkeypatch.setattr(oplog_prior, "_loaded", None)
+    monkeypatch.setattr(oplog_prior, "_load_attempted", False)
+    return log_path
+
+
+def _reset_prior_singleton() -> None:
+    import h2_analytics.detection.oplog_prior as oplog_prior
+
+    oplog_prior._loaded = None
+    oplog_prior._load_attempted = False
+
+
+def test_attribution_falls_back_to_prior_copy_without_data_dir(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """门禁环境（无 H2_OFFICIAL_DATA_DIR）：归因回退 oplog 副本并命中 remark。"""
+    try:
+        _prior_copy_fixture(tmp_path, monkeypatch)
+        result = attribute_root_cause(
+            code="C03",
+            window_start=_EVENT_START,
+            template=_TEMPLATE,
+            context=EvidenceContext(data_dir=None),
+        )
+        assert result.cited is True
+        assert "数据驱动归因" in result.statement
+        assert "联调窗口" in result.statement  # remark 入根因表述
+        assert "engineer" in result.statement  # operator_role 透传
+        (citation,) = result.citations
+        assert citation["ref_id"] == "OP-20260105103000-bess_power_sign"
+        assert citation["timestamp"] == "2026-01-05 10:30:00"
+        assert citation["change"] == "positive_discharge->positive_charge"
+    finally:
+        _reset_prior_singleton()
+
+
+def test_attribution_prior_copy_respects_window_and_code(tmp_path, monkeypatch) -> None:
+    """副本回退同样受 [−60, −5] 窗与模式映射约束：窗外/异码不引。"""
+    try:
+        _prior_copy_fixture(
+            tmp_path,
+            monkeypatch,
+            rows=[
+                # lead 3 分钟 < 剔除带 5 分钟：不计入。
+                ["validation", "2026-01-05 10:57:00", "engineer", "接口映射变更",
+                 "bess_power_sign", "a->b", "过近"],
+                # lead 90 分钟 > 60 分钟窗：不计入。
+                ["validation", "2026-01-05 09:30:00", "engineer", "接口映射变更",
+                 "bess_power_sign", "c->d", "过远"],
+            ],
+        )
+        result = attribute_root_cause(
+            code="C03",
+            window_start=_EVENT_START,
+            template=_TEMPLATE,
+            context=EvidenceContext(data_dir=None),
+        )
+        assert result.cited is False
+        assert "证据不足" in result.statement
+    finally:
+        _reset_prior_singleton()
+
+
+def test_builder_emits_operation_prior_evidence_from_copy(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """builder 证据链：先验窗命中的事件追加 operation_prior 条目（IF-2 字段）。"""
+    try:
+        _prior_copy_fixture(tmp_path, monkeypatch)
+        row = DataRow(
+            1,
+            _EVENT_START,
+            "2026-01-05 11:00:00",
+            {
+                "bess_power_cmd_kw": -400.0,
+                "bess_power_actual_kw": 400.0,
+                "pcc_power_actual_kw": 120.0,
+                "bess_soc_pct": 55.0,
+                "soc_target_pct": 60.0,
+            },
+        )
+        window = EventWindow(
+            event_id="C03-20260105-001",
+            code="C03",
+            subtype="BESS_DIRECTION_REVERSED",
+            rows=(row,),
+            start_time=_EVENT_START,
+            end_time=_EVENT_START,
+            first_detection_time=_EVENT_START,
+            confidence=0.9,
+            detector_version="test-detector-v1",
+        )
+        manifest = {
+            "provenance": {"generatedAt": "2026-01-05T12:00:00Z"},
+            "mode": "offline",
+            "fingerprint": "test-fingerprint",
+            "samplingIntervalMinutes": 1.0,
+        }
+
+        event = DiagnosisBuilder(
+            evidence_context=EvidenceContext(data_dir=None)
+        ).build(window=window, manifest=manifest)
+
+        prior_items = [
+            item for item in event["evidence"] if item["kind"] == "operation_prior"
+        ]
+        assert len(prior_items) == 1  # C04 操作异码不产条目
+        item = prior_items[0]
+        assert item["operationType"] == "接口映射变更"
+        assert item["priorToCode"] == "C03"
+        assert item["variable"] == "bess_power_sign"
+        assert item["actualValue"] == "positive_discharge->positive_charge"
+        assert item["referenceValue"] == "联调窗口"  # remark 原文入证据链
+        assert item["source"] == "operation-log-prior"
+        # 归因链同时生效（副本回退）。
+        assert event["rootCause"].startswith("数据驱动归因")
+        assert event["rootCauseCitations"][0]["ref_id"] == (
+            "OP-20260105103000-bess_power_sign"
+        )
+    finally:
+        _reset_prior_singleton()

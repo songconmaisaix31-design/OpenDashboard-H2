@@ -11,6 +11,7 @@ from h2_analytics.detection.c06 import (
 )
 from h2_analytics.detection.fixture import FIXTURE_C03_DETECTOR_VERSION
 from h2_analytics.evidence import EvidenceContext
+from h2_analytics.detection.oplog_prior import load_operation_priors
 from h2_analytics.diagnosis.root_cause import attribute_root_cause
 from h2_analytics.events import EventWindow
 from h2_analytics.impact import ImpactCalculator
@@ -453,7 +454,56 @@ class DiagnosisBuilder:
         evidence.extend(
             self._context_evidence(window, provenance, offset=len(evidence))
         )
+        evidence.extend(
+            self._operation_prior_evidence(window, provenance, offset=len(evidence))
+        )
         return evidence, impact_evidence_id
+
+    def _operation_prior_evidence(
+        self,
+        window: EventWindow,
+        provenance: dict[str, Any],
+        *,
+        offset: int,
+    ) -> list[dict[str, Any]]:
+        """A-P0-1：事件起点落在同码操作先验窗内 → 追加 operation_prior 条目。
+
+        与 `_context_evidence` 的 operation_log 条目（事件窗内事实罗列）语义
+        不同：本条目引用**事件开始前**的触发先验操作，remark 原文入
+        referenceValue，供根因链与 B 线助手回溯（CONTRACTS IF-2，optional
+        字段 operationType/priorToCode，加法式扩展）。仅当
+        H2_OPERATION_LOG_PATH 注入时产生；未注入时为空（v5 行为）。
+        """
+        priors = load_operation_priors()
+        if priors is None:
+            return []
+        hits = priors.match(window.code, window.start_time)
+        items: list[dict[str, Any]] = []
+        for entry in hits[:2]:  # 有界引用：最多 2 条，确定性顺序。
+            items.append(
+                {
+                    "schemaVersion": 1,
+                    "evidenceId": _evidence_id(window, offset + len(items) + 1),
+                    "kind": "operation_prior",
+                    "claimKind": "fact",
+                    "timestamp": _timestamp(entry.timestamp),
+                    "variable": entry.parameter,
+                    "actualValue": entry.change,
+                    "referenceValue": entry.remark,
+                    "unit": "",
+                    "comparator": "=",
+                    "source": "operation-log-prior",
+                    "operationType": entry.operation_type,
+                    "priorToCode": window.code,
+                    "conclusion": (
+                        f"事件开始前的「{entry.operation_type}」（参数 "
+                        f"{entry.parameter} 变更为「{entry.change}」）构成 "
+                        f"{window.code} 类检测先验；备注原文可回溯。"
+                    ),
+                    "provenance": provenance,
+                }
+            )
+        return items
 
     def _plan_for(self, window: EventWindow) -> tuple[dict[str, Any], ...]:
         plan = [dict(item) for item in _EVIDENCE_PLAN[window.code]]

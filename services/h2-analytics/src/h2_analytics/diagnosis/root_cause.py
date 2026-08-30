@@ -16,6 +16,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from h2_analytics.detection.oplog_prior import (
+    OPERATION_TO_CODE,
+    OperationLogEntry,
+    load_operation_priors,
+)
 from h2_analytics.evidence import EvidenceContext
 
 # 先验窗口（分钟）：TRAIN 推导（全部日志先验 5-60 分钟），VALIDATION 验收通过。
@@ -83,6 +88,46 @@ def support_score(lead_minutes: float) -> float:
     return round(max(0.0, 1.0 - lead_minutes / ATTRIBUTION_LOOKBACK_MINUTES), 2)
 
 
+def _candidate_rows(
+    code: str,
+    window_start: datetime,
+    context: EvidenceContext,
+) -> tuple[dict[str, str], ...]:
+    """取归因候选操作日志行（[start−60, start−5] 窗口）。
+
+    数据源两级：EvidenceContext（官方数据目录，H2_OFFICIAL_DATA_DIR）可达时
+    优先；否则回退 ``H2_OPERATION_LOG_PATH`` 副本索引（oplog_prior，A-P0-1）——
+    门禁/evaluate 环境服务进程不读官方目录，副本透传是归因链路唯一数据源，
+    没有它 P1-8 归因在门禁下始终回退"证据不足"。
+    """
+    window_end = window_start - timedelta(minutes=ATTRIBUTION_EXCLUSION_MINUTES)
+    window_begin = window_start - timedelta(minutes=ATTRIBUTION_LOOKBACK_MINUTES)
+    if context.data_dir is not None:
+        return context.operation_logs(start=window_begin, end=window_end)
+    priors = load_operation_priors()
+    if priors is None:
+        return ()
+    rows: list[dict[str, str]] = []
+    for entry in priors.entries:  # type: OperationLogEntry
+        if OPERATION_TO_CODE.get(entry.operation_type) != code:
+            continue
+        if not (window_begin <= entry.timestamp <= window_end):
+            continue
+        rows.append(
+            {
+                # 与官方 CSV 文本口径一致（YYYY-MM-DD HH:MM:SS 带秒），
+                # 保证引用键/表述与 EvidenceContext 路径完全同形。
+                "timestamp": entry.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                "operation_type": entry.operation_type,
+                "parameter": entry.parameter,
+                "change": entry.change,
+                "remark": entry.remark,
+                "operator_role": entry.operator_role,
+            }
+        )
+    return tuple(rows)
+
+
 def attribute_root_cause(
     *,
     code: str,
@@ -93,11 +138,8 @@ def attribute_root_cause(
     """对单个事件做操作日志模式归因；无映射类别或无支撑日志时回退"证据不足"。"""
     pattern = OPERATION_LOG_PATTERNS.get(code)
     candidates: tuple[dict[str, str], ...] = ()
-    if pattern is not None and context.data_dir is not None:
-        rows = context.operation_logs(
-            start=window_start - timedelta(minutes=ATTRIBUTION_LOOKBACK_MINUTES),
-            end=window_start - timedelta(minutes=ATTRIBUTION_EXCLUSION_MINUTES),
-        )
+    if pattern is not None:
+        rows = _candidate_rows(code, window_start, context)
         candidates = tuple(
             row
             for row in rows

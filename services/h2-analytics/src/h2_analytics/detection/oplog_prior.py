@@ -57,6 +57,7 @@ class OperationLogEntry:
     change: str
     remark: str
     split: str
+    operator_role: str = ""
 
 
 class OperationPriorIndex:
@@ -119,6 +120,7 @@ def parse_operation_log(text: str) -> tuple[OperationLogEntry, ...]:
                 change=(row.get("change") or "").strip(),
                 remark=(row.get("remark") or "").strip(),
                 split=(row.get("split") or "").strip(),
+                operator_role=(row.get("operator_role") or "").strip(),
             )
         )
     return tuple(entries)
