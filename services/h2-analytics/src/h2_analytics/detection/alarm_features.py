@@ -18,8 +18,21 @@
 - 其余 7 个关联码（GRID_ENERGY_QUOTA_EXCEED / CAPACITY_SYNC_WARN /
   ELZ_AVOIDABLE_START / PCC_DEVIATION / BESS_REGULATION_HIGH /
   SOC_TRAJECTORY_DEVIATION / DISPATCH_LIMIT_NOT_TRACKED）起点窗与任何
-  C 码零共现，保留在关联簇常量但不进置信映射——疑似事件后段信号，
-  会话2 子类消歧按事件全程窗再核。
+  C 码零共现，保留在关联簇常量但不进置信映射。
+- 会话2 全程窗再核（同脚本 mode=full，窗=[start,end]）：7 码全部确认为
+  事件后段信号，且与 C 码严格一对一配对（覆盖率）——C01←BESS_REGULATION_HIGH
+  60%｜C02←CAPACITY_SYNC_WARN 84%｜C03←PCC_DEVIATION 64%｜C04←
+  DISPATCH_LIMIT_NOT_TRACKED 58%｜C05←GRID_ENERGY_QUOTA_EXCEED 76%｜
+  C06←ELZ_AVOIDABLE_START 68%｜C07←SOC_TRAJECTORY_DEVIATION 60%；
+  每类形成「起点窗主码 + 后段副码」双码结构（副码备用，不进当前映射）。
+- 会话2 子类消歧结论（**数据否证，不接线**）：报警 message 为每码固定
+  文案、无方向字段；C04/C05 关联码在 IMPORT/EXPORT 两子类上的全程窗
+  覆盖率几乎对称（如 PCC_POWER_LIMIT_EXCEED 两子类均 88%），无子类
+  判别力。val 实测子类一致率 67/69（C05 10/10、C04 8/10），两条不一致
+  （VA0034/VA0040）均出自 rules.py C04 fallback 方向分支：violation 列
+  全窗恒 0，PCC 表计方向为正而 bess_power_cmd=-450（标签 IMPORT 按 BESS
+  指令方向）——时序证据本身两可且报警不可修正。详见
+  plan0830/A/SUBTYPE_CONSISTENCY_REPORT.md。
 
 设计约束（红线）：
 1. 仅当环境变量 ``H2_ALARM_LOG_PATH`` 指向官方 11 号文件时激活（惰性加载、
