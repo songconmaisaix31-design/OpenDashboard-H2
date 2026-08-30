@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from h2_analytics.assistant.corpus import (
+    KnowledgeCorpusError,
+    entries_for_citations,
+)
 from h2_analytics.contracts import ASSISTANT_QUESTION_IDS, build_provenance
 from h2_analytics.errors import AnalyticsError
 from h2_analytics.vocabulary import efficiency_curve_by_equipment
@@ -156,6 +160,15 @@ class AssistantService:
             event=event,
             generated_report=generated_report,
         )
+        # 引用一致性断言（B-P1-1）：knowledge_base 静态引用必须可溯源到
+        # knowledge-base.md 的真实条目（run: 动态 ID 除外），失配即 fail-fast。
+        try:
+            entries_for_citations(citations)
+        except KnowledgeCorpusError as error:
+            raise AnalyticsError(
+                "assistant.knowledge_unresolvable",
+                "答案引用的知识条目不可溯源。",
+            ) from error
         generated_at = run["completedAt"]
         provenance = build_provenance(
             mode=run["dataset"]["mode"],

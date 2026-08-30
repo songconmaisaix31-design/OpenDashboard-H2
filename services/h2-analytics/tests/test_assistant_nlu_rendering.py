@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 
 import pytest
 
 from h2_analytics.assistant import LlmRenderingConfig, StepFunRenderer, resolve_intent
+from h2_analytics.assistant.corpus import (
+    MAX_ENTRY_TEXT_CHARS,
+    MAX_INJECTION_CHARS,
+    knowledge_entries,
+)
 from h2_analytics.assistant.llm_client import llm_rendering_config_from_environment
 from h2_analytics.assistant.service import _ALLOWED_EVENT_CODES
 from h2_analytics.api import create_app
@@ -488,3 +494,93 @@ def test_renderer_allows_source_disclaimer_control_wording(valid_csv: str) -> No
     result = renderer.render(deterministic_answer=answer, requested=True)
     assert result["status"] == "rendered"
     assert result["provenance"]["mode"] == "LLM_RENDERED"
+
+
+def test_knowledge_corpus_fully_sourced() -> None:
+    """B-P1-1 验收：语料 ≥60 条、100% 出处，会话2 三来源就位、官方 4 条保留。"""
+    entries = knowledge_entries()
+    assert len(entries) >= 60
+    assert all(entry["text"] and entry["sourceId"] for entry in entries)
+    types = {entry["sourceType"] for entry in entries}
+    # 会话2 新增三来源（09 约束 12 条 / 08 台账 8 台 / 10 曲线 3 台）
+    assert {"control_constraint", "equipment_master", "efficiency_curve"} <= types
+    by_type = Counter(entry["sourceType"] for entry in entries)
+    assert by_type["control_constraint"] == 12
+    assert by_type["equipment_master"] == 8
+    assert by_type["efficiency_curve"] == 3
+    # 官方 15 号文件 4 条逐字保留（抽样校验首条正文）
+    by_id = {entry["id"]: entry for entry in entries}
+    assert by_id["h2-sign-conventions-v1"]["text"].startswith("PCC功率正值表示向电网上网")
+
+
+def test_answer_knowledge_citations_resolve_to_corpus(valid_csv: str) -> None:
+    """B-P1-1 验收：十问答案的 knowledge_base 静态引用 100% 可溯源到语料条目。"""
+    service = AnalyticsService()
+    dataset_id = service.import_csv(
+        filename="fixture.csv", text=valid_csv
+    )["dataset"]["datasetId"]
+    run = service.run_analysis(dataset_id)
+    events = {event["code"]: event["eventId"] for event in run["events"]}
+    cases = [
+        ("Q01", None),
+        ("Q04", None),
+        ("Q05", None),
+        ("Q06", None),
+        ("Q07", None),
+        ("Q08", None),
+    ]
+    # Q03/Q09 必须带事件（fixture 提供 C03）；Q02/Q10 用 C04 事件复真实门控路径。
+    cases.append(("Q03", events["C03"]))
+    cases.append(("Q09", events["C03"]))
+    cases.append(("Q02", events["C04"]))
+    cases.append(("Q10", events["C04"]))
+    corpus_ids = {entry["id"] for entry in knowledge_entries()}
+    for question_id, event_id in cases:
+        answer = service.ask(
+            run_id=run["runId"],
+            question_id=question_id,
+            event_id=event_id,
+            allow_llm_rendering=False,
+        )
+        for citation in answer["citations"]:
+            if citation["sourceType"] != "knowledge_base":
+                continue
+            if citation["sourceId"].startswith("run:"):
+                continue  # 运行时动态 ID（当前 run 摘要），不落静态语料
+            assert citation["sourceId"] in corpus_ids, (
+                f"{question_id} 引用不可溯源：{citation['sourceId']}"
+            )
+    assert len(cases) == 10
+
+
+def test_llm_rendering_injects_bounded_knowledge_entries(valid_csv: str) -> None:
+    """B-P1-1 验收：渲染请求按题注入语料且预算受控（token 预算机器留痕）。"""
+    captured: dict = {}
+
+    def transport(_url, body, _headers, _timeout):
+        captured["payload"] = json.loads(body.decode("utf-8"))
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "依据现有证据，所有建议均须人工确认；限制是仅用于诊断参考。"
+                    }
+                }
+            ]
+        }
+
+    renderer = StepFunRenderer(
+        LlmRenderingConfig(enabled=True, api_key="test-key", model="test-model"),
+        transport=transport,
+    )
+    answer = _answer(valid_csv)  # Q08：引用 h2-recommendation-actions-v1
+    result = renderer.render(deterministic_answer=answer, requested=True)
+    assert result["status"] == "rendered"
+    user_content = json.loads(captured["payload"]["messages"][1]["content"])
+    entries = user_content["knowledgeEntries"]
+    assert entries and entries[0]["id"] == "h2-recommendation-actions-v1"
+    # 注入预算（corpus.py 常量）：每条正文 ≤600 字、总量 ≤2400 字
+    assert all(len(entry["text"]) <= MAX_ENTRY_TEXT_CHARS for entry in entries)
+    assert sum(len(entry["text"]) for entry in entries) <= MAX_INJECTION_CHARS
+    # 源文本 8000 字截断框架不动
+    assert len(user_content["deterministicAnswerText"]) <= 8_000

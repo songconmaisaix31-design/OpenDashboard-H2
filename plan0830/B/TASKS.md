@@ -13,7 +13,7 @@
 | B-P0-1 4 文件收尾提交 | 未开始（D0） | 干净 commit + assistant pytest 绿 + CLAIMS_LEDGER 登记 | commit SHA |
 | B-P0-2 三态启用/降级 | **完成（D1）** | 三态各演示 1 次 + 切换 ≤30s + fail-closed 不变 | `B-P0-2_TRISTATE_RUNBOOK.md` + `evidence/b_p0_2_tristate_20260830_0907*.log` |
 | B-P0-3 Q01-Q10 强化 | **完成（D1，3 会话）**（会话1 ✓：Q01-Q05；会话2 ✓：Q06-Q10+样例集；会话3 ✓：命中率聚合断言+十问清单） | 样例 ≥90% 命中 + 越界 100% 拒答 + Q09/Q10 端到端 | 会话1：pytest 88 绿；会话2：pytest 92 绿+全量回归绿；会话3：60 例三类变体 100% 命中+越界 6 例全拒答+全量 315 passed/3 skipped；`B-P0-3_Q01_Q10_CHECKLIST.md` |
-| B-P1-1 语料扩充 | **进行中**（会话1 ✓：字典 40+需求书 14+官方 4+引用落位 5=63 条；余：会话2 约束/台账/曲线+corpus.py+token 预算） | ≥60 条 100% 出处 + token 预算记录 | `B-P1-1_CORPUS_RECON.md`（10/10 引用 ID 落位；pytest 315 绿；h2:qa 契约 PASS=5） |
+| B-P1-1 语料扩充 | **完成（D5，2 会话）**（会话1 ✓：存量 66 条落位；会话2 ✓：约束 12+台账 8+曲线 3+corpus.py 接线+token 预算） | ≥60 条 100% 出处 + token 预算记录 | `B-P1-1_CORPUS_RECON.md`（89 条解析实测 100% 出处；十问引用 100% 可溯源断言；注入峰值 649 字未击穿 8000 框架；助手 pytest 115 绿+全量回归绿；h2:qa 契约 PASS=5） |
 | B-P1-2 追问意图扩展 | 未开始 | ≥30 样例 ≥90% 命中 + 拒答语义不变 | pytest 输出 |
 | B-P1-3 渲染层对照 | 未开始 | 10 组对照样例一致（断言 <100 行） | pytest 输出 |
 
@@ -198,6 +198,7 @@
 | 2026-08-30 | B-P0-3 会话2（Q06-Q10 数值化+样例集） | 本分支 commit | 新段 c01_observed（Q06）/efficiency_baseline+elz_observed（Q07，额定单耗 52/52.7/54.2 程序化取自 efficiency-curves 词表）/observed_compliance（Q10，C04 计数+越限电量 120 kWh 实测+累计电量证据不足声明）；Q08/Q09 维持；NLU 样例 +3（带事件 ID 变体，43 例全命中）；新增 `test_q06_q10_answers_carry_current_run_measurements`；助手 pytest 92 绿+全量回归绿（298 通过/4 skip） |
 | 2026-08-30 | B-P0-3 会话3（命中率断言收尾+十问清单） | 本分支 commit | `_MATCH_CASES` 升级为类型化三元组（60 例：每题口语化×4+带事件 ID×1+追问式×1，100% 命中）+`_REJECT_CASES` 6 例全拒答；新增聚合断言（每题 ≥3 变体三类齐/命中 ≥90%/越界 100%/事件码与门控一致）；十问四列勾验清单留痕 `B-P0-3_Q01_Q10_CHECKLIST.md`；已知边界：事件码子串歧义拒答语义安全，词表级改进转 B-P1-2；全量 315 passed+3 skipped |
 | 2026-08-30 | B-P1-1 会话1（字典+需求书语料化） | 本分支 commit | knowledge-base.md 9 行 4 条→63 条结构化语料（官方 4 逐字保留/字典 40 分组归纳含行号/需求书 14 条款/答案引用 5 条落位）；service.py 10/10 静态 knowledge_base ID 落到真实条目（2 改名+5 新增），`run:{id}:summary` 维持动态 ID；对账留痕 `B-P1-1_CORPUS_RECON.md`；vocabulary.knowledge_base() 无调用方故零 prompt 影响（接线+token 预算归会话2）；pytest 315 passed+3 skipped、h2:qa 契约 PASS=5（P1-API 超时为环境既有问题） |
+| 2026-08-30 | B-P1-1 会话2（约束/台账/曲线+corpus.py+token 预算） | 本分支 commit | 语料 66→89 条（09 约束 12+08 台账 8+10 曲线 3，100% 出处断言）；新建 `assistant/corpus.py`（按 ID 取条目+引用一致性断言+渲染注入预算 600/条+2400 总量）；answer() 内置 fail-fast 断言（`assistant.knowledge_unresolvable`）；llm_client 渲染请求按题注入 `knowledgeEntries`（系统提示收紧、`_valid_output` 不放松）；答案契约零变化（schema 不属 B 线写域）；token 预算实测：注入峰值 183 字/题、user 合计峰值 649 字（Q07），8000 字框架未击穿；助手 pytest 115 绿+全量回归绿+h2:qa 契约 PASS=5 |
 
 ## 附 2：本线在三级门禁的交付对照
 

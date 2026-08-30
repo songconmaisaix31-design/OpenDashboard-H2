@@ -1,7 +1,7 @@
 # 弱并网绿电制氢EMS控制异常诊断知识库（结构化语料，B-P1-1）
 
 > 条目 schema（corpus.py 按此解析）：每条 = `### {ID}` + **正文** + **sourceType** + **sourceId**。
-> sourceType 取值：`official_knowledge`（官方 15 号文件原文）/ `data_dictionary`（00 号变量字典归纳）/ `requirement_doc`（需求书条款）。
+> sourceType 取值：`official_knowledge`（官方 15 号文件原文）/ `data_dictionary`（00 号变量字典归纳）/ `requirement_doc`（需求书条款）/ `control_constraint`（09 号控制约束）/ `equipment_master`（08 号设备台账）/ `efficiency_curve`（10 号电解槽效率曲线）。
 > 纪律：正文忠实转述官方材料（单位/公式/枚举/关联异常码原样保留），不编造测点或标准；官方 4 条逐字保留。
 
 ## 一、官方知识条目（15_knowledge_base.md 原文逐字保留）
@@ -341,3 +341,124 @@
 - **正文**：SOC 调节备用双向余量计算输入：剩余可充电能量 = 1000×(90−SOC)/100/充电效率，剩余可放电能量 = 1000×(SOC−20)/100×放电效率（kWh，SOC 正常范围 20%-90%），对照调节备用目标 bess_regulation_reserve_target_kwh 判断备用缺口。
 - **sourceType**: data_dictionary
 - **sourceId**: 00_变量中文描述与数据字典.csv:行14-16
+
+## 五、控制约束条目（09_control_constraints.csv 全量 12 条；行号=该 CSV 物理行）
+
+### constraint-pcc01-sign-convention
+- **正文**：控制约束：PCC01 pcc_sign_convention——正值上网，负值下网（用途：统一符号）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行2
+
+### constraint-bess01-sign-convention
+- **正文**：控制约束：BESS01 bess_sign_convention——正值放电，负值充电（用途：统一符号）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行3
+
+### constraint-bess01-soc-min
+- **正文**：控制约束：BESS01 soc_min = 20 %（说明：AI 不得建议突破）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行4
+
+### constraint-bess01-soc-max
+- **正文**：控制约束：BESS01 soc_max = 90 %（说明：正常运行上限）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行5
+
+### constraint-bess01-power-charge-max
+- **正文**：控制约束：BESS01 power_charge_max = 500 kW（说明：负值方向的最大幅值）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行6
+
+### constraint-bess01-power-discharge-max
+- **正文**：控制约束：BESS01 power_discharge_max = 500 kW（说明：正值方向的最大幅值）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行7
+
+### constraint-bess01-energy-capacity
+- **正文**：控制约束：BESS01 energy_capacity = 1000 kWh（说明：模拟可用容量）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行8
+
+### constraint-elz-power-min-stable
+- **正文**：控制约束：ELZ_ALL power_min_stable = 300 kW（说明：单台运行下限）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行9
+
+### constraint-elz-power-max
+- **正文**：控制约束：ELZ_ALL power_max = 1000 kW（说明：单台额定上限）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行10
+
+### constraint-elz-ramp-rate-max
+- **正文**：控制约束：ELZ_ALL ramp_rate_max = 120 kW/min（说明：分钟级参考爬坡）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行11
+
+### constraint-web-app-deployment-mode
+- **正文**：控制约束：WEB_APP deployment_mode = local_web（说明：浏览器访问，本地离线部署）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行12
+
+### constraint-pcc01-grid-constraint-type
+- **正文**：控制约束：PCC01 grid_constraint_type = 动态功率+日电量配额（说明：每分钟提供当前有效约束）。
+- **sourceType**: control_constraint
+- **sourceId**: 09_control_constraints.csv:行13
+
+## 六、设备台账条目（08_equipment_master.csv 全量 8 台；行号=该 CSV 物理行）
+
+### equipment-pv01
+- **正文**：设备台账：PV01 光伏发电单元，额定容量 4000 kW；控制关系=EMS 读取预测/可用/实际功率并可下发限发；关联变量 pv_*；约束备注=实际功率不高于可用功率。
+- **sourceType**: equipment_master
+- **sourceId**: 08_equipment_master.csv:行2
+
+### equipment-bess01
+- **正文**：设备台账：BESS01 储能系统，额定容量 500 kW / 1000 kWh；控制关系=EMS 通过储能 EMS 下发功率，正值放电、负值充电；关联变量 bess_*；约束备注=SOC 正常范围 20%~90%。
+- **sourceType**: equipment_master
+- **sourceId**: 08_equipment_master.csv:行3
+
+### equipment-pcc01
+- **正文**：设备台账：PCC01 并网点，弱并网；控制关系=受动态上下网功率限值及日电量配额约束；关联变量 pcc_*、grid_*；约束备注=PCC 正值上网、负值下网。
+- **sourceType**: equipment_master
+- **sourceId**: 08_equipment_master.csv:行4
+
+### equipment-ems01
+- **正文**：设备台账：EMS01 能量管理系统，1 套；控制关系=协调光伏、储能、电解槽和 PCC；关联变量 ems_*；约束备注=AI 仅监督和辅助，不直接闭环。
+- **sourceType**: equipment_master
+- **sourceId**: 08_equipment_master.csv:行5
+
+### equipment-elz01
+- **正文**：设备台账：ELZ01 碱性电解槽1，额定容量 1000 kW；效率较优；关联变量 elz1_*；约束备注=最小稳定负荷 300 kW。
+- **sourceType**: equipment_master
+- **sourceId**: 08_equipment_master.csv:行6
+
+### equipment-elz02
+- **正文**：设备台账：ELZ02 碱性电解槽2，额定容量 1000 kW；效率中等；关联变量 elz2_*；约束备注=最小稳定负荷 300 kW。
+- **sourceType**: equipment_master
+- **sourceId**: 08_equipment_master.csv:行7
+
+### equipment-elz03
+- **正文**：设备台账：ELZ03 碱性电解槽3，额定容量 1000 kW；效率相对较低；关联变量 elz3_*；约束备注=最小稳定负荷 300 kW。
+- **sourceType**: equipment_master
+- **sourceId**: 08_equipment_master.csv:行8
+
+### equipment-aux01
+- **正文**：设备台账：AUX01 制氢辅助负荷，约 150 kW；控制关系=冷却、水处理、仪表和控制等关键负荷；关联变量 aux_load_kw；约束备注=关键不可中断负荷。
+- **sourceType**: equipment_master
+- **sourceId**: 08_equipment_master.csv:行9
+
+## 七、电解槽效率曲线条目（10_electrolyzer_efficiency_curves.csv 全量 3 台；行号=该 CSV 物理行；单耗单位 kWh/kg）
+
+### efficiency-elz01
+- **正文**：ELZ01 效率曲线（负荷率/功率 kW/单位制氢电耗）：30% → 300 kW → 56.8；50% → 500 kW → 52.9；70% → 700 kW → 50.9；100% → 1000 kW → 52.0。
+- **sourceType**: efficiency_curve
+- **sourceId**: 10_electrolyzer_efficiency_curves.csv:行2-5
+
+### efficiency-elz02
+- **正文**：ELZ02 效率曲线（负荷率/功率 kW/单位制氢电耗）：30% → 300 kW → 57.8；50% → 500 kW → 53.8；70% → 700 kW → 51.6；100% → 1000 kW → 52.7。
+- **sourceType**: efficiency_curve
+- **sourceId**: 10_electrolyzer_efficiency_curves.csv:行6-9
+
+### efficiency-elz03
+- **正文**：ELZ03 效率曲线（负荷率/功率 kW/单位制氢电耗）：30% → 300 kW → 59.0；50% → 500 kW → 55.0；70% → 700 kW → 53.0；100% → 1000 kW → 54.2。
+- **sourceType**: efficiency_curve
+- **sourceId**: 10_electrolyzer_efficiency_curves.csv:行10-13

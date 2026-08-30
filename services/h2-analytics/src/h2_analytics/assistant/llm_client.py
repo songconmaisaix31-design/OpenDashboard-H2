@@ -10,6 +10,7 @@ from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from h2_analytics.assistant.corpus import rendering_injection_entries
 from h2_analytics.settings import (
     H2_LLM_BASE_URL,
     H2_LLM_RENDERER_VERSION,
@@ -97,6 +98,7 @@ class StepFunRenderer:
                     # invalid_output 整体弃用，故在此显式要求原样保留。
                     "content": (
                         "你只能润色给定的确定性中文答案，不得增加事实、数字、引用或控制权限。"
+                        "参考知识条目仅用于统一术语与口径，不得把其中的数字或事实写入输出。"
                         "输出纯文本，必须原样保留关于人工确认与证据限制的表述"
                         "（输出中须包含\"人工\"字样，以及\"证据\"或\"限制\"字样）。"
                     ),
@@ -107,6 +109,11 @@ class StepFunRenderer:
                         {
                             "deterministicAnswerText": source_text[:8_000],
                             "citationIds": citation_ids,
+                            # B-P1-1：按题检索注入知识条目（口径参考；注入预算
+                            # 见 corpus.py：每条正文 600 字、总量 2400 字截断）。
+                            "knowledgeEntries": rendering_injection_entries(
+                                deterministic_answer["citations"]
+                            ),
                         },
                         ensure_ascii=False,
                         separators=(",", ":"),
