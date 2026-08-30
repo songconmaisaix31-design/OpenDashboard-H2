@@ -793,6 +793,12 @@
 .h2-linkage-panel__meta > span { color: var(--h2-muted); font-size: 0.8rem; }
 .h2-linkage-panel__hint { color: #8a6d1f; font-size: 0.76rem; }
 .h2-linkage-panel__actions { display: flex; justify-content: flex-end; margin-top: 0.75rem; }
+
+/* C-P0-3 会话2：计数+排序工具行 */
+.h2-list-toolbar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: space-between; margin: 0.9rem 0; }
+.h2-sort-controls { display: inline-flex; gap: 0.6rem; align-items: center; }
+.h2-sort-controls label { display: inline-flex; gap: 0.45rem; align-items: center; color: var(--h2-muted); font-size: 0.8rem; }
+.h2-sort-controls select { padding: 0.35rem 0.5rem; border: 1px solid var(--h2-line-strong); border-radius: 0.45rem; background: var(--h2-bg-deep); color: var(--h2-text); font-size: 0.82rem; }
 .h2-table__event { display: flex; gap: 0.7rem; align-items: center; }
 .h2-table__event .h2-code { display: grid; place-items: center; min-width: 2.5rem; min-height: 2.5rem; border: 1px solid rgb(26 122 212 / 24%); border-radius: 0.55rem; background: rgb(26 122 212 / 7%); }
 .h2-icon-button { display: grid; place-items: center; width: 2rem; height: 2rem; color: var(--h2-mint); border: 1px solid var(--h2-line-strong); border-radius: 50%; background: transparent; }

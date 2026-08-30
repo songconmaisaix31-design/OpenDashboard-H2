@@ -20,7 +20,10 @@ import {
   H2_REVIEW_LABELS,
   H2_SEVERITY_LABELS,
   INITIAL_EVENT_FILTERS,
+  sortH2Events,
   type H2EventFilterState,
+  type H2EventSortKey,
+  type H2EventSortState,
 } from '../../model/presentation.ts'
 import {
   createEventChartOption,
@@ -40,28 +43,38 @@ const reviewStates = ['open', 'confirmed', 'dismissed', 'resolved'] as const sat
 export interface EventsPageProps {
   readonly dataSource: H2SentinelDataSource
   readonly eventFilters: H2EventFilterState
+  readonly eventSort: H2EventSortState
   readonly onEventFiltersChange: (filters: H2EventFilterState) => void
+  readonly onEventSortChange: (sort: H2EventSortState) => void
   readonly onNavigate: (target: H2NavigationTarget) => void
   readonly onSelectEvent: (eventId: string | null) => void
   readonly selectedEventId: string | null
   readonly workspace: H2Workspace
 }
 
+const sortKeyLabels = {
+  startTime: '开始时间',
+  severity: '严重度',
+  confidence: '置信度',
+} as const satisfies Readonly<Record<H2EventSortKey, string>>
+
 export function EventsPage({
   dataSource,
   eventFilters,
+  eventSort,
   onEventFiltersChange,
+  onEventSortChange,
   onNavigate,
   onSelectEvent,
   selectedEventId,
   workspace,
 }: EventsPageProps) {
-  // C-P0-3：筛选状态提升到 App 层（受控），跳诊断页返回后不丢失。
+  // C-P0-3：筛选/排序状态提升到 App 层（受控），跳诊断页返回后不丢失。
   const filters = eventFilters
   const runProvenance = workspace.run.provenance
   const filteredEvents = useMemo(
-    () => filterH2Events(workspace.events, filters),
-    [filters, workspace.events],
+    () => sortH2Events(filterH2Events(workspace.events, filters), eventSort),
+    [filters, eventSort, workspace.events],
   )
 
   // C-P0-3：全局选中事件驱动页内联动曲线；与诊断页共用同一查询（事件窗）与图表装配，保证时间轴一致（红线 #1）。
@@ -135,7 +148,31 @@ export function EventsPage({
         <button className="h2-button h2-button--ghost" onClick={() => onEventFiltersChange(INITIAL_EVENT_FILTERS)} type="button">清除筛选</button>
       </section>
 
-      <div aria-live="polite" className="h2-result-count">显示 {filteredEvents.length} / {workspace.events.length} 个事件</div>
+      <div className="h2-list-toolbar">
+        <div aria-live="polite" className="h2-result-count">显示 {filteredEvents.length} / {workspace.events.length} 个事件</div>
+        {/* C-P0-3 会话2：排序控件（时间/严重度/置信度 × 升降），只改变展示顺序 */}
+        <div aria-label="事件排序" className="h2-sort-controls">
+          <label>
+            <span>排序</span>
+            <select
+              onChange={(event) => onEventSortChange({ ...eventSort, key: event.currentTarget.value as H2EventSortKey })}
+              value={eventSort.key}
+            >
+              {(Object.keys(sortKeyLabels) as H2EventSortKey[]).map((key) => (
+                <option key={key} value={key}>{sortKeyLabels[key]}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            aria-label={eventSort.direction === 'asc' ? `按${sortKeyLabels[eventSort.key]}升序，点击改为降序` : `按${sortKeyLabels[eventSort.key]}降序，点击改为升序`}
+            className="h2-button h2-button--ghost"
+            onClick={() => onEventSortChange({ ...eventSort, direction: eventSort.direction === 'asc' ? 'desc' : 'asc' })}
+            type="button"
+          >
+            {eventSort.direction === 'asc' ? '↑ 升序' : '↓ 降序'}
+          </button>
+        </div>
+      </div>
 
       {filteredEvents.length === 0 ? (
         <section className="h2-panel h2-empty-panel">

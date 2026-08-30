@@ -1,3 +1,4 @@
+import { H2_SEVERITIES } from '@opendashboard/h2-contracts'
 import type {
   H2AnalysisRun,
   H2AnomalyCode,
@@ -231,6 +232,35 @@ export const INITIAL_EVENT_FILTERS: H2EventFilterState = {
   minConfidence: 0,
   startsAtOrAfter: '',
   endsAtOrBefore: '',
+}
+
+// C-P0-3 会话2：事件排序（18 分表 #2 四要素之一）。排序键覆盖 时间/严重度/置信度，
+// 与筛选状态分离（排序只改变展示顺序，不改变筛选结果与源数据）。
+export type H2EventSortKey = 'startTime' | 'severity' | 'confidence'
+export type H2EventSortDirection = 'asc' | 'desc'
+
+export interface H2EventSortState {
+  readonly key: H2EventSortKey
+  readonly direction: H2EventSortDirection
+}
+
+export const INITIAL_EVENT_SORT: H2EventSortState = { key: 'startTime', direction: 'desc' }
+
+export function sortH2Events(
+  events: readonly H2AnomalyEvent[],
+  sort: H2EventSortState,
+): readonly H2AnomalyEvent[] {
+  const severityRank = new Map(H2_SEVERITIES.map((severity, index) => [severity, H2_SEVERITIES.length - index]))
+  const factor = sort.direction === 'asc' ? 1 : -1
+  return [...events].sort((left, right) => {
+    if (sort.key === 'severity') {
+      return ((severityRank.get(left.severity) ?? 0) - (severityRank.get(right.severity) ?? 0)) * factor
+    }
+    if (sort.key === 'confidence') {
+      return (left.confidence - right.confidence) * factor
+    }
+    return (Date.parse(left.startTime) - Date.parse(right.startTime)) * factor
+  })
 }
 
 const dateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {

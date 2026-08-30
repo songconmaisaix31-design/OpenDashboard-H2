@@ -16,6 +16,7 @@ import {
   filterH2Events,
   formatH2Duration,
   INITIAL_EVENT_FILTERS,
+  INITIAL_EVENT_SORT,
 } from '../model/presentation.ts'
 import {
   parseH2SentinelHash,
@@ -356,10 +357,12 @@ function renderView(
       commandState={commandState}
       dataSource={fixtureDataSource}
       eventFilters={INITIAL_EVENT_FILTERS}
+      eventSort={INITIAL_EVENT_SORT}
       navigation={navigation}
       onAsk={noop}
       onCancelImport={noop}
       onEventFiltersChange={noop}
+      onEventSortChange={noop}
       onDownload={noop}
       onExport={noop}
       onImport={noop}

@@ -6,7 +6,7 @@ import type {
 import { H2Shell } from './components/common/H2Shell.tsx'
 import { EmptyDatasetState } from './components/common/EmptyDatasetState.tsx'
 import { ViewState } from './components/common/ViewState.tsx'
-import { findH2Event, type H2EventFilterState } from './model/presentation.ts'
+import { findH2Event, type H2EventFilterState, type H2EventSortState } from './model/presentation.ts'
 import type { H2ReviewDraft } from './model/review.ts'
 import type { H2AssistantSubmissionResult } from './model/assistant.ts'
 import type {
@@ -26,8 +26,10 @@ export interface H2SentinelViewProps {
   readonly commandState: H2CommandState
   readonly dataSource: H2SentinelDataSource
   readonly eventFilters: H2EventFilterState
+  readonly eventSort: H2EventSortState
   readonly navigation: H2NavigationTarget
   readonly onEventFiltersChange: (filters: H2EventFilterState) => void
+  readonly onEventSortChange: (sort: H2EventSortState) => void
   readonly onAsk: (questionId: H2AssistantQuestionId, allowLlmRendering: boolean) => void
   readonly onSubmitFollowUp: (input: string, allowLlmRendering: boolean) => Promise<H2AssistantSubmissionResult>
   readonly onDownload: (artifact: H2ReportArtifact) => void
@@ -48,9 +50,11 @@ export function H2SentinelView({
   commandState,
   dataSource,
   eventFilters,
+  eventSort,
   navigation,
   onAsk,
   onEventFiltersChange,
+  onEventSortChange,
   onSubmitFollowUp,
   onDownload,
   onExport,
@@ -123,7 +127,9 @@ export function H2SentinelView({
         <EventsPage
           dataSource={dataSource}
           eventFilters={eventFilters}
+          eventSort={eventSort}
           onEventFiltersChange={onEventFiltersChange}
+          onEventSortChange={onEventSortChange}
           onNavigate={onNavigate}
           onSelectEvent={onSelectEvent}
           selectedEventId={selectedEventId}
