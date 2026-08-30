@@ -419,6 +419,49 @@ def test_q01_q05_answers_carry_current_run_measurements(valid_csv: str) -> None:
     assert "未检出 C02" in _section_text("Q05", "c02_observed", None)
 
 
+def test_q06_q10_answers_carry_current_run_measurements(valid_csv: str) -> None:
+    """B-P0-3 会话2：Q06-Q10 答案数值化（效率曲线基线+事件实测或证据不足声明）。"""
+    service, run_id = _analyzed(valid_csv)
+
+    def _section_text(question_id: str, section_id: str) -> str:
+        answer = service.ask(
+            run_id=run_id,
+            question_id=question_id,
+            event_id=_EVENT_CONTEXT.get(question_id),
+            allow_llm_rendering=False,
+        )
+        _assert_answer_invariants(answer)
+        return next(
+            section["text"]
+            for section in answer["sections"]
+            if section["sectionId"] == section_id
+        )
+
+    # Q06：无 C01 事件时如实声明，不以单一采样点下结论
+    q06 = _section_text("Q06", "c01_observed")
+    assert "未检出 C01" in q06
+    assert "不以单一采样点下结论" in q06
+    # Q07：效率曲线额定单耗基线（词表静态值 52/52.7/54.2，ELZ01 最低、ELZ03 最高）
+    q07_baseline = _section_text("Q07", "efficiency_baseline")
+    assert "ELZ01 额定 1000 kW 单耗 52 kWh/kg" in q07_baseline
+    assert "ELZ02 额定 1000 kW 单耗 52.7 kWh/kg" in q07_baseline
+    assert "ELZ03 额定 1000 kW 单耗 54.2 kWh/kg" in q07_baseline
+    assert "ELZ01 能耗基线最低、ELZ03 最高" in q07_baseline
+    assert "不构成设备健康结论" in q07_baseline
+    # Q07：fixture 事件证据不含 elz 逐台功率 → 如实声明
+    q07_observed = _section_text("Q07", "elz_observed")
+    assert "未含电解槽逐台功率实测" in q07_observed
+    assert "不以零或估算替代" in q07_observed
+    # Q08：安全基准题维持（人工确认+无控制权限免责）
+    q08 = _section_text("Q08", "human_boundary")
+    assert "人工确认" in q08 and "不具备设备控制" in q08
+    # Q10：C04/C05 计数 + C04 越限电量实测 120 kWh + 累计电量证据不足声明
+    q10 = _section_text("Q10", "observed_compliance")
+    assert "C04 功率越限 1 起、C05 电量配额异常 0 起" in q10
+    assert "C04-20260105-001" in q10 and "120 kWh" in q10
+    assert "证据不足" in q10 and "不以零替代" in q10
+
+
 def _assert_answer_invariants(answer: dict) -> None:
     sections = answer["sections"]
     citations = answer["citations"]

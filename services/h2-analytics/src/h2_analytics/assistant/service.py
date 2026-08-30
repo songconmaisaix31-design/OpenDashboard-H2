@@ -5,6 +5,7 @@ from typing import Any
 
 from h2_analytics.contracts import ASSISTANT_QUESTION_IDS, build_provenance
 from h2_analytics.errors import AnalyticsError
+from h2_analytics.vocabulary import efficiency_curve_by_equipment
 
 ReportFactory = Callable[[str], dict[str, Any]]
 
@@ -75,6 +76,45 @@ def _pcc_observed(
             if item["variable"] == "pcc_power_actual_kw":
                 collected.append((event, item))
     return collected
+
+
+def _elz_observed(
+    run: dict[str, Any],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """跨事件收集电解槽逐台功率实测条目（elz{n}_power_actual_kw）。"""
+    collected: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for event in run["events"]:
+        for item in _fact_measurements(event):
+            variable = item["variable"]
+            if (
+                variable.startswith("elz")
+                and variable.endswith("_power_actual_kw")
+                and variable[len("elz") : -len("_power_actual_kw")].isdigit()
+            ):
+                collected.append((event, item))
+    return collected
+
+
+def _rated_energy_baseline() -> list[tuple[str, float, float]]:
+    """效率曲线额定工况（load_ratio=1.0）单耗基线：(设备号, 额定功率 kW, 单耗 kWh/kg)。
+
+    数值取自冻结词表效率曲线，属静态参考基线，不是当前运行实测。
+    """
+    rows: list[tuple[str, float, float]] = []
+    for equipment_id, curve in sorted(efficiency_curve_by_equipment().items()):
+        rated = next(
+            (row for row in curve if str(row.get("load_ratio")) == "1.0"),
+            None,
+        )
+        if rated is not None:
+            rows.append(
+                (
+                    equipment_id,
+                    float(rated["power_kw"]),
+                    float(rated["specific_energy_kwh_per_kg"]),
+                )
+            )
+    return rows
 
 
 class AssistantService:
@@ -454,6 +494,38 @@ def _answer_content(
             "单个告警或单个采样点不足以区分两者；至少需要时间对齐的多点趋势和跨设备证据，缺少这些证据时结论必须保持未确定。",
             [("constraint", "electrolyzer-ramp-limit-v1", None)],
         )
+        c01_event = event or _first_event_of_code(run, "C01")
+        if c01_event is not None:
+            c01_measurements = _fact_measurements(c01_event)
+            c01_lines = _measurement_lines(c01_measurements)
+            c01_detail = (
+                f"事件证据实测：{'；'.join(c01_lines)}"
+                if c01_lines
+                else "本事件证据未含可引用的数值实测条目"
+            )
+            add(
+                "c01_observed",
+                "fact",
+                f"当前运行检出的 C01 事件 {c01_event['eventId']}"
+                f"（{c01_event['startTime']} 至 {c01_event['endTime']}）{c01_detail}；"
+                "以上为区分云团变化与控制指令振荡的实测输入，结论仍须以时间对齐的光伏与指令证据共同判断。",
+                [
+                    ("event", c01_event["eventId"], c01_event["eventId"]),
+                    *[
+                        ("evidence", item["evidenceId"], c01_event["eventId"])
+                        for item in c01_measurements
+                    ],
+                ],
+            )
+        else:
+            add(
+                "c01_observed",
+                "fact",
+                "当前运行未检出 C01 事件，本回答不提供事件窗光伏波动幅度与指令反转计数实测；"
+                "云团变化与控制指令振荡的区分须在检出该类事件后，"
+                "以时间对齐的光伏与指令证据判断，不以单一采样点下结论。",
+                [("knowledge_base", f"run:{run['runId']}:summary", None)],
+            )
     elif question_id == "Q07":
         add(
             "allocation_baseline",
@@ -461,6 +533,62 @@ def _answer_content(
             "评价多台电解槽分配时，应在各机组容量、稳定运行区间、爬坡限制和启停约束内，比较逐台指令/实际功率，并按效率曲线计算同等产出下的能耗基线。",
             [("knowledge_base", "c06-allocation-baseline-v1", None)],
         )
+        baseline_rows = _rated_energy_baseline()
+        if baseline_rows:
+            baseline_detail = "、".join(
+                f"{equipment} 额定 {_fmt_number(power)} kW 单耗 "
+                f"{_fmt_number(energy)} kWh/kg"
+                for equipment, power, energy in baseline_rows
+            )
+            energies = [row[2] for row in baseline_rows]
+            order_note = (
+                f"，同一产出下 {baseline_rows[energies.index(min(energies))][0]}"
+                f" 能耗基线最低、{baseline_rows[energies.index(max(energies))][0]} 最高"
+                if len(baseline_rows) >= 2
+                else ""
+            )
+            add(
+                "efficiency_baseline",
+                "fact",
+                f"按电解槽效率曲线额定工况基线：{baseline_detail}{order_note}；"
+                "该基线取自效率曲线参考值，仅用于同等产出下的能耗比较，不构成设备健康结论。",
+                [("constraint", "electrolyzer-efficiency-curves-v1", None)],
+            )
+        else:
+            add(
+                "efficiency_baseline",
+                "fact",
+                "效率曲线参考值中未提供额定工况单耗基线，本回答不给出静态能耗对比参考；"
+                "逐台能耗比较须以效率曲线证据为准。",
+                [("constraint", "electrolyzer-efficiency-curves-v1", None)],
+            )
+        elz_items = _elz_observed(run)
+        if elz_items:
+            elz_detail = "；".join(
+                f"{item['variable']} 实测 {_fmt_number(item['actualValue'])} "
+                f"{item.get('unit') or 'kW'}（{item.get('timestamp', '')}）"
+                for _, item in elz_items
+            )
+            add(
+                "elz_observed",
+                "calculation",
+                f"当前运行已检出事件证据中共 {len(elz_items)} 条电解槽逐台功率实测：{elz_detail}；"
+                "逐台负荷分配与能耗对比须把以上实测与效率曲线、产出证据结合计算，"
+                "不由单点功率推断分配优劣。",
+                [
+                    ("evidence", item["evidenceId"], evt["eventId"])
+                    for evt, item in elz_items
+                ],
+            )
+        else:
+            add(
+                "elz_observed",
+                "calculation",
+                "当前运行已检出事件的证据中未含电解槽逐台功率实测，"
+                "无法给出逐台功率与能耗对比实测；"
+                "该项比较须以逐台功率与效率曲线证据完成，不以零或估算替代。",
+                [("knowledge_base", f"run:{run['runId']}:summary", None)],
+            )
         add(
             "health_limit",
             "fact",
@@ -501,6 +629,56 @@ def _answer_content(
             "recommendation",
             "PCC 合规日报应包含实际 PCC 功率与动态进/出上限、越限区间/时长/越限电量、当日累计进/出电量与配额、C04/C05 事件及复核状态、数据质量、来源与安全声明。",
             [("report", "pcc_daily_compliance", None)],
+        )
+        c04_count = run["eventCountsByCode"]["C04"]
+        c05_count = run["eventCountsByCode"]["C05"]
+        compliance_parts = [
+            f"当前运行检出 C04 功率越限 {c04_count} 起、C05 电量配额异常 {c05_count} 起"
+        ]
+        compliance_sources: list[tuple[str, str, str | None]] = [
+            ("knowledge_base", f"run:{run['runId']}:summary", None)
+        ]
+        compliance_event = event or _first_event_of_code(run, "C04") or (
+            _first_event_of_code(run, "C05")
+        )
+        if compliance_event is not None:
+            impact = compliance_event.get("impact") or {}
+            if isinstance(impact.get("value"), (int, float)):
+                compliance_parts.append(
+                    f"以事件 {compliance_event['eventId']}"
+                    f"（{compliance_event['startTime']} 至 {compliance_event['endTime']}）为例，"
+                    f"越限电量实测 {_fmt_number(impact['value'])} "
+                    f"{impact.get('unit', '')}（{impact.get('formulaVersion', '')}）"
+                )
+                compliance_sources.extend(
+                    ("evidence", evidence_id, compliance_event["eventId"])
+                    for evidence_id in impact.get("evidenceIds", [])
+                )
+        energy_items = [
+            item
+            for run_event in run["events"]
+            for item in _fact_measurements(run_event)
+            if "energy" in item["variable"]
+        ]
+        if energy_items:
+            energy_detail = "；".join(_measurement_lines(energy_items))
+            compliance_parts.append(f"累计电量证据实测：{energy_detail}")
+            compliance_sources.extend(
+                ("evidence", item["evidenceId"], run_event["eventId"])
+                for run_event in run["events"]
+                for item in _fact_measurements(run_event)
+                if "energy" in item["variable"]
+            )
+        else:
+            compliance_parts.append(
+                "已检出事件证据中无当日累计进/出电量与配额实测，"
+                "日报该项按证据不足处理，未计算合规结论，不以零替代"
+            )
+        add(
+            "observed_compliance",
+            "calculation",
+            "；".join(compliance_parts) + "。",
+            compliance_sources,
         )
         add(
             "quota_limit",
