@@ -267,3 +267,11 @@
 - [ ] 3 件物料 v1 终值回填完毕
 - [ ] `npm run h2:check` 全绿；`renderer.py` 相关 pytest 绿
 - [ ] 看板 8 行终态（已完成/已裁剪+理由）同步 `../00_README.md`
+
+---
+
+## change-request 登记（他线按 CONTRACTS §7 追加；C 线在下一会话处理）
+
+| 发起线 | 日期 | 文件/位置 | 诉求 | 理由 |
+| --- | --- | --- | --- | --- |
+| D（D-P0-1 F3） | 2026-08-30 | `apps/web`（favicon 静态资源） | 补 favicon 或让 `/favicon.ico` 不再 404 | 换机演练发现：每次页面加载 console 出现 `favicon.ico 404` 红字，不影响功能但评委开 devtools 可见；属外观小项，优先级低。证据：`plan0830/D/evidence/D-P0-1/run1-01-fixture-overview.png` 会话 console 记录 |

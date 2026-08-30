@@ -163,3 +163,12 @@ node validation/run-demo.mjs --manifest <validation-slice-manifest.json> --outpu
 | 图表字段不完整 | 保留 evidence-series fallback，并把缺失字段记为数据限制；不得补零或造数。 |
 | Checker 失败 | 修复生成端或输入数据后重新导出；不得手工弱化 checker 或改变 16 列契约。 |
 | Fixture 通过但 Local 失败 | 记录 Local 失败；Fixture 只能演示交互，不能替代 Live/官方数据证据。 |
+| `uv sync` 报 `No pyproject.toml found` | 命令必须在 `services/h2-analytics` 目录下执行（见「首次准备与环境检查」安装块的第二行）；在仓库根目录执行必报此错。回到仓库根后重新进入该目录再执行即可。（plan0830 D-P0-1 演练失败项 F1，2026-08-30 复验通过） |
+| 启动报 `Web port ... already in use` 且为本应用残留 | 先定位占用者：`netstat -ano | findstr :5173`（或实际端口）取最后一列 PID；确认为本应用的 node/vite 残留进程后用 `taskkill /PID <pid> /T /F` 连子进程一并终止，再重启；或直接换 `--web-port`。注意：非正常终止（如强杀 npm 外壳而非 Ctrl+C）可能残留 vite/node 子进程，下次启动会快速失败并提示端口占用——launcher 不会自动清理非自己启动的进程。残留 PID 主动提示已列入 plan0830 D-P1-1 加固项。（D-P0-1 失败项 F2，2026-08-30 复验通过） |
+
+## 换机复现演练留痕指针（plan0830 起）
+
+换机复现（验收-T13）六步演练的逐条记录、演练环境口径声明与失败项闭环
+表统一维护在 `submission/h2-sentinel/RUNTIME_EVIDENCE_CHECKLIST.md` 的
+「plan0830 D-P0-1 换机复现演练记录」追加节；演练截图在
+`plan0830/D/evidence/D-P0-1/`。本手册故障表条目与该闭环表一一对应。
