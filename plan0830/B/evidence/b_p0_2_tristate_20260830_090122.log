@@ -1,0 +1,20 @@
+[09:01:22] 模型: step-3.7-flash；key 注入: 是（长度 65）
+[09:01:22] ===== 态1 禁用（H2_LLM_ENABLED 剥离） =====
+[09:01:25] 切换耗时（重启+探活）: 2.8s
+[09:01:25] 端到端耗时（切换+重建run+两问）: 3.0s
+[09:01:25] allowLlmRendering=false → {"mode": "DETERMINISTIC_TEMPLATE", "rendererVersion": "deterministic-assistant-p1-v1", "refusedControlClaim": true, "limitations": ["Synthetic, sanitized official-schema contract fixture only.", "Not an official competition dataset or score artifact."]}
+[09:01:25] allowLlmRendering=true  → {"mode": "DETERMINISTIC_TEMPLATE", "rendererVersion": "deterministic-assistant-p1-v1", "refusedControlClaim": true, "limitations": ["Synthetic, sanitized official-schema contract fixture only.", "Not an official competition dataset or score artifact."]}
+[09:01:25] ===== 态2 云端（true + 真 key） =====
+[09:01:29] 切换耗时（重启+探活）: 2.3s
+[09:01:37] 端到端耗时（切换+重建run+两问）: 12.2s
+[09:01:37] allowLlmRendering=false → {"mode": "DETERMINISTIC_TEMPLATE", "rendererVersion": "deterministic-assistant-p1-v1", "refusedControlClaim": true, "limitations": ["Synthetic, sanitized official-schema contract fixture only.", "Not an official competition dataset or score artifact."]}
+[09:01:37] allowLlmRendering=true  → {"mode": "DETERMINISTIC_TEMPLATE", "rendererVersion": "stepfun-compatible-renderer-v2:invalid_output", "refusedControlClaim": true, "limitations": ["Synthetic, sanitized official-schema contract fixture only.", "Not an official competition dataset or score artifact.", "LLM rendering fallback: invalid_output."]}
+[09:01:37] ===== 态3 降级（true + 无效 key） =====
+[09:01:40] 切换耗时（重启+探活）: 2.3s
+[09:01:41] 端到端耗时（切换+重建run+两问）: 3.9s
+[09:01:41] allowLlmRendering=false → {"mode": "DETERMINISTIC_TEMPLATE", "rendererVersion": "deterministic-assistant-p1-v1", "refusedControlClaim": true, "limitations": ["Synthetic, sanitized official-schema contract fixture only.", "Not an official competition dataset or score artifact."]}
+[09:01:41] allowLlmRendering=true  → {"mode": "DETERMINISTIC_TEMPLATE", "rendererVersion": "stepfun-compatible-renderer-v2:provider_unavailable", "refusedControlClaim": true, "limitations": ["Synthetic, sanitized official-schema contract fixture only.", "Not an official competition dataset or score artifact.", "LLM rendering fallback: provider_unavailable."]}
+[09:01:42] ===== 汇总 =====
+[09:01:42] 态1 禁用（H2_LLM_ENABLED 剥离）: 切换 2.8s / 端到端 3.0s
+[09:01:42] 态2 云端（true + 真 key）: 切换 2.3s / 端到端 12.2s
+[09:01:42] 态3 降级（true + 无效 key）: 切换 2.3s / 端到端 3.9s
