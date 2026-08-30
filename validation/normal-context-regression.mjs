@@ -23,6 +23,7 @@ import {
 } from './lib/official-sources.mjs'
 import { streamOfficialTimeseriesWindow } from './lib/official-timeseries.mjs'
 import { freeLoopbackPort, requestEnvelope, startLauncher } from './lib/launcher.mjs'
+import { materializeOperationLog } from './evaluate.mjs'
 import { mergePredictions, toInstant } from './lib/metrics.mjs'
 import {
   createGeneratedRunDirectory,
@@ -161,6 +162,9 @@ export function requiredDaysForSplit(contexts, split, bufferDays = BUFFER_DAYS) 
 async function collectNormalContextPredictions({ officialData, daySets }) {
   const webPort = await freeLoopbackPort()
   const analyticsPort = await freeLoopbackPort()
+  // A-P0-1 操作先验：与 evaluate.mjs 同口径（generated 区内容寻址副本），
+  // 保证尺子在真实运行配置（含先验加权）下度量误报。
+  process.env.H2_OPERATION_LOG_PATH = materializeOperationLog(officialData)
   const session = await startLauncher({ webPort, analyticsPort })
   const predictions = []
   const importedChunks = []

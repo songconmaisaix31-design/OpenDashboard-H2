@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -91,6 +91,21 @@ function officialFile(directoryPath, filename) {
   const path = resolve(directoryPath, filename)
   if (!existsSync(path)) throw new Error(`Required official file is missing: ${filename}`)
   return path
+}
+
+// A-P0-1：把官方 12 号操作日志物化为 generated 区内容寻址副本，供 Local
+// 检测服务进程读取（服务不直接访问官方数据目录）。幂等：内容不变不重写。
+export function materializeOperationLog(officialData) {
+  const sourcePath = officialFile(officialData, '12_operation_log.csv')
+  const bytes = readFileSync(sourcePath)
+  const directoryPath = resolve(
+    directory,
+    `../tests/h2-sentinel/reports/generated/oplog-prior-${sha256(bytes).slice(0, 12)}`,
+  )
+  mkdirSync(directoryPath, { recursive: true })
+  const copyPath = resolve(directoryPath, '12_operation_log.csv')
+  if (!existsSync(copyPath)) writeFileAtomic(copyPath, bytes)
+  return copyPath
 }
 
 function loadGroundTruth(officialData, contract) {
@@ -235,6 +250,10 @@ function macroMetrics(byCode) {
 export async function evaluateOfficialData(options) {
   const candidate = currentCandidate()
   if (!candidate.trackedTreeClean) throw new Error('Official evaluation requires a clean working tree.')
+  // A-P0-1 操作先验：官方操作日志（12 号，运维事件流、非标签）经 generated 区
+  // 副本透传给 Local 检测服务——analytics 进程不直接读官方数据目录（时序数据
+  // 同样由本脚本流式喂入）；副本按内容 SHA 寻址，gitignored，不重复写入。
+  process.env.H2_OPERATION_LOG_PATH = materializeOperationLog(options.officialData)
   const window = EVALUATION_WINDOWS[options.set]
   const sourceContract = OFFICIAL_SOURCES[window.source]
   const timeseriesPath = officialFile(
