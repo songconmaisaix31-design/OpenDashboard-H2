@@ -161,9 +161,6 @@ export function requiredDaysForSplit(contexts, split, bufferDays = BUFFER_DAYS) 
 async function collectNormalContextPredictions({ officialData, daySets }) {
   const webPort = await freeLoopbackPort()
   const analyticsPort = await freeLoopbackPort()
-  // A-P0-1 操作先验：与 evaluate.mjs 同口径注入官方操作日志（12 号），
-  // 保证尺子在真实运行配置（含先验加权）下度量误报。
-  process.env.H2_OPERATION_LOG_PATH = resolve(officialData, '12_operation_log.csv')
   const session = await startLauncher({ webPort, analyticsPort })
   const predictions = []
   const importedChunks = []

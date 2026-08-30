@@ -235,13 +235,6 @@ function macroMetrics(byCode) {
 export async function evaluateOfficialData(options) {
   const candidate = currentCandidate()
   if (!candidate.trackedTreeClean) throw new Error('Official evaluation requires a clean working tree.')
-  // A-P0-1 操作先验：把官方操作日志（12 号，运维事件流、非标签文件）经
-  // 环境变量透传给 Local 检测服务（launcher.mjs 以 env:process.env 继承）。
-  // Python 侧未收到该变量时检测行为与 v5 逐字节一致（回归安全）。
-  process.env.H2_OPERATION_LOG_PATH = officialFile(
-    options.officialData,
-    '12_operation_log.csv',
-  )
   const window = EVALUATION_WINDOWS[options.set]
   const sourceContract = OFFICIAL_SOURCES[window.source]
   const timeseriesPath = officialFile(
