@@ -18,7 +18,7 @@
 
 | ID | 任务 | 档位 | 状态 | 门禁 | 证据（commit/报告路径） |
 |---|---|---|---|---|---|
-| A-P0-1 | 操作日志触发先验融合 | P0 | 未开始 | evaluate+尺子+哨兵三绿 | — |
+| A-P0-1 | 操作日志触发先验融合 | P0 | 已完成 | evaluate+尺子+哨兵三绿 | @26440ec 复验三绿：evaluate F1=0.9718（TP69/FP3/FN1，与基线持平零回退）｜尺子 77 窗 0 FP passed｜哨兵 green Δ=0.012｜pytest 全绿（含 test_root_cause +3）。代码链 16aefb5→0d39c42→26440ec（+3 修复 1369753/59d1a99/1fe23bb）；回溯清单 `plan0830/A/OPLOG_PRIOR_TRACEABILITY.md`（val 11/11 remark 可回溯）。**遗留**：oplogPrior 参数迁 thresholds JSON+v6 收口被三处 v5 字面锁阻塞，CR-B1 已登记 B 线；FN1（VA0005）不在先验窗，转 A-P1-3 |
 | A-P0-2 | 报警弱特征融合 | P0 | 未开始 | 三绿+169 pytest+子类一致率 | — |
 | A-P0-3 | severity/子类映射收口 | P0 | 未开始 | 350 对账 100%+h2:qa | — |
 | A-P1-1 | 时效显式化+C07 lead | P1 | 未开始 | 时效基线冻结+C05 lead≥3min | — |

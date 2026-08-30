@@ -242,6 +242,8 @@ Get-Content 'D:\allcode\h2-t01-official\dataandfiles\01_train_timeseries.csv' -T
 
 **注意**：evaluate/尺子/哨兵全模式要求 **clean working tree**（SHA 只对 clean commit 有效）→ 算法三件套的「独立 commit」纪律（§7）正好配合：先 commit 再跑门禁，失败则 revert 该 commit。
 
+**偶发坑（2026-08-30 实测）**：`Launcher readiness failed; the exact launched child tree was terminated.` ≠ 门禁红——四线并行跑门禁时 `uv run` 缓存锁竞争可使 analytics 就绪超 20s 健康检查窗，重跑一次即过（连挂两次再排查）。
+
 ---
 
 ## §6 日程与裁剪序
