@@ -8,7 +8,8 @@ import type {
 import { H2_EVENT_CHART_REQUIREMENTS } from '@opendashboard/h2-contracts'
 import { formatH2Timestamp } from './presentation.ts'
 
-const COLORS = ['#70c2ac', '#d5a162', '#7eb8c5', '#d86f7b', '#a78ac1'] as const
+// 浅色蓝白主题下的系列色（深色调，保证在浅色背景上的可读性）
+const COLORS = ['#0d9678', '#d9861f', '#1287c9', '#d64560', '#7458cc'] as const
 
 interface SeriesDefinition {
   readonly variables: readonly string[]
@@ -35,7 +36,7 @@ const eventSeriesByCode = {
     { variables: ['elz2_reported_available_capacity_kw'], label: 'ELZ02 上报可用容量', color: COLORS[3], unit: 'kW', dashed: true },
     { variables: ['elz2_actual_available_capacity_kw'], label: 'ELZ02 实际可用容量', color: COLORS[2], unit: 'kW' },
     { variables: ['elz3_reported_available_capacity_kw'], label: 'ELZ03 上报可用容量', color: COLORS[4], unit: 'kW', dashed: true },
-    { variables: ['elz3_actual_available_capacity_kw'], label: 'ELZ03 实际可用容量', color: '#c98bdf', unit: 'kW' },
+    { variables: ['elz3_actual_available_capacity_kw'], label: 'ELZ03 实际可用容量', color: '#9a6fe0', unit: 'kW' },
   ],
   C03: [
     {
@@ -61,7 +62,7 @@ const eventSeriesByCode = {
     { variables: ['elz3_power_actual_kw'], label: 'ELZ03 实际功率', color: COLORS[4], unit: 'kW', stack: 'elz-power', areaOpacity: 0.12 },
     { variables: ['elz1_specific_energy_kwh_per_kg'], label: 'ELZ01 单位制氢电耗', color: COLORS[1], unit: 'kWh/kg', chartType: 'scatter' },
     { variables: ['elz2_specific_energy_kwh_per_kg'], label: 'ELZ02 单位制氢电耗', color: COLORS[3], unit: 'kWh/kg', chartType: 'scatter' },
-    { variables: ['elz3_specific_energy_kwh_per_kg'], label: 'ELZ03 单位制氢电耗', color: '#c98bdf', unit: 'kWh/kg', chartType: 'scatter' },
+    { variables: ['elz3_specific_energy_kwh_per_kg'], label: 'ELZ03 单位制氢电耗', color: '#9a6fe0', unit: 'kWh/kg', chartType: 'scatter' },
   ],
   C07: [
     { variables: ['soc_target_pct'], label: '储能目标 SOC', color: COLORS[1], unit: '%', dashed: true },
@@ -265,14 +266,14 @@ function createLineOption(
     legend: {
       top: 4,
       left: 0,
-      textStyle: { color: '#c8bdc0', fontSize: 11 },
+      textStyle: { color: '#294a6d', fontSize: 14 },
     },
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'cross', label: { backgroundColor: '#3a2f33' } },
-      backgroundColor: 'rgba(23, 19, 21, 0.96)',
-      borderColor: '#4a3c41',
-      textStyle: { color: '#f8f2f0' },
+      axisPointer: { type: 'cross', label: { backgroundColor: '#1a7ad4' } },
+      backgroundColor: 'rgba(255, 255, 255, 0.97)',
+      borderColor: '#c3d8ec',
+      textStyle: { color: '#10304f', fontSize: 14 },
     },
     dataZoom: [
       { type: 'inside', filterMode: 'none' },
@@ -280,10 +281,10 @@ function createLineOption(
         type: 'slider',
         height: 16,
         bottom: 4,
-        borderColor: '#45373c',
-        fillerColor: 'rgba(200, 111, 120, 0.14)',
-        handleStyle: { color: '#c86f78' },
-        textStyle: { color: '#9d9195' },
+        borderColor: '#b9d2e8',
+        fillerColor: 'rgba(26, 122, 212, 0.14)',
+        handleStyle: { color: '#1a7ad4' },
+        textStyle: { color: '#2d4a6d', fontSize: 13 },
       },
     ],
     xAxis: {
@@ -291,22 +292,23 @@ function createLineOption(
       boundaryGap: false,
       data: timestamps,
       axisLabel: {
-        color: '#9d9195',
+        color: '#47617c',
+        fontSize: 13,
         formatter: (value: string) => formatH2Timestamp(value),
       },
-      axisLine: { lineStyle: { color: '#4a3c41' } },
+      axisLine: { lineStyle: { color: '#9fc0dd' } },
     },
     yAxis: axes.map(({ unit }, index) => ({
       type: 'value',
       name: unit,
       position: index % 2 === 0 ? 'left' : 'right',
       offset: Math.floor(index / 2) * 34,
-      nameTextStyle: { color: '#9d9195' },
-      axisLabel: { color: '#9d9195' },
-      axisLine: { show: index > 0, lineStyle: { color: '#4a3c41' } },
+      nameTextStyle: { color: '#47617c', fontSize: 13 },
+      axisLabel: { color: '#47617c', fontSize: 13 },
+      axisLine: { show: index > 0, lineStyle: { color: '#9fc0dd' } },
       splitLine: {
         show: index === 0,
-        lineStyle: { color: 'rgba(255, 238, 233, 0.08)' },
+        lineStyle: { color: 'rgba(24, 84, 148, 0.12)' },
       },
     })),
     series: resolvedDefinitions.map((definition, index) => ({
@@ -329,7 +331,7 @@ function createLineOption(
       smooth: false,
       lineStyle: {
         color: definition.color,
-        width: definition.dashed ? 1.5 : 2.5,
+        width: definition.dashed ? 2 : 3,
         type: definition.dashed ? 'dashed' : 'solid',
       },
       itemStyle: { color: definition.color },
@@ -337,8 +339,8 @@ function createLineOption(
         index === 0 && eventBand
           ? {
               silent: true,
-              itemStyle: { color: 'rgba(200, 111, 120, 0.13)' },
-              label: { color: '#e7a4aa', formatter: eventBand.label },
+              itemStyle: { color: 'rgba(26, 122, 212, 0.12)' },
+              label: { color: '#1565b8', fontSize: 13, formatter: eventBand.label },
               data: [[{ xAxis: eventBand.startTime }, { xAxis: eventBand.endTime }]],
             }
           : undefined,
