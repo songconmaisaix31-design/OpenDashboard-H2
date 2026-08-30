@@ -17,6 +17,12 @@
 | B-P1-2 追问意图扩展 | 未开始 | ≥30 样例 ≥90% 命中 + 拒答语义不变 | pytest 输出 |
 | B-P1-3 渲染层对照 | 未开始 | 10 组对照样例一致（断言 <100 行） | pytest 输出 |
 
+### 他线对本线的变更请求登记区（CONTRACTS §7；B 线下一会话处理）
+
+| # | 发起线 | 文件 | 诉求 | 理由 | 登记 |
+|---|---|---|---|---|---|
+| CR-B1 | A（A-P0-1） | `settings.py:12`（附 `vocabulary.py:399`、`tests/test_official_contract.py:79` 两处同源 v5 字面锁，所有权未声明，请 B 线牵头协同整合人裁决） | 解除 `deterministic-c01-c07-v5` 硬编码校验：改为参数化或随 `detection-thresholds.json` 的 `detectorVersion` 字段联动校验，允许 v6+ | A-P0-1 需把 oplogPrior 参数迁入 thresholds JSON 并按 CONTRACTS §8.3 递增 detectorVersion v5→v6；当前三处 v5 字面锁使任何版本递增即 pytest 红，A 线无法收口版本（参数暂为 oplog_prior.py 代码常量） | 2026-08-30 |
+
 ### 开工输入速查（每卡第一会话先读什么；行号=2026-08-30 实测）
 
 | 卡 | 必读输入 |
