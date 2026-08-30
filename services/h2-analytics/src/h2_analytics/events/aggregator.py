@@ -6,6 +6,10 @@ from datetime import datetime, timedelta
 
 from h2_analytics import vocabulary
 from h2_analytics.detection import DetectionCandidate
+from h2_analytics.detection.oplog_prior import (
+    CONFIRMATION_RELIEF_ROWS,
+    load_operation_priors,
+)
 from h2_analytics.models import DataRow
 
 
@@ -63,6 +67,8 @@ class EventAggregator:
         candidates: tuple[DetectionCandidate, ...],
         sampling_interval_minutes: float,
     ) -> tuple[EventWindow, ...]:
+        # A-P0-1 操作先验：未注入 H2_OPERATION_LOG_PATH 时为 None（v5 行为）。
+        operation_priors = load_operation_priors()
         rows_by_index = {row.index: row for row in rows}
         grouped: dict[tuple[str, str], list[DetectionCandidate]] = defaultdict(list)
         for candidate in candidates:
@@ -113,7 +119,14 @@ class EventAggregator:
             ordinal = ordinals[code]
             start = segment[0].timestamp
             end = segment[-1].timestamp
-            confirmation_index = min(policy.confirmation_row - 1, len(segment) - 1)
+            # A-P0-1：事件起点落在同码操作的先验窗内 → 确认行提前
+            # （只影响 first_detection_time 时效，事件集合不变）。
+            confirmation_row = policy.confirmation_row
+            if operation_priors is not None and operation_priors.match(code, start):
+                confirmation_row = max(
+                    1, confirmation_row - CONFIRMATION_RELIEF_ROWS
+                )
+            confirmation_index = min(confirmation_row - 1, len(segment) - 1)
             confidence = sum(item.confidence for item in segment) / len(segment)
             event_id = f"{code}-{start:%Y%m%d}-{ordinal:03d}"
             implicated_equipment_ids = tuple(
