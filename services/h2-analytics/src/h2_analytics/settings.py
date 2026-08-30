@@ -25,9 +25,11 @@ STREAMING_CSV_CHUNK_BYTES = 8 * 1024 * 1024
 STREAMING_CSV_SESSION_TTL_SECONDS = 30 * 60
 MAX_ACTIVE_STREAMING_CSV_SESSIONS = 8
 MAX_RETAINED_STREAMING_CSV_SESSIONS = 64
-H2_LLM_BASE_URL = "https://api.stepfun.com/v1/chat/completions"
+# StepFun Pro Plan 专属 OpenAI 兼容端点（Chat Completions）
+H2_LLM_BASE_URL = "https://api.stepfun.com/step_plan/v1/chat/completions"
 H2_LLM_TIMEOUT_SECONDS = 10.0
-H2_LLM_RENDERER_VERSION = "stepfun-compatible-renderer-v1"
+# v2：_valid_output 控制词校验由绝对禁止改为与数字/引用一致的子集校验
+H2_LLM_RENDERER_VERSION = "stepfun-compatible-renderer-v2"
 OFFICIAL_DATASET_ROW_COUNTS = {
     "train": 525_600,
     "validation": 129_600,

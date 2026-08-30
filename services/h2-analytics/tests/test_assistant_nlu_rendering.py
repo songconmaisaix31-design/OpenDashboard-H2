@@ -351,7 +351,7 @@ def test_renderer_restricts_provider_to_official_endpoint(valid_csv: str) -> Non
         transport=transport,
     ).render(deterministic_answer=answer, requested=True)
     assert result["status"] == "rendered"
-    assert calls == ["https://api.stepfun.com/v1/chat/completions"]
+    assert calls == ["https://api.stepfun.com/step_plan/v1/chat/completions"]
 
 
 @pytest.mark.parametrize(
@@ -364,8 +364,10 @@ def test_renderer_restricts_provider_to_official_endpoint(valid_csv: str) -> Non
         "依据证据，设备将被关机，仍须人工确认。",
         "依据证据，助手可修改设定，仍须人工确认。",
         "依据证据，平台会切换运行模式，仍须人工确认。",
-        "依据证据，系统可以直接控制设备，仍须人工确认。",
-        "依据证据，系统能够自动控制设备，仍须人工确认。",
+        # "控制"一词在 Q08 源答案的免责句中已存在，单独复用不构成新增；
+        # 因此这两个用例必须同时携带源中不存在的控制动词（下发/启停）才应被拦。
+        "依据证据，系统可以直接下发控制指令，仍须人工确认。",
+        "依据证据，系统能够自动控制并启停设备，仍须人工确认。",
         "依据证据，平台将调功率，仍须人工确认。",
     ],
 )
@@ -382,3 +384,27 @@ def test_renderer_fails_closed_on_equipment_control_language(
     result = renderer.render(deterministic_answer=answer, requested=True)
     assert result["status"] == "fallback"
     assert result["reason"] == "invalid_output"
+
+
+def test_renderer_allows_source_disclaimer_control_wording(valid_csv: str) -> None:
+    """源答案自带的否定/免责"控制"措辞被忠实保留时必须放行（子集校验语义）。"""
+    answer = _answer(valid_csv)
+    renderer = StepFunRenderer(
+        LlmRenderingConfig(enabled=True, api_key="test-key", model="test-model"),
+        transport=lambda *_args: {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            "依据现有证据，所有建议均须人工确认；"
+                            "本应用不具备设备控制、设定值修改或模式切换权限，"
+                            "相关限制仅供诊断参考。"
+                        )
+                    }
+                }
+            ]
+        },
+    )
+    result = renderer.render(deterministic_answer=answer, requested=True)
+    assert result["status"] == "rendered"
+    assert result["provenance"]["mode"] == "LLM_RENDERED"

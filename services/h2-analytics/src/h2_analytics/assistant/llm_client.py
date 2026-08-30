@@ -186,7 +186,12 @@ def _extract_text(response: dict[str, Any]) -> str:
 
 
 def _valid_output(rendered: str, source: str, citation_ids: set[str]) -> bool:
-    if not rendered or len(rendered) > 4_000 or _UNSAFE_CONTROL.search(rendered):
+    if not rendered or len(rendered) > 4_000:
+        return False
+    # 控制类措辞与数字/引用采用同一子集哲学：仅当 LLM 新增了源答案中
+    # 不存在的控制词才判违规；源文本自带的否定/免责表述（如
+    # "不具备设备控制权限"、"不构成控制指令"）被忠实保留时不视为越权。
+    if set(_UNSAFE_CONTROL.findall(rendered)) - set(_UNSAFE_CONTROL.findall(source)):
         return False
     if set(_CITATION.findall(rendered)) - citation_ids:
         return False

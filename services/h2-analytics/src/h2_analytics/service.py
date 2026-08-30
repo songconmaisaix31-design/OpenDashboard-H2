@@ -23,6 +23,7 @@ from h2_analytics.detection import (
     sanitized_fixture_c03_candidates,
 )
 from h2_analytics.detection.ml_verification import ml_supplemental_candidates
+from h2_analytics.settings import H2_LLM_RENDERER_VERSION
 from h2_analytics.settings import H2_ML_ENABLED
 from h2_analytics.diagnosis import DiagnosisBuilder
 from h2_analytics.errors import AnalyticsError
@@ -380,7 +381,7 @@ class AnalyticsService:
         if allow_llm_rendering and rendering["status"] == "fallback":
             fallback = deepcopy(answer)
             fallback["provenance"]["rendererVersion"] = (
-                f"stepfun-compatible-renderer-v1:{rendering['reason']}"
+                f"{H2_LLM_RENDERER_VERSION}:{rendering['reason']}"
             )
             fallback["provenance"]["limitations"] = [
                 *fallback["provenance"]["limitations"],
