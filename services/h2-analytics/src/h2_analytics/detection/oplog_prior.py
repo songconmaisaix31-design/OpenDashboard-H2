@@ -25,7 +25,7 @@ from __future__ import annotations
 import csv
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 # --- 数据事实常量（2026-08-30 对 12 号文件 77 条全量核实） -----------------
 
@@ -105,6 +105,12 @@ def parse_operation_log(text: str) -> tuple[OperationLogEntry, ...]:
             timestamp = datetime.fromisoformat(timestamp_raw)
         except ValueError:
             continue
+        # 12 号文件时间戳为 naive 分钟级记录（YYYY-MM-DD HH:MM）；服务管线
+        # DataRow.timestamp 全为 aware（service._parse_timestamp 拒绝 naive）。
+        # 与 evidence.py._parse_iso / root_cause.py._parse 同口径：naive 视为 UTC，
+        # 否则 match() 内 naive<=aware 比较抛 TypeError → analyze 500。
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=UTC)
         entries.append(
             OperationLogEntry(
                 timestamp=timestamp,
