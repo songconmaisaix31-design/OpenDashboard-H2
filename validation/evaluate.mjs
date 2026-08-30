@@ -100,7 +100,7 @@ export function materializeOperationLog(officialData) {
   const bytes = readFileSync(sourcePath)
   const directoryPath = resolve(
     directory,
-    `../tests/h2-sentinel/reports/generated/oplog-prior-${sha256(bytes).slice(0, 12)}`,
+    `../tests/h2-sentinel/reports/generated/oplog-prior-${sha256(bytes).split(':').pop()?.slice(0, 12)}`,
   )
   mkdirSync(directoryPath, { recursive: true })
   const copyPath = resolve(directoryPath, '12_operation_log.csv')
