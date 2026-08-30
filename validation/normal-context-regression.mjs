@@ -23,7 +23,7 @@ import {
 } from './lib/official-sources.mjs'
 import { streamOfficialTimeseriesWindow } from './lib/official-timeseries.mjs'
 import { freeLoopbackPort, requestEnvelope, startLauncher } from './lib/launcher.mjs'
-import { materializeOperationLog } from './evaluate.mjs'
+import { materializeAlarmLog, materializeOperationLog } from './evaluate.mjs'
 import { mergePredictions, toInstant } from './lib/metrics.mjs'
 import {
   createGeneratedRunDirectory,
@@ -165,6 +165,8 @@ async function collectNormalContextPredictions({ officialData, daySets }) {
   // A-P0-1 操作先验：与 evaluate.mjs 同口径（generated 区内容寻址副本），
   // 保证尺子在真实运行配置（含先验加权）下度量误报。
   process.env.H2_OPERATION_LOG_PATH = materializeOperationLog(officialData)
+  // A-P0-2 报警弱特征：同口径透传（仅置信增强，事件集合不受影响）。
+  process.env.H2_ALARM_LOG_PATH = materializeAlarmLog(officialData)
   const session = await startLauncher({ webPort, analyticsPort })
   const predictions = []
   const importedChunks = []

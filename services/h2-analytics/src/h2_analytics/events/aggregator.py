@@ -6,6 +6,11 @@ from datetime import datetime, timedelta
 
 from h2_analytics import vocabulary
 from h2_analytics.detection import DetectionCandidate
+from h2_analytics.detection.alarm_features import (
+    CONFIDENCE_BOOST,
+    CONFIDENCE_CAP,
+    load_alarm_features,
+)
 from h2_analytics.detection.oplog_prior import (
     CONFIRMATION_RELIEF_ROWS,
     load_operation_priors,
@@ -69,6 +74,8 @@ class EventAggregator:
     ) -> tuple[EventWindow, ...]:
         # A-P0-1 操作先验：未注入 H2_OPERATION_LOG_PATH 时为 None（v5 行为）。
         operation_priors = load_operation_priors()
+        # A-P0-2 报警弱特征：未注入 H2_ALARM_LOG_PATH 时为 None（基线行为）。
+        alarm_features = load_alarm_features()
         rows_by_index = {row.index: row for row in rows}
         grouped: dict[tuple[str, str], list[DetectionCandidate]] = defaultdict(list)
         for candidate in candidates:
@@ -128,6 +135,11 @@ class EventAggregator:
                 )
             confirmation_index = min(confirmation_row - 1, len(segment) - 1)
             confidence = sum(item.confidence for item in segment) / len(segment)
+            # A-P0-2：事件已确认后，起点窗内出现同码强共现关联码 → 置信
+            # 小幅上调（弱特征只增强；无码不罚、设上限；报警绝不参与
+            # 触发/计数判据——红线 §7.3-6）。
+            if alarm_features is not None and alarm_features.matches(code, start):
+                confidence = min(CONFIDENCE_CAP, confidence + CONFIDENCE_BOOST)
             event_id = f"{code}-{start:%Y%m%d}-{ordinal:03d}"
             implicated_equipment_ids = tuple(
                 dict.fromkeys(

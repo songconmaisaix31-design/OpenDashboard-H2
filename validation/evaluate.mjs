@@ -108,6 +108,21 @@ export function materializeOperationLog(officialData) {
   return copyPath
 }
 
+// A-P0-2：同口径物化官方 11 号报警日志（弱特征源：仅置信增强/子类消歧，
+// 绝不参与触发判据——红线「不凭报警计数判异常」）。
+export function materializeAlarmLog(officialData) {
+  const sourcePath = officialFile(officialData, '11_alarm_log.csv')
+  const bytes = readFileSync(sourcePath)
+  const directoryPath = resolve(
+    directory,
+    `../tests/h2-sentinel/reports/generated/alarm-features-${sha256(bytes).split(':').pop()?.slice(0, 12)}`,
+  )
+  mkdirSync(directoryPath, { recursive: true })
+  const copyPath = resolve(directoryPath, '11_alarm_log.csv')
+  if (!existsSync(copyPath)) writeFileAtomic(copyPath, bytes)
+  return copyPath
+}
+
 function loadGroundTruth(officialData, contract) {
   const bytes = readFileSync(officialFile(officialData, contract.filename))
   const { columns, rows } = parseCsvText(
@@ -254,6 +269,8 @@ export async function evaluateOfficialData(options) {
   // 副本透传给 Local 检测服务——analytics 进程不直接读官方数据目录（时序数据
   // 同样由本脚本流式喂入）；副本按内容 SHA 寻址，gitignored，不重复写入。
   process.env.H2_OPERATION_LOG_PATH = materializeOperationLog(options.officialData)
+  // A-P0-2 报警弱特征：官方报警日志（11 号）同口径透传（仅置信增强）。
+  process.env.H2_ALARM_LOG_PATH = materializeAlarmLog(options.officialData)
   const window = EVALUATION_WINDOWS[options.set]
   const sourceContract = OFFICIAL_SOURCES[window.source]
   const timeseriesPath = officialFile(
