@@ -23,6 +23,60 @@ _ALLOWED_EVENT_CODES: dict[str, set[str] | None] = {
 }
 
 
+def _fmt_number(value: float) -> str:
+    """数值显示：整数直显、浮点保留两位去尾零，避免答案文本出现长小数。"""
+    rounded = round(float(value), 2)
+    if rounded == int(rounded):
+        return str(int(rounded))
+    return f"{rounded:g}"
+
+
+def _fact_measurements(event: dict[str, Any]) -> list[dict[str, Any]]:
+    """事件 fact 证据中的数值条目（变量/实测/单位/时点全部透传自 run 对象，不加工）。"""
+    return [
+        item
+        for item in event["evidence"]
+        if item["claimKind"] == "fact"
+        and isinstance(item.get("actualValue"), (int, float))
+        and not isinstance(item.get("actualValue"), bool)
+    ]
+
+
+def _measurement_lines(items: list[dict[str, Any]]) -> list[str]:
+    """把数值证据条目渲染为可读文本行；只报实测值，不复述检测算子以免误导。"""
+    lines: list[str] = []
+    for item in items:
+        unit = item.get("unit") or ""
+        timestamp = item.get("timestamp")
+        moment = f"（{timestamp}）" if timestamp else ""
+        lines.append(
+            f"{item['variable']} 实测 {_fmt_number(item['actualValue'])}"
+            f"{' ' + unit if unit else ''}{moment}"
+        )
+    return lines
+
+
+def _first_event_of_code(
+    run: dict[str, Any], code: str
+) -> dict[str, Any] | None:
+    """run 内指定异常码的第一个事件（无则 None）。"""
+    return next(
+        (item for item in run["events"] if item["code"] == code), None
+    )
+
+
+def _pcc_observed(
+    run: dict[str, Any],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """跨事件收集 PCC 实际功率实测条目（(事件, 证据) 对，按事件顺序）。"""
+    collected: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for event in run["events"]:
+        for item in _fact_measurements(event):
+            if item["variable"] == "pcc_power_actual_kw":
+                collected.append((event, item))
+    return collected
+
+
 class AssistantService:
     def answer(
         self,
@@ -169,6 +223,41 @@ def _answer_content(
                 ("knowledge_base", "h2-sign-conventions-v1", None),
             ],
         )
+        pcc_observed = _pcc_observed(run)
+        if pcc_observed:
+            observed_values = [
+                float(item["actualValue"]) for _, item in pcc_observed
+            ]
+            detail = "；".join(
+                f"{evt['eventId']} {_fmt_number(item['actualValue'])} "
+                f"{item.get('unit') or 'kW'}（{item.get('timestamp', '')}）"
+                for evt, item in pcc_observed
+            )
+            direction = (
+                "均为正值，即上网送电方向"
+                if all(value >= 0 for value in observed_values)
+                else "含负值，即存在受电时段"
+            )
+            add(
+                "run_pcc_observed",
+                "calculation",
+                f"当前运行已检出事件的证据中共 {len(pcc_observed)} 条 PCC 功率实测：{detail}；"
+                f"实测范围 {_fmt_number(min(observed_values))} 至 "
+                f"{_fmt_number(max(observed_values))} kW，{direction}。"
+                "该范围只覆盖已检出事件窗，不代表全时段正负时长占比，后者须回看完整时序。",
+                [
+                    ("evidence", item["evidenceId"], evt["eventId"])
+                    for evt, item in pcc_observed
+                ],
+            )
+        else:
+            add(
+                "run_pcc_observed",
+                "calculation",
+                "当前运行未检出含 PCC 功率实测证据的事件，无法给出实测区间；"
+                "正负号方向判断以符号约定为准，如需正负时长占比须回看完整时序。",
+                [("knowledge_base", f"run:{run['runId']}:summary", None)],
+            )
     elif question_id == "Q02":
         add(
             "boundary_difference",
@@ -180,25 +269,71 @@ def _answer_content(
                 ("knowledge_base", "c04-c05-distinction-v1", None),
             ],
         )
+        c04_count = run["eventCountsByCode"]["C04"]
+        c05_count = run["eventCountsByCode"]["C05"]
+        focus_event = event or _first_event_of_code(run, "C04") or (
+            _first_event_of_code(run, "C05")
+        )
+        count_parts = [
+            f"当前运行检出 C04 功率越限 {c04_count} 起、"
+            f"C05 电量配额异常 {c05_count} 起"
+        ]
+        focus_sources: list[tuple[str, str, str | None]] = [
+            ("knowledge_base", f"run:{run['runId']}:summary", None)
+        ]
+        if focus_event is not None:
+            measurements = _fact_measurements(focus_event)
+            lines = _measurement_lines(measurements)
+            if lines:
+                count_parts.append(
+                    f"以事件 {focus_event['eventId']}"
+                    f"（{focus_event['startTime']} 至 {focus_event['endTime']}）为例，"
+                    f"事件证据实测：{'；'.join(lines)}"
+                )
+                focus_sources.extend(
+                    ("evidence", item["evidenceId"], focus_event["eventId"])
+                    for item in measurements
+                )
+            impact = focus_event.get("impact") or {}
+            if isinstance(impact.get("value"), (int, float)):
+                count_parts.append(
+                    f"该事件影响量化为 {_fmt_number(impact['value'])} "
+                    f"{impact.get('unit', '')}（{impact.get('formulaVersion', '')}）"
+                )
+        if c05_count == 0 and (focus_event is None or focus_event["code"] != "C05"):
+            count_parts.append(
+                "当前运行未提供当日累计电量与配额实测值，配额余量不在本回答内计算，不以零替代"
+            )
+        add(
+            "current_run_counts",
+            "calculation",
+            "；".join(count_parts) + "。",
+            focus_sources,
+        )
     elif question_id == "Q03":
         assert event is not None
-        fact_evidence = [
-            item for item in event["evidence"] if item["claimKind"] == "fact"
-        ]
         calculation_evidence = [
             item
             for item in event["evidence"]
             if item["claimKind"] == "calculation"
         ]
+        fact_measurements = _fact_measurements(event)
+        measurement_lines = _measurement_lines(fact_measurements)
+        observed_detail = (
+            f"事件证据实测：{'；'.join(measurement_lines)}。"
+            if measurement_lines
+            else "本事件证据未含可引用的数值实测条目。"
+        )
         add(
             "observed_mismatch",
             "fact",
-            f"事件 {event['eventId']} 在 {event['startTime']} 至 {event['endTime']} 出现储能指令与实际功率方向不一致。当前事件记录了储能指令和反馈；若需核对某一分钟的 PCC 实际功率，应回到同一运行的 pcc_power_actual_kw 时序，不能仅凭异常标签推断。",
+            f"事件 {event['eventId']} 在 {event['startTime']} 至 {event['endTime']} 出现储能指令与实际功率方向不一致。{observed_detail}"
+            "如需逐分钟核对 PCC 实际功率，应回到同一运行的 pcc_power_actual_kw 时序，不能仅凭异常标签推断。",
             [
                 ("event", event["eventId"], event["eventId"]),
                 *[
                     ("evidence", item["evidenceId"], event["eventId"])
-                    for item in fact_evidence
+                    for item in fact_measurements
                 ],
             ],
         )
@@ -231,6 +366,37 @@ def _answer_content(
             "备用不足是面向后续调节能力的提前预警，不等同于已经发生设备故障；应核对 SOC、目标值、功率限制和能量容量后再由人工判断。",
             [("constraint", "bess-soc-reserve-boundary-v1", None)],
         )
+        c07_event = event or _first_event_of_code(run, "C07")
+        if c07_event is not None:
+            c07_measurements = _fact_measurements(c07_event)
+            c07_lines = _measurement_lines(c07_measurements)
+            c07_detail = (
+                f"事件证据实测：{'；'.join(c07_lines)}"
+                if c07_lines
+                else "本事件证据未含可引用的数值实测条目"
+            )
+            add(
+                "c07_observed",
+                "fact",
+                f"当前运行检出的 C07 事件 {c07_event['eventId']}"
+                f"（{c07_event['startTime']} 至 {c07_event['endTime']}）{c07_detail}；"
+                "以上为 SOC 备用判断的实测输入，双向余量仍须结合容量与时间窗证据计算。",
+                [
+                    ("event", c07_event["eventId"], c07_event["eventId"]),
+                    *[
+                        ("evidence", item["evidenceId"], c07_event["eventId"])
+                        for item in c07_measurements
+                    ],
+                ],
+            )
+        else:
+            add(
+                "c07_observed",
+                "fact",
+                "当前运行未检出 C07（SOC 调节备用不足）事件，本回答不提供 SOC 实测数值；"
+                "双向余量须在检出该类事件后以事件证据与容量、时间窗数据计算，不以零替代。",
+                [("knowledge_base", f"run:{run['runId']}:summary", None)],
+            )
     elif question_id == "Q05":
         add(
             "localization_method",
@@ -238,6 +404,37 @@ def _answer_content(
             "定位时应把设备可用状态与额定/可用容量、EMS 容量模型和已发设定值按同一时间轴对齐，找出设备已经降额而 EMS 仍沿用旧容量的区间，并记录受影响设备。",
             [("knowledge_base", "c02-capacity-synchronization-v1", None)],
         )
+        c02_event = event or _first_event_of_code(run, "C02")
+        if c02_event is not None:
+            c02_measurements = _fact_measurements(c02_event)
+            c02_lines = _measurement_lines(c02_measurements)
+            c02_detail = (
+                f"事件证据实测：{'；'.join(c02_lines)}"
+                if c02_lines
+                else "本事件证据未含可引用的数值实测条目"
+            )
+            add(
+                "c02_observed",
+                "fact",
+                f"当前运行检出的 C02 事件 {c02_event['eventId']}"
+                f"（{c02_event['startTime']} 至 {c02_event['endTime']}）{c02_detail}；"
+                "定位时把以上数值与 EMS 容量模型、已发设定值按同一时间轴对齐。",
+                [
+                    ("event", c02_event["eventId"], c02_event["eventId"]),
+                    *[
+                        ("evidence", item["evidenceId"], c02_event["eventId"])
+                        for item in c02_measurements
+                    ],
+                ],
+            )
+        else:
+            add(
+                "c02_observed",
+                "fact",
+                "当前运行未检出 C02（设备降额与 EMS 未同步）事件，本回答不提供降额容量差实测数值；"
+                "定位结论须以该类事件证据与设备主数据为准，不从单个功率点反推降额事实。",
+                [("knowledge_base", f"run:{run['runId']}:summary", None)],
+            )
         add(
             "evidence_limit",
             "recommendation",

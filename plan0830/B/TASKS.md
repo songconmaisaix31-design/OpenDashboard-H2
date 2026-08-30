@@ -12,7 +12,7 @@
 |---|---|---|---|
 | B-P0-1 4 文件收尾提交 | 未开始（D0） | 干净 commit + assistant pytest 绿 + CLAIMS_LEDGER 登记 | commit SHA |
 | B-P0-2 三态启用/降级 | **完成（D1）** | 三态各演示 1 次 + 切换 ≤30s + fail-closed 不变 | `B-P0-2_TRISTATE_RUNBOOK.md` + `evidence/b_p0_2_tristate_20260830_0907*.log` |
-| B-P0-3 Q01-Q10 强化 | 未开始 | 样例 ≥90% 命中 + 越界 100% 拒答 + Q09/Q10 端到端 | 十问清单+pytest 输出 |
+| B-P0-3 Q01-Q10 强化 | **进行中**（会话1 ✓：Q01-Q05 数值化；余 Q06-Q10+样例集+清单） | 样例 ≥90% 命中 + 越界 100% 拒答 + Q09/Q10 端到端 | 会话1：pytest 88 绿+全量回归绿；`test_q01_q05_answers_carry_current_run_measurements` |
 | B-P1-1 语料扩充 | 未开始 | ≥60 条 100% 出处 + token 预算记录 | 语料文件+对账清单 |
 | B-P1-2 追问意图扩展 | 未开始 | ≥30 样例 ≥90% 命中 + 拒答语义不变 | pytest 输出 |
 | B-P1-3 渲染层对照 | 未开始 | 10 组对照样例一致（断言 <100 行） | pytest 输出 |
@@ -194,6 +194,7 @@
 |---|---|---|---|
 | 2026-08-30 | B-P0-1（D0，lead+用户执行，B 实例复核 diff 与 87 测试绿） | 596b3c8 | pytest 输出；CLAIMS_LEDGER 条目待 D 合入 |
 | 2026-08-30 | B-P0-2 | 本分支 commit | RUNBOOK + 三态实测日志（切换 1.5-1.6s；LLM_RENDERED 留痕；系统提示修复使云端态可用） |
+| 2026-08-30 | B-P0-3 会话1（Q01-Q05 数值化） | 本分支 commit | 新段 run_pcc_observed/current_run_counts/c07_observed/c02_observed + Q03 实测行；数值 100% 透传 run 对象 evidence；无 C07/C02 时如实声明；pytest 88 绿+全量回归绿 |
 
 ## 附 2：本线在三级门禁的交付对照
 

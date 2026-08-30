@@ -381,6 +381,44 @@ def test_html_reports_escape_filename_actor_and_note(valid_csv: str) -> None:
     assert "<img src=x" not in artifact["content"]
 
 
+def test_q01_q05_answers_carry_current_run_measurements(valid_csv: str) -> None:
+    """B-P0-3 会话1：Q01-Q05 答案携带当前运行真实数值（fixture：C03/C04 各 1 起）。"""
+    service, run_id = _analyzed(valid_csv)
+
+    def _section_text(question_id: str, section_id: str, event_id: str | None) -> str:
+        answer = service.ask(
+            run_id=run_id,
+            question_id=question_id,
+            event_id=event_id,
+            allow_llm_rendering=False,
+        )
+        _assert_answer_invariants(answer)
+        return next(
+            section["text"]
+            for section in answer["sections"]
+            if section["sectionId"] == section_id
+        )
+
+    # Q01：跨事件 PCC 实测区间（C03 证据 400 kW + C04 证据 1400 kW，均为正）
+    q01 = _section_text("Q01", "run_pcc_observed", None)
+    assert "2 条 PCC 功率实测" in q01
+    assert "400 至 1400 kW" in q01
+    assert "均为正值" in q01
+    # Q02：C04/C05 计数 + 聚焦事件实测（1400 kW / 边界 500 kW / 越限电量 120 kWh）+ 配额声明
+    q02 = _section_text("Q02", "current_run_counts", None)
+    assert "C04 功率越限 1 起、C05 电量配额异常 0 起" in q02
+    assert "C04-20260105-001" in q02
+    assert "1400 kW" in q02 and "500 kW" in q02 and "120 kWh" in q02
+    assert "不以零替代" in q02
+    # Q03：事件证据数值行（储能指令 -240 kW、PCC 实测 400 kW）
+    q03 = _section_text("Q03", "observed_mismatch", "C03-20260105-001")
+    assert "bess_power_cmd_kw 实测 -240 kW" in q03
+    assert "pcc_power_actual_kw 实测 400 kW" in q03
+    # Q04/Q05：无 C07/C02 事件时如实声明证据不足（不以零替代）
+    assert "未检出 C07" in _section_text("Q04", "c07_observed", None)
+    assert "未检出 C02" in _section_text("Q05", "c02_observed", None)
+
+
 def _assert_answer_invariants(answer: dict) -> None:
     sections = answer["sections"]
     citations = answer["citations"]
