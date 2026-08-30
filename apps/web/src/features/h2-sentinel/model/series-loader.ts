@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type {
   H2AnalysisRun,
   H2AnomalyEvent,
+  H2DatasetField,
   H2SentinelDataSource,
   H2SeriesRequest,
   H2SeriesResponse,
@@ -13,7 +14,9 @@ import {
 } from './chart-options.ts'
 
 const H2_OVERVIEW_WINDOW_MS = 24 * 60 * 60 * 1000
-const H2_VIEW_SERIES_MAX_VARIABLES = 5
+// C-P0-2：六要素 KPI 查询最多 17 个变量（契约上限 32，api/models.py SeriesRequest）；
+// 既有页面级查询仍为 5 变量以内，统一上限放宽不影响其行为。
+const H2_VIEW_SERIES_MAX_VARIABLES = 18
 
 export type H2SeriesTarget =
   | { readonly scope: 'overview'; readonly runId: string }
@@ -54,6 +57,61 @@ export function createH2OverviewSeriesQuery(run: H2AnalysisRun): H2SeriesQuery |
       endTime: boundedRange.endTime,
     },
   }
+}
+
+/**
+ * C-P0-2 六要素 KPI 变量组：别名组按序取第一个可用变量（官方名在前，兼容旧内部命名）。
+ * 覆盖 18 分表 #1 六要素（光伏/储能/PCC/配额/电解槽/异常）所需序列变量，
+ * 外加光伏预测与 SOC 目标两个 detail 增强变量；共 17 组，数据集缺列时该组自动不进查询。
+ */
+export const H2_OVERVIEW_KPI_VARIABLE_GROUPS = [
+  ['pv_actual_kw'],
+  ['pv_forecast_kw'],
+  ['bess_soc_pct', 'bess_soc_percent'],
+  ['soc_target_pct'],
+  ['bess_power_actual_kw', 'bess_power_kw'],
+  ['pcc_power_actual_kw', 'pcc_power_kw'],
+  ['grid_export_power_limit_kw', 'pcc_export_limit_kw'],
+  ['grid_export_energy_used_kwh_day'],
+  ['grid_export_energy_quota_kwh_day'],
+  ['grid_import_energy_used_kwh_day'],
+  ['grid_import_energy_quota_kwh_day'],
+  ['elz1_power_actual_kw'],
+  ['elz2_power_actual_kw'],
+  ['elz3_power_actual_kw'],
+  ['elz1_run_state'],
+  ['elz2_run_state'],
+  ['elz3_run_state'],
+] as const satisfies readonly (readonly string[])[]
+
+export function createH2OverviewKpiSeriesQuery(run: H2AnalysisRun): H2SeriesQuery | null {
+  const variables = selectKpiSeriesVariables(run.dataset.fields)
+  const boundedRange = getLatestH2OverviewRange(run)
+  if (variables.length === 0 || !boundedRange) return null
+
+  return {
+    target: { scope: 'overview', runId: run.runId },
+    request: {
+      runId: run.runId,
+      variables,
+      startTime: boundedRange.startTime,
+      endTime: boundedRange.endTime,
+    },
+  }
+}
+
+function selectKpiSeriesVariables(fields: readonly H2DatasetField[]): string[] {
+  const availableVariables = new Set(
+    fields
+      .filter(({ role }) => role === 'measurement' || role === 'constraint')
+      .map(({ name }) => name),
+  )
+  const selected: string[] = []
+  for (const group of H2_OVERVIEW_KPI_VARIABLE_GROUPS) {
+    const variable = group.find((candidate) => availableVariables.has(candidate))
+    if (variable && !selected.includes(variable)) selected.push(variable)
+  }
+  return selected
 }
 
 export function createH2DiagnosisSeriesQuery(

@@ -7,6 +7,7 @@ import type { H2NavigationTarget } from '../../routes.ts'
 import type { H2Workspace } from '../../model/view-state.ts'
 import {
   createOverviewMetrics,
+  createSixElementKpis,
   formatH2Confidence,
   formatH2Number,
   formatH2Timestamp,
@@ -19,6 +20,7 @@ import {
 } from '../../model/presentation.ts'
 import { createPccChartOption, createSocChartOption } from '../../model/chart-options.ts'
 import {
+  createH2OverviewKpiSeriesQuery,
   createH2OverviewSeriesQuery,
   useH2Series,
 } from '../../model/series-loader.ts'
@@ -35,6 +37,10 @@ export interface OverviewPageProps {
 
 export function OverviewPage({ dataSource, onNavigate, workspace }: OverviewPageProps) {
   const metrics = createOverviewMetrics(workspace.run)
+  // C-P0-2：六要素 KPI 独立序列查询（与概览图查询并存，每 hook 实例独立 state）
+  const kpiSeriesState = useH2Series(dataSource, createH2OverviewKpiSeriesQuery(workspace.run))
+  const kpiSeries = kpiSeriesState.status === 'ready' ? kpiSeriesState.series : null
+  const sixElementKpis = createSixElementKpis(workspace.run, kpiSeries, kpiSeriesState.status)
   const seriesState = useH2Series(dataSource, createH2OverviewSeriesQuery(workspace.run))
   const series = seriesState.status === 'ready' ? seriesState.series : null
   const latestPcc = getLatestSeriesValue(series, 'pcc_power_actual_kw')
@@ -103,6 +109,26 @@ export function OverviewPage({ dataSource, onNavigate, workspace }: OverviewPage
         icon="overview"
         title="弱电网绿氢系统，异常一眼可查"
       />
+
+      {/* C-P0-2 六要素 KPI（18 分表 #1 原文：光伏、储能、PCC、配额、电解槽和异常 KPI）——
+          评委首屏第一视区。C-P1-2 演示脚本推荐停留点：光伏/配额各 ~5s（讲清配额官方口径
+          与当日累计进度），异常卡作为进入事件中心的钩子。 */}
+      <section aria-label="系统总览六要素 KPI" className="h2-metric-grid h2-metric-grid--six">
+        {sixElementKpis.map((kpi) => (
+          <article className={`h2-metric h2-metric--${kpi.tone}`} key={kpi.key}>
+            <span>{kpi.label}</span>
+            <strong>{kpi.value}</strong>
+            <p>{kpi.detail}</p>
+            <button
+              className="h2-text-button"
+              onClick={() => onNavigate({ route: kpi.navigateRoute })}
+              type="button"
+            >
+              {kpi.navigateRoute === 'events' ? '查看事件 →' : '查看趋势 →'}
+            </button>
+          </article>
+        ))}
+      </section>
 
       <section aria-label="核心运行指标" className="h2-metric-grid">
         {metrics.map((metric) => (

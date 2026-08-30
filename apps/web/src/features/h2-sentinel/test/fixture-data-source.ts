@@ -113,6 +113,11 @@ export function createH2WebFixtureDataSource(
 }
 
 function createFixtureSeries(): H2SeriesResponse {
+  // C-P0-2：与 plugins/h2-ems fixtureKpiExtension 同口径的 expUsed 序列（PCC/60 递推）
+  const exportUsedSeries = [
+    830.0, 839.8, 849.6, 859.5, 869.3, 879.1, 889.0, 898.8, 908.6, 918.5, 928.3,
+    938.1, 950.1, 962.1, 974.1, 986.1, 998.1, 1010.1, 1022.1, 1034.1, 1044.0, 1053.8,
+  ] as const
   const points = Array.from({ length: 22 }, (_, index) => {
     const minute = 20 + index
     const isC04Interval = minute >= 32 && minute <= 39
@@ -128,6 +133,17 @@ function createFixtureSeries(): H2SeriesResponse {
         pcc_export_limit_kw: 500,
         pcc_import_limit_kw: 450,
         bess_dispatch_command_kw: -240,
+        // C-P0-2 六要素 KPI 扩展（官方字段名，口径见 plugins 侧 fixtureKpiExtension）
+        elz1_power_actual_kw: 500,
+        elz2_power_actual_kw: 0,
+        elz3_power_actual_kw: 0,
+        elz1_run_state: 2,
+        elz2_run_state: 1,
+        elz3_run_state: 1,
+        grid_export_energy_used_kwh_day: exportUsedSeries[index] ?? 830.0,
+        grid_export_energy_quota_kwh_day: 5200.0,
+        grid_import_energy_used_kwh_day: 0,
+        grid_import_energy_quota_kwh_day: 24500.0,
       },
     }
   })

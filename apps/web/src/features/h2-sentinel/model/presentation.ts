@@ -318,6 +318,202 @@ export function createOverviewMetrics(run: H2AnalysisRun): readonly H2OverviewMe
   ]
 }
 
+export type H2SixElementKpiKey = 'pv' | 'bess' | 'pcc' | 'quota' | 'elz' | 'anomaly'
+
+export interface H2SixElementKpi {
+  readonly key: H2SixElementKpiKey
+  /** 18 分表 #1 原文措辞：光伏、储能、PCC、配额、电解槽和异常 KPI */
+  readonly label: string
+  readonly value: string
+  readonly detail: string
+  readonly tone: 'neutral' | 'positive' | 'warning'
+  /** KPI 卡下钻目标页（要素→分析页，异常→事件中心） */
+  readonly navigateRoute: 'analysis' | 'events'
+}
+
+/** 电解槽运行状态文案：直读 fields.json elz*_run_state 的 sign 定义（0停机，1待机，2运行，3降额） */
+const H2_ELZ_RUN_STATE_LABELS: Readonly<Record<number, string>> = {
+  0: '停机',
+  1: '待机',
+  2: '运行',
+  3: '降额',
+}
+
+type H2SeriesStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+/**
+ * C-P0-2 六要素 KPI 装配：光伏/储能/PCC/配额/电解槽/异常。
+ * 数值一律取序列最新值（getLatestSeriesValue）或 run 契约计数，前端不自算口径；
+ * 中文名/单位从 run.dataset.fields 单源取（fields.json → displayNameZh/unit）；
+ * 缺列如实呈现（红线 #3），不造假序列。
+ */
+export function createSixElementKpis(
+  run: H2AnalysisRun,
+  series: H2SeriesResponse | null,
+  seriesStatus: H2SeriesStatus,
+): readonly H2SixElementKpi[] {
+  if (seriesStatus !== 'ready' || !series) {
+    const fallback = getSixElementStatusCopy(seriesStatus)
+    return SIX_ELEMENT_KEYS.map((key) => ({
+      key,
+      label: SIX_ELEMENT_LABELS[key],
+      value: fallback.value,
+      detail: fallback.detail,
+      tone: 'neutral' as const,
+      navigateRoute: key === 'anomaly' ? ('events' as const) : ('analysis' as const),
+    }))
+  }
+
+  const fields = new Map(run.dataset.fields.map((field) => [field.name, field]))
+  const latest = (variables: readonly string[]): number | null => {
+    const variable = variables.find((candidate) => series.variables.includes(candidate))
+    return variable ? getLatestSeriesValue(series, variable) : null
+  }
+  const unitOf = (name: string): string => fields.get(name)?.unit ?? ''
+
+  const pv = latest(['pv_actual_kw'])
+  const pvForecast = latest(['pv_forecast_kw'])
+  const soc = latest(['bess_soc_pct', 'bess_soc_percent'])
+  const socTarget = latest(['soc_target_pct'])
+  const bessPower = latest(['bess_power_actual_kw', 'bess_power_kw'])
+  const pcc = latest(['pcc_power_actual_kw', 'pcc_power_kw'])
+  const exportLimit = latest(['grid_export_power_limit_kw', 'pcc_export_limit_kw'])
+  const exportUsed = latest(['grid_export_energy_used_kwh_day'])
+  const exportQuota = latest(['grid_export_energy_quota_kwh_day'])
+  const importUsed = latest(['grid_import_energy_used_kwh_day'])
+  const importQuota = latest(['grid_import_energy_quota_kwh_day'])
+  const elzPowers = [
+    latest(['elz1_power_actual_kw']),
+    latest(['elz2_power_actual_kw']),
+    latest(['elz3_power_actual_kw']),
+  ]
+  const elzStates = [
+    latest(['elz1_run_state']),
+    latest(['elz2_run_state']),
+    latest(['elz3_run_state']),
+  ]
+
+  const openCount = run.events.filter(({ reviewState }) => reviewState === 'open').length
+  const severeCount = run.eventCountsBySeverity.high + run.eventCountsBySeverity.critical
+
+  return [
+    {
+      key: 'pv',
+      label: SIX_ELEMENT_LABELS.pv,
+      value: pv === null
+        ? missingValue()
+        : formatH2Number(pv, unitOf('pv_actual_kw')),
+      detail: pvForecast === null
+        ? missingDetail('pv_forecast_kw')
+        : `预测 ${formatH2Number(pvForecast, unitOf('pv_forecast_kw'))}`,
+      tone: 'neutral',
+      navigateRoute: 'analysis',
+    },
+    {
+      key: 'bess',
+      label: SIX_ELEMENT_LABELS.bess,
+      value: soc === null
+        ? missingValue()
+        : formatH2Number(soc, unitOf('bess_soc_pct')),
+      detail: soc === null
+        ? missingDetail('bess_soc_pct')
+        : [
+            bessPower === null ? null : `${formatH2Number(bessPower, unitOf('bess_power_actual_kw'))}（正放电 · 负充电）`,
+            socTarget === null ? null : `目标 ${formatH2Number(socTarget, unitOf('soc_target_pct'))}`,
+          ].filter((part): part is string => part !== null).join(' · ') || missingDetail('bess_power_actual_kw'),
+      tone: 'neutral',
+      navigateRoute: 'analysis',
+    },
+    {
+      key: 'pcc',
+      label: SIX_ELEMENT_LABELS.pcc,
+      value: pcc === null
+        ? missingValue()
+        : formatH2Number(pcc, unitOf('pcc_power_actual_kw')),
+      detail: pcc === null
+        ? missingDetail('pcc_power_actual_kw')
+        : exportLimit === null
+          ? `上网边界 ${missingValue()}`
+          : `上网边界 ${formatH2Number(exportLimit, unitOf('grid_export_power_limit_kw'))}`,
+      tone: pcc !== null && exportLimit !== null && pcc > exportLimit ? 'warning' : 'neutral',
+      navigateRoute: 'analysis',
+    },
+    {
+      key: 'quota',
+      label: SIX_ELEMENT_LABELS.quota,
+      value: exportUsed === null || exportQuota === null
+        ? missingValue()
+        : `${formatH2Number(exportUsed)} / ${formatH2Number(exportQuota, unitOf('grid_export_energy_used_kwh_day'))}`,
+      detail: exportUsed === null || exportQuota === null
+        ? missingDetail('grid_export_energy_used_kwh_day')
+        : importUsed === null || importQuota === null
+          ? '当日上网累计 · 下网数据未提供'
+          : `当日上网累计 · 下网 ${formatH2Number(importUsed)} / ${formatH2Number(importQuota, unitOf('grid_import_energy_used_kwh_day'))}`,
+      tone: exportUsed !== null && exportQuota !== null && exportUsed >= exportQuota
+        ? 'warning'
+        : 'neutral',
+      navigateRoute: 'analysis',
+    },
+    {
+      key: 'elz',
+      label: SIX_ELEMENT_LABELS.elz,
+      value: elzPowers.some((power) => power === null)
+        ? missingValue()
+        : formatH2Number(
+            elzPowers.reduce<number>((sum, power) => sum + (power ?? 0), 0),
+            unitOf('elz1_power_actual_kw'),
+          ),
+      detail: elzPowers.some((power) => power === null)
+        ? missingDetail('elz1_power_actual_kw')
+        : ELZ_EQUIPMENT_IDS.map((id, index) => {
+            const state = elzStates[index] ?? null
+            const stateLabel = state === null ? '' : `（${H2_ELZ_RUN_STATE_LABELS[state] ?? '状态未知'}）`
+            return `${id} ${formatH2Number(elzPowers[index] ?? 0, unitOf('elz1_power_actual_kw'))}${stateLabel}`
+          }).join(' · '),
+      tone: 'neutral',
+      navigateRoute: 'analysis',
+    },
+    {
+      key: 'anomaly',
+      label: SIX_ELEMENT_LABELS.anomaly,
+      value: `${run.events.length} 个`,
+      detail: `高风险 ${severeCount} · 待复核 ${openCount}`,
+      tone: run.events.length > 0 ? 'warning' : 'positive',
+      navigateRoute: 'events',
+    },
+  ]
+}
+
+/** 设备名与台账一致（equipment.json）：ELZ01/ELZ02/ELZ03 */
+const ELZ_EQUIPMENT_IDS = ['ELZ01', 'ELZ02', 'ELZ03'] as const
+
+const SIX_ELEMENT_KEYS = ['pv', 'bess', 'pcc', 'quota', 'elz', 'anomaly'] as const satisfies readonly H2SixElementKpiKey[]
+
+const SIX_ELEMENT_LABELS = {
+  pv: '光伏',
+  bess: '储能',
+  pcc: 'PCC 功率',
+  quota: '电量配额',
+  elz: '电解槽',
+  anomaly: '异常事件',
+} as const satisfies Readonly<Record<H2SixElementKpiKey, string>>
+
+function missingValue(): string {
+  return '字段未提供'
+}
+
+function missingDetail(fieldName: string): string {
+  return `当前数据集无 ${fieldName}`
+}
+
+function getSixElementStatusCopy(
+  status: H2SeriesStatus,
+): { readonly value: string; readonly detail: string } {
+  if (status === 'loading') return { value: '读取中', detail: '正在读取当前运行 KPI 序列。' }
+  if (status === 'error') return { value: '暂不可用', detail: 'KPI 序列读取失败；未用占位数值替代。' }
+  return { value: missingValue(), detail: '当前字段清单没有 KPI 所需变量。' }
+}
+
 export function filterH2Events(
   events: readonly H2AnomalyEvent[],
   filters: H2EventFilterState,

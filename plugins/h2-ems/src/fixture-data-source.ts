@@ -189,6 +189,39 @@ const fixtureSeries = [
   ['2026-01-05T10:41:00Z', 766, 230, 590, 500, 106, 59.2, 500, 450, -240],
 ] as const
 
+/**
+ * C-P0-2 六要素 KPI 扩展列：与 fixtureSeries 行序一一对应，不动既有 10 列。
+ * 列含义 [elz1P, elz2P, elz3P, elz1S, elz2S, elz3S, expUsed, expQuota, impUsed, impQuota]：
+ * - 电解槽分配 ELZ01 运行 500（≥ 单台稳定下限 300，见 constraints.json）、ELZ02/03 待机 0，三台和=既有总量 500 恒定；
+ * - 配额口径来自官方 CSV 实测（train=validation 一致）：上网 5200.0 / 下网 24500.0 kWh/day；
+ * - expUsed 为当日累计上网电量合成序列（按当分钟 PCC 功率/60 递推：590 段 +9.833/min、720 段 +12/min）；
+ * - impUsed=0（fixture PCC 恒为正=纯上网场景）。
+ */
+const fixtureKpiExtension = [
+  [500, 0, 0, 2, 1, 1, 830.0, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 839.8, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 849.6, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 859.5, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 869.3, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 879.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 889.0, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 898.8, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 908.6, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 918.5, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 928.3, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 938.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 950.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 962.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 974.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 986.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 998.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 1010.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 1022.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 1034.1, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 1044.0, 5200.0, 0, 24500.0],
+  [500, 0, 0, 2, 1, 1, 1053.8, 5200.0, 0, 24500.0],
+] as const
+
 const fixtureSeriesVariableSources = {
   pv_forecast_kw: 'pv_forecast_kw',
   pv_actual_kw: 'pv_actual_kw',
@@ -208,38 +241,77 @@ const fixtureSeriesVariableSources = {
   pcc_import_limit_kw: 'pcc_import_limit_kw',
   bess_power_cmd_kw: 'bess_dispatch_command_kw',
   bess_dispatch_command_kw: 'bess_dispatch_command_kw',
+  // C-P0-2 六要素 KPI 扩展：官方字段名（口径与数值来源见 fixtureKpiExtension 注释）
+  elz1_power_actual_kw: 'elz1_power_actual_kw',
+  elz2_power_actual_kw: 'elz2_power_actual_kw',
+  elz3_power_actual_kw: 'elz3_power_actual_kw',
+  elz1_run_state: 'elz1_run_state',
+  elz2_run_state: 'elz2_run_state',
+  elz3_run_state: 'elz3_run_state',
+  grid_export_energy_used_kwh_day: 'grid_export_energy_used_kwh_day',
+  grid_export_energy_quota_kwh_day: 'grid_export_energy_quota_kwh_day',
+  grid_import_energy_used_kwh_day: 'grid_import_energy_used_kwh_day',
+  grid_import_energy_quota_kwh_day: 'grid_import_energy_quota_kwh_day',
 } as const
 
 type FixtureSeriesVariable = keyof typeof fixtureSeriesVariableSources
 
 const fixturePoints: readonly H2SeriesPoint[] = fixtureSeries.map(
   ([
-    timestamp,
-    pvActual,
-    bessPower,
-    pccPower,
-    electrolyzerPower,
-    auxiliaryLoad,
-    bessSoc,
-    exportLimit,
-    importLimit,
-    bessCommand,
-  ]) => ({
-    timestamp,
-    values: {
-      pv_forecast_kw: 1900,
-      pv_actual_kw: pvActual,
-      bess_power_kw: bessPower,
-      pcc_power_kw: pccPower,
-      total_electrolyzer_power_kw: electrolyzerPower,
-      auxiliary_load_kw: auxiliaryLoad,
-      soc_target_pct: 55,
-      bess_soc_percent: bessSoc,
-      pcc_export_limit_kw: exportLimit,
-      pcc_import_limit_kw: importLimit,
-      bess_dispatch_command_kw: bessCommand,
-    },
-  }),
+      timestamp,
+      pvActual,
+      bessPower,
+      pccPower,
+      electrolyzerPower,
+      auxiliaryLoad,
+      bessSoc,
+      exportLimit,
+      importLimit,
+      bessCommand,
+    ],
+    index,
+  ) => {
+    // C-P0-2：按行序对齐解包 KPI 扩展列（见 fixtureKpiExtension 注释）
+    const [
+      elz1Power,
+      elz2Power,
+      elz3Power,
+      elz1State,
+      elz2State,
+      elz3State,
+      exportUsed,
+      exportQuota,
+      importUsed,
+      importQuota,
+    ] = fixtureKpiExtension[index] ?? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    return {
+      timestamp,
+      values: {
+        pv_forecast_kw: 1900,
+        pv_actual_kw: pvActual,
+        bess_power_kw: bessPower,
+        pcc_power_kw: pccPower,
+        total_electrolyzer_power_kw: electrolyzerPower,
+        auxiliary_load_kw: auxiliaryLoad,
+        soc_target_pct: 55,
+        bess_soc_percent: bessSoc,
+        pcc_export_limit_kw: exportLimit,
+        pcc_import_limit_kw: importLimit,
+        bess_dispatch_command_kw: bessCommand,
+        // C-P0-2 六要素 KPI 扩展：官方字段名作为值键（同名源键直映射）
+        elz1_power_actual_kw: elz1Power,
+        elz2_power_actual_kw: elz2Power,
+        elz3_power_actual_kw: elz3Power,
+        elz1_run_state: elz1State,
+        elz2_run_state: elz2State,
+        elz3_run_state: elz3State,
+        grid_export_energy_used_kwh_day: exportUsed,
+        grid_export_energy_quota_kwh_day: exportQuota,
+        grid_import_energy_used_kwh_day: importUsed,
+        grid_import_energy_quota_kwh_day: importQuota,
+      },
+    }
+  },
 )
 
 /**
