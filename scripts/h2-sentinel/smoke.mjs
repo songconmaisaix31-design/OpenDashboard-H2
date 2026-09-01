@@ -251,17 +251,6 @@ async function listDescendants(rootPid) {
   return descendants
 }
 
-async function waitForDescendant(rootPid, namePattern) {
-  const deadline = Date.now() + 15_000
-  while (Date.now() < deadline) {
-    const descendants = await listDescendants(rootPid)
-    const match = descendants.find((entry) => namePattern.test(entry.name))
-    if (match) return match
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 25))
-  }
-  assert.fail(`Descendant matching ${namePattern} was not observed for PID ${rootPid}.`)
-}
-
 async function requestEnvelope(baseUrl, route, payload) {
   const response = await fetch(new URL(route, baseUrl), {
     method: payload === undefined ? 'GET' : 'POST',
@@ -538,8 +527,6 @@ async function runAnalyticsExitBeforeReadySmoke() {
   let auditCompleted = false
   let primaryError = null
   try {
-    let armedForTermination = false
-    let pendingHealthRecord = null
     let terminationStarted = false
     let resolveAnalyticsHealthy
     let rejectAnalyticsHealthy
@@ -551,39 +538,37 @@ async function runAnalyticsExitBeforeReadySmoke() {
       () => rejectAnalyticsHealthy(new Error('Launcher did not report analytics health before READY.')),
       15_000,
     )
-    const terminateAfterHealth = () => {
-      if (!armedForTermination || pendingHealthRecord === null || terminationStarted) return
+    const terminateAfterHealth = async (healthRecord) => {
+      if (terminationStarted) return
       terminationStarted = true
       clearTimeout(healthTimeout)
-      const healthRecord = pendingHealthRecord
-      terminateDirectProcess(healthRecord.analyticsPid).then(
-        () => resolveAnalyticsHealthy(healthRecord),
-        rejectAnalyticsHealthy,
-      )
+      try {
+        const descendants = await listDescendants(session.child.pid)
+        for (const processEntry of descendants) observedPids.add(processEntry.pid)
+        assert.equal(
+          descendants.some((processEntry) => processEntry.pid === healthRecord.analyticsPid),
+          true,
+          'Launcher reported an Analytics PID outside its owned process tree.',
+        )
+        await terminateDirectProcess(healthRecord.analyticsPid)
+        resolveAnalyticsHealthy(healthRecord)
+      } catch (error) {
+        rejectAnalyticsHealthy(error)
+      }
     }
-    session.child.on('message', (message) => {
+    const observeAnalyticsHealth = (message) => {
       if (message?.type !== 'analytics-healthy') return
-      pendingHealthRecord = message
-      terminateAfterHealth()
-    })
-    if (process.platform === 'win32') {
-      const wrapperProcess = await waitForDescendant(
-        session.child.pid,
-        /^powershell(?:\.exe)?$/i,
-      )
-      observedPids.add(wrapperProcess.pid)
+      void terminateAfterHealth(message)
     }
-    const uvProcess = await waitForDescendant(session.child.pid, /^uv(?:\.exe)?$/i)
-    observedPids.add(uvProcess.pid)
-    const pythonProcess = await waitForDescendant(session.child.pid, /^python(?:\.exe)?$/i)
-    observedPids.add(pythonProcess.pid)
-    for (const processEntry of await listDescendants(session.child.pid)) {
-      observedPids.add(processEntry.pid)
+    session.child.on('message', observeAnalyticsHealth)
+    let healthRecord
+    try {
+      healthRecord = await analyticsHealthy
+    } finally {
+      clearTimeout(healthTimeout)
+      session.child.removeListener('message', observeAnalyticsHealth)
     }
-    armedForTermination = true
-    terminateAfterHealth()
-    const healthRecord = await analyticsHealthy
-    assert.equal(healthRecord.analyticsPid, uvProcess.pid)
+    assert.equal(observedPids.has(healthRecord.analyticsPid), true)
 
     const result = await waitForExit(session.child, 15_000)
     assert.notEqual(result.code, 0)

@@ -162,13 +162,18 @@ test('audits adversarial natural cleanup before failure-only fallback cleanup', 
   const naturalPidAudit = adversarialSmoke.indexOf(
     'for (const pid of observedPids) await assertPidStopped(pid)',
   )
-  const fallbackCleanup = adversarialSmoke.indexOf('finally {')
+  const fallbackCleanup = adversarialSmoke.indexOf('finally {', naturalPidAudit)
 
   assert.ok(naturalPidAudit >= 0)
   assert.ok(fallbackCleanup > naturalPidAudit)
   assert.match(adversarialSmoke, /let auditCompleted = false/)
   assert.match(adversarialSmoke, /if \(!auditCompleted\)/)
   assert.match(adversarialSmoke, /if \(primaryError === null/)
+  assert.match(
+    adversarialSmoke,
+    /descendants\.some\(\(processEntry\) => processEntry\.pid === healthRecord\.analyticsPid\)/,
+  )
+  assert.doesNotMatch(adversarialSmoke, /waitForDescendant|\/\^uv|\/\^python/)
 })
 
 test('requires the exact canonical analytics health contract', () => {
