@@ -413,7 +413,7 @@ def ml_supplemental_candidates(
 
     仅当 H2_ML_ENABLED（service 层门控）时被调用；本函数自身不做开关判断。
     """
-    import numpy
+    import numpy  # type: ignore[import-not-found]  # Delayed optional ML dependency; unavailable in the dev-only environment.
 
     boosters = _load_boosters(models_dir)
     feature_rows = runtime_feature_rows(rows)
