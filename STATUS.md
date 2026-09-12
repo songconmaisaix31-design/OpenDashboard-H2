@@ -1,13 +1,13 @@
 # Project Status
 
-**FROZEN / RESULT PENDING**
+**FROZEN / FINAL RESULT UNVERIFIED**
 
 - Competition: SPD Bank IGNITE Future Energy Hackathon.
 - Progress: preliminary top 20; semifinal completed.
-- Final result: expected on 2026-09-10.
-- Status recorded: 2026-08-31.
+- Final result: no new confirming evidence was found in this review.
+- Status reviewed: 2026-09-12.
 
-Until the final result is published, this repository must not be renamed or
+The competition freeze remains in place: this repository must not be renamed or
 archived, no Release may be created, and competition directories must not be
 moved at scale. Productization and algorithm development are outside this
 freeze cleanup.
@@ -16,7 +16,7 @@ freeze cleanup.
 
 | Evidence class | Current statement |
 | --- | --- |
-| Competition result | Preliminary top 20 and semifinal completion are recorded; the final result is pending. |
+| Competition result | Preliminary top 20 and semifinal completion are recorded; the final result has not been verified. |
 | Semifinal submission SHA | Not confirmed by repository evidence alone. No external submission receipt is committed, so this document does not guess. |
 | Candidate: `gate-s6` | `738344fc6cfd90fa80b7306afcf065d076d5d1d9`; the tracked plan and freeze record identify it as the final freeze gate. |
 | Candidate: audit-time `origin/main` | `60ecc9c16082a43e9ab0d505470dec000faaf15c`; it contains `gate-s6`, the delivery merge, documentation, and a later Local-import guard fix. This proves repository ancestry, not organizer receipt. |
